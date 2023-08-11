@@ -21,7 +21,7 @@
 	"icon": "assets/${mod_id}/icon.png",
 	"environment": "server",
 	"entrypoints": {
-		"main": [
+		"server": [
 			"com.tpwalke2.bluemapsignmarkers.BlueMapSignMarkersMod"
 		]
 	},
