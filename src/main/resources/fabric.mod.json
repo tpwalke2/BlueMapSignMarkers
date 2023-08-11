@@ -1,0 +1,35 @@
+{
+	"schemaVersion": 1,
+	"id": "${mod_id}",
+	"version": "${version}",
+	"name": "${mod_name}",
+	"description": "${mod_description}",
+	"authors": [
+		{
+			"name": "tpwalke2",
+			"contact": {
+				"sources": "https://github.com/tpwalke2",
+				"homepage": "https://tpwalke2.com"
+			}
+		}
+	],
+	"contact": {
+		"homepage": "https://tpwalke2.com/",
+		"sources": "https://github.com/tpwalke2/BlueMapSignMarkers"
+	},
+	"license": "MIT",
+	"icon": "assets/${mod_id}/icon.png",
+	"environment": "server",
+	"entrypoints": {
+		"server": [
+			"com.tpwalke2.bluemapsignmarkers.BlueMapSignMarkersMod"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=${fabric_loader_version}",
+		"minecraft": "~1.20.1",
+		"java": ">=${java_version}",
+		"fabric-api": "*",
+		"bluemap": ">=${blue_map_version}"
+	}
+}
