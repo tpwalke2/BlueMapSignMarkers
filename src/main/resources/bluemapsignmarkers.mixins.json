@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "package": "com.tpwalke2.bluemapsignmarkers.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [],
+  "client": [],
+  "server": [
+    "SignBlockEntityInject"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
