@@ -1,5 +1,7 @@
 package com.tpwalke2.bluemapsignmarkers.core;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -15,9 +17,16 @@ public class SignManager {
 
     private SignManager() {   }
 
+    public static void addOrUpdate(SignEntry signEntry) {
+        getInstance().addOrUpdateSign(signEntry);
+    }
     private final ConcurrentMap<SignEntryKey, SignEntry> signCache = new ConcurrentHashMap<>();
 
-    public void addSign(SignEntry signEntry) {
+    public List<SignEntry> getAllSigns() {
+        return new ArrayList<>(signCache.values());
+    }
+
+    public void addOrUpdateSign(SignEntry signEntry) {
         var key = signEntry.getKey();
 
         signCache.put(key, signEntry);
