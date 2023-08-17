@@ -2,23 +2,22 @@ package com.tpwalke2.bluemapsignmarkers;
 
 import com.tpwalke2.bluemapsignmarkers.core.SignEntry;
 import com.tpwalke2.bluemapsignmarkers.core.SignParentMap;
-import com.tpwalke2.bluemapsignmarkers.core.SignSide;
 import net.minecraft.block.entity.SignBlockEntity;
 import net.minecraft.block.entity.SignText;
 import net.minecraft.text.Text;
 import net.minecraft.world.World;
 
 public class SignBlockEntityHelper {
-    public static SignEntry createSignEntry(SignBlockEntity signBlockEntity, boolean front) {
+    public static SignEntry createSignEntry(SignBlockEntity signBlockEntity) {
         var pos = signBlockEntity.getPos();
 
         return new SignEntry(
                 pos.getX(),
                 pos.getY(),
                 pos.getZ(),
-                front ? SignSide.FRONT : SignSide.BACK,
                 getSignParentMap(signBlockEntity.getWorld()),
-                getSignText(front ? signBlockEntity.getFrontText() : signBlockEntity.getBackText()));
+                getSignText(signBlockEntity.getFrontText()),
+                getSignText(signBlockEntity.getBackText()));
     }
 
     private static SignParentMap getSignParentMap(World world) {
@@ -42,6 +41,6 @@ public class SignBlockEntityHelper {
             text.append(message.getString());
         }
 
-        return text.toString();
+        return text.toString().trim();
     }
 }

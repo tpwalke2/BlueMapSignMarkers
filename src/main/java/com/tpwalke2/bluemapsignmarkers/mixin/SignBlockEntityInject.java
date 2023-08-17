@@ -13,6 +13,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public class SignBlockEntityInject {
     @Inject(method = "setText", at = @At("HEAD"))
     void onSetText(SignText text, boolean front, CallbackInfoReturnable<Boolean> cir) {
-        SignManager.addOrUpdate(SignBlockEntityHelper.createSignEntry((SignBlockEntity) (Object) this, front));
+        SignManager.addOrUpdate(SignBlockEntityHelper.createSignEntry((SignBlockEntity) (Object) this));
     }
 }
