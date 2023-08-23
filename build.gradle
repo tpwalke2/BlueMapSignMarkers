@@ -21,11 +21,10 @@ loom {
     splitEnvironmentSourceSets()
 
 	mods {
-		"bluemap-sign-markers" {
+		"bluemapsignmarkers" {
 			sourceSet sourceSets.main
 		}
 	}
-
 }
 
 dependencies {
@@ -37,7 +36,7 @@ dependencies {
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-	compileOnly "com.github.BlueMap-Minecraft:BlueMapAPI:v${project.blue_map_api_version}"
+	modImplementation "com.github.BlueMap-Minecraft:BlueMapAPI:v${project.blue_map_api_version}"
 }
 
 processResources {
