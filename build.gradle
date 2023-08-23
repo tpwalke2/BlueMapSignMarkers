@@ -1,6 +1,7 @@
 plugins {
 	id 'fabric-loom' version "${fabric_loom_version}"
 	id 'maven-publish'
+	id "com.modrinth.minotaur" version "2.+"
 }
 
 base {
@@ -71,6 +72,20 @@ java {
 jar {
 	from("LICENSE") {
 		rename { "${it}_${project.base.archivesName.get()}"}
+	}
+}
+
+modrinth {
+	token = System.getenv("MODRINTH_TOKEN")
+	projectId = "i5ZtmNIW"
+	version = project.mod_version
+	changelog.set("Releasenotes and Changelog:\\nhttps://github.com/tpwalke2/BlueMapSignMarkers/releases/tag/v${project.version}")
+	uploadFile = remapJar
+	gameVersions.addAll("1.20", "1.20.1")
+	loaders.add("fabric")
+	dependencies {
+		required.project("P7dR8mSH")
+		required.project("swbUV1cr")
 	}
 }
 
