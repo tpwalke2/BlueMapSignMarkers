@@ -11,14 +11,17 @@ public class ReactiveQueue<T> {
     private final ExecutorService executor;
     private final ShouldRunCallback shouldRunCallback;
     private final MessageProcessorCallback<T> messageProcessorCallback;
+    private final MessageProcessorErrorCallback messageProcessorErrorCallback;
 
     public ReactiveQueue(
             @NotNull ShouldRunCallback shouldRunCallback,
-            @NotNull MessageProcessorCallback<T> messageProcessorCallback) {
+            @NotNull MessageProcessorCallback<T> messageProcessorCallback,
+            @NotNull MessageProcessorErrorCallback messageProcessorErrorCallback) {
         this.queue = new ConcurrentLinkedQueue<>();
         this.executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
         this.shouldRunCallback = shouldRunCallback;
         this.messageProcessorCallback = messageProcessorCallback;
+        this.messageProcessorErrorCallback = messageProcessorErrorCallback;
     }
 
     public void enqueue(T message) {
@@ -32,7 +35,11 @@ public class ReactiveQueue<T> {
         while (!queue.isEmpty() && shouldRunCallback.shouldRun()) {
             T message = queue.poll();
             if (message != null) {
-                executor.submit(() -> messageProcessorCallback.processMessage(message));
+                try {
+                    executor.submit(() -> messageProcessorCallback.processMessage(message));
+                } catch (Exception e) {
+                    messageProcessorErrorCallback.onError(e);
+                }
             }
         }
     }

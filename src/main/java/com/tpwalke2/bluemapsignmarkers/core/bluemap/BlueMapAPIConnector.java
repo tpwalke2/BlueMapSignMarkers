@@ -1,80 +1,116 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap;
 
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.AddPOIAction;
+import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.AddMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.MarkerAction;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemovePOIAction;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.UpdatePOIAction;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.UpdateMarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.markers.MarkerSetIdentifier;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.markers.MarkerSetIdentifierCollection;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.markers.MarkerType;
 import com.tpwalke2.bluemapsignmarkers.core.reactive.ReactiveQueue;
 import de.bluecolored.bluemap.api.BlueMapAPI;
+import de.bluecolored.bluemap.api.BlueMapMap;
+import de.bluecolored.bluemap.api.BlueMapWorld;
+import de.bluecolored.bluemap.api.markers.MarkerSet;
 import de.bluecolored.bluemap.api.markers.POIMarker;
+import java.util.HashMap;
+import java.util.Optional;
 
 public class BlueMapAPIConnector {
+    private final MarkerSetIdentifierCollection markerSetIdentifierCollection;
     private final ReactiveQueue<MarkerAction> markerActionQueue;
+    private final HashMap<MarkerSetIdentifier, MarkerSet> markerSets;
 
-    public BlueMapAPIConnector() {
+    public BlueMapAPIConnector(MarkerSetIdentifierCollection markerSetIdentifierCollection) {
+        this.markerSetIdentifierCollection = markerSetIdentifierCollection;
+
         markerActionQueue = new ReactiveQueue<>(
                 () -> BlueMapAPI.getInstance().isPresent(),
-                this::processMarkerAction
+                this::processMarkerAction,
+                this::onError
         );
 
+        markerSets = new HashMap<>();
+
+        BlueMapAPI.onEnable(this::onEnable);
         BlueMapAPI.onDisable(this::onDisable);
     }
 
     public void shutdown() {
+        BlueMapAPI.unregisterListener(this::onEnable);
         BlueMapAPI.unregisterListener(this::onDisable);
     }
 
-    public void addPOIMarker(
-            double x,
-            double y,
-            double z,
-            String label,
-            String detail,
-            MarkerMap markerMap) {
-        markerActionQueue.enqueue(new AddPOIAction(x, y, z, label, detail, markerMap));
-    }
-
-    public void removePOIMarker(
-            double x,
-            double y,
-            double z,
-            MarkerMap markerMap) {
-        markerActionQueue.enqueue(new RemovePOIAction(x, y, z, markerMap));
-    }
-
-    public void updatePOIMarker(
-            double x,
-            double y,
-            double z,
-            String newLabel,
-            String newDetail,
-            MarkerMap markerMap) {
-        markerActionQueue.enqueue(new UpdatePOIAction(x, y, z, newLabel, newDetail, markerMap));
+    public void dispatch(MarkerAction action) {
+        markerActionQueue.enqueue(action);
     }
 
     private void processMarkerAction(MarkerAction markerAction) {
-        switch (markerAction.getOperation()) {
-            case ADD -> {
-                var addPOIAction = (AddPOIAction) markerAction;
+        var markerSet = Optional.of(markerSets.get(markerAction.getMarkerIdentifier().parentSet())).get().getMarkers();
+
+        if (markerAction instanceof AddMarkerAction addAction) {
+            if (addAction.getMarkerIdentifier().parentSet().markerType() == MarkerType.POI) {
                 var marker = POIMarker.builder()
-                        .position(addPOIAction.x(), addPOIAction.y(), addPOIAction.z())
-                        .label(addPOIAction.label())
-                        .detail(addPOIAction.detail())
+                        .position(addAction.getX(), addAction.getY(), addAction.getZ())
+                        .label(addAction.getLabel())
+                        .detail(addAction.getDetail())
                         .build();
-                // TODO add marker to marker set for correct map
+                markerSet.put(addAction.getMarkerIdentifier().getId(), marker);
             }
-            case REMOVE -> {
-                var removePOIAction = (RemovePOIAction) markerAction;
-                // TODO remove marker from marker set on correct map
+        } else if (markerAction instanceof RemoveMarkerAction removeAction) {
+            markerSet.remove(removeAction.getMarkerIdentifier().getId());
+        } else if (markerAction instanceof UpdateMarkerAction updateAction) {
+            var marker = Optional.of(markerSet.get(markerAction.getMarkerIdentifier().getId())).get();
+            marker.setLabel(updateAction.getNewLabel());
+            if (marker instanceof POIMarker poiMarker) {
+                poiMarker.setDetail(updateAction.getNewDetails());
             }
-            case UPDATE -> {
-                var updatePOIAction = (UpdatePOIAction) markerAction;
-                // TODO update marker in correct marker set on correct map
-            }
+        } else {
+            // TODO log warning
         }
+    }
+
+    private void onError(Throwable throwable) {
+        // TODO log error
+    }
+
+    private void onEnable(BlueMapAPI api) {
+        buildMarkerSets(api);
     }
 
     private void onDisable(BlueMapAPI api) {
         markerActionQueue.shutdown();
+    }
+
+    private WorldMap getMap(String mapId) {
+        return Optional
+                .ofNullable(WorldMap.valueOfId(mapId.toLowerCase()))
+                .orElse(WorldMap.UNKNOWN);
+    }
+
+    private void buildMarkerSets(BlueMapAPI api) {
+        for (BlueMapWorld world : api.getWorlds()) {
+            for (BlueMapMap map : world.getMaps()) {
+                var markerMap = getMap(map.getId());
+                if (markerMap == WorldMap.UNKNOWN) continue;
+
+                for (MarkerType markerType: MarkerType.values()) {
+                    var key = markerSetIdentifierCollection.getIdentifier(
+                            world.getId(),
+                            markerMap,
+                            markerType);
+
+                    var markerSet = Optional.ofNullable(markerSets.get(key))
+                            .or(() -> Optional.ofNullable(map.getMarkerSets().get(markerType.id)))
+                            .orElseGet(() -> MarkerSet.builder()
+                            .label(markerType.label)
+                            .build());
+
+                    markerSets.putIfAbsent(key, markerSet);
+                    map.getMarkerSets().putIfAbsent(markerType.id, markerSet);
+                }
+            }
+        }
     }
 }

@@ -1,11 +1,27 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap.actions;
 
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.MarkerMap;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.MarkerOperation;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.MarkerSetId;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.markers.MarkerIdentifier;
 
-public interface MarkerAction {
-    MarkerMap getMarkerMap();
-    MarkerOperation getOperation();
-    MarkerSetId getMarkerSetId();
+public abstract class MarkerAction {
+    private final MarkerIdentifier markerIdentifier;
+
+    protected MarkerAction(MarkerIdentifier markerIdentifier) {
+        this.markerIdentifier = markerIdentifier;
+    }
+
+    public MarkerIdentifier getMarkerIdentifier() {
+        return markerIdentifier;
+    }
+
+    public double getX() {
+        return markerIdentifier.x();
+    }
+
+    public double getY() {
+        return markerIdentifier.y();
+    }
+
+    public double getZ() {
+        return markerIdentifier.z();
+    }
 }
