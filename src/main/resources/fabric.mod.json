@@ -19,9 +19,9 @@
 	},
 	"license": "MIT",
 	"icon": "assets/${mod_id}/icon.png",
-	"environment": "*",
+	"environment": "server",
 	"entrypoints": {
-		"main": [
+		"server": [
 			"com.tpwalke2.bluemapsignmarkers.BlueMapSignMarkersMod"
 		]
 	},

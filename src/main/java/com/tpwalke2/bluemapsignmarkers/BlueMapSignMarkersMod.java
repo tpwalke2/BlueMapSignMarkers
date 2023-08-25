@@ -10,9 +10,9 @@ import net.minecraft.block.entity.SignBlockEntity;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.world.ServerWorld;
 
-public class BlueMapSignMarkersMod implements ModInitializer {
+public class BlueMapSignMarkersMod implements DedicatedServerModInitializer {
 	@Override
-	public void onInitialize() {
+	public void onInitializeServer() {
 		ServerLifecycleEvents.SERVER_STARTING.register(this::onServerStarting);
 		ServerLifecycleEvents.SERVER_STOPPED.register(this::onServerStopped);
 		ServerBlockEntityEvents.BLOCK_ENTITY_LOAD.register(this::onBlockEntityLoad);
