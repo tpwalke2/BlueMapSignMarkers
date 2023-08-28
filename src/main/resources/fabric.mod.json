@@ -30,10 +30,9 @@
 	],
 	"depends": {
 		"fabricloader": ">=${fabric_loader_version}",
-		"minecraft": "~1.20.x",
+		"minecraft": "~1.20",
 		"java": ">=${java_version}",
 		"fabric-api": "*",
-		"bluemap": ">=${blue_map_version}",
 		"bluemap-api": ">=${blue_map_api_version}"
 	}
 }
