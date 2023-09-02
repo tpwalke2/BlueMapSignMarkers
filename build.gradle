@@ -34,7 +34,7 @@ dependencies {
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-	implementation "com.github.BlueMap-Minecraft:BlueMapAPI:v${project.blue_map_api_version}"
+	compileOnly "com.github.BlueMap-Minecraft:BlueMapAPI:v${project.blue_map_api_version}"
 }
 
 processResources {
