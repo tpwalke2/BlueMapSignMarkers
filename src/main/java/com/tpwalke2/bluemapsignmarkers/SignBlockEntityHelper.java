@@ -4,6 +4,7 @@ import com.tpwalke2.bluemapsignmarkers.core.SignEntry;
 import com.tpwalke2.bluemapsignmarkers.core.SignEntryKey;
 import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
 
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.block.entity.SignBlockEntity;
 import net.minecraft.block.entity.SignText;
 import net.minecraft.text.Text;
@@ -23,7 +24,6 @@ public class SignBlockEntityHelper {
                         pos.getX(),
                         pos.getY(),
                         pos.getZ(),
-                        Objects.requireNonNull(signBlockEntity.getWorld()).getRegistryKey().getValue().toString(),
                         getSignParentMap(signBlockEntity.getWorld())),
                 getSignText(signBlockEntity.getFrontText()),
                 getSignText(signBlockEntity.getBackText()));

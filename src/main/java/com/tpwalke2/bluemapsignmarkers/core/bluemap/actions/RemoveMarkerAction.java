@@ -6,4 +6,11 @@ public class RemoveMarkerAction extends MarkerAction {
     public RemoveMarkerAction(MarkerIdentifier markerIdentifier) {
         super(markerIdentifier);
     }
+
+    @Override
+    public String toString() {
+        return "RemoveMarkerAction{" +
+                "markerIdentifier=" + getMarkerIdentifier() +
+                '}';
+    }
 }

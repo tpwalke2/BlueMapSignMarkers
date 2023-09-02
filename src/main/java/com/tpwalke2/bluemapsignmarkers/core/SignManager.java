@@ -1,8 +1,11 @@
 package com.tpwalke2.bluemapsignmarkers.core;
 
+import com.tpwalke2.bluemapsignmarkers.Constants;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.BlueMapAPIConnector;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.ActionFactoryFactory;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.ActionFactory;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.markers.MarkerSetIdentifierCollection;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -11,13 +14,15 @@ import java.util.concurrent.ConcurrentMap;
 
 public class SignManager {
     public static final SignManager INSTANCE = new SignManager();
+    private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
 
-    private final MarkerSetIdentifierCollection markerSetIdentifierCollection;
     private final BlueMapAPIConnector blueMapAPIConnector;
+    private final ActionFactory actionFactory;
 
     private SignManager() {
-        markerSetIdentifierCollection = new MarkerSetIdentifierCollection();
+        MarkerSetIdentifierCollection markerSetIdentifierCollection = new MarkerSetIdentifierCollection();
         blueMapAPIConnector = new BlueMapAPIConnector(markerSetIdentifierCollection);
+        actionFactory = new ActionFactory(markerSetIdentifierCollection);
     }
 
     public static void addOrUpdate(SignEntry signEntry) {
@@ -44,9 +49,8 @@ public class SignManager {
         var label = SignEntryHelper.getLabel(signEntry, SignManager.POI_MARKER_SENTINEL);
         var detail = SignEntryHelper.getDetail(signEntry, SignManager.POI_MARKER_SENTINEL);
 
-        var actionFactory = ActionFactoryFactory.getActionFactory(markerSetIdentifierCollection, key.worldId());
-
         if (existing == null && isPOIMarker) {
+            LOGGER.info("Adding POI marker: {}", signEntry);
             signCache.put(key, signEntry);
             blueMapAPIConnector.dispatch(
                     actionFactory.createAddPOIAction(
@@ -60,6 +64,7 @@ public class SignManager {
         }
 
         if (existing != null && !isPOIMarker) {
+            LOGGER.info("Removing POI marker: {}", signEntry);
             removeSign(signEntry);
             blueMapAPIConnector.dispatch(
                     actionFactory.createRemovePOIAction(
@@ -70,6 +75,7 @@ public class SignManager {
         }
 
         if (existing != null && isPOIMarker) {
+            LOGGER.info("Updating POI marker: {}", signEntry);
             signCache.put(key, signEntry);
             blueMapAPIConnector.dispatch(
                     actionFactory.createUpdatePOIAction(

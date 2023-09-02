@@ -29,8 +29,8 @@ public record SignEntry(
     public String toString() {
         return "SignEntry{" +
                 "key=" + key +
-                ", frontTextLines=" + frontTextLines +
-                ", backTextLines=" + backTextLines +
+                ", frontTextLines=" + Arrays.toString(frontTextLines) +
+                ", backTextLines=" + Arrays.toString(backTextLines) +
                 '}';
     }
 }

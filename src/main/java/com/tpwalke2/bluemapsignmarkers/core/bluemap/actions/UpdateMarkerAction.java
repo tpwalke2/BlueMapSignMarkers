@@ -19,4 +19,13 @@ public class UpdateMarkerAction extends MarkerAction {
     public String getNewDetails() {
         return newDetails;
     }
+
+    @Override
+    public String toString() {
+        return "UpdateMarkerAction{" +
+                "markerIdentifier=" + getMarkerIdentifier() +
+                ", newLabel='" + newLabel + '\'' +
+                ", newDetails='" + newDetails + '\'' +
+                '}';
+    }
 }

@@ -26,6 +26,10 @@ public class ReactiveQueue<T> {
 
     public void enqueue(T message) {
         queue.offer(message);
+        this.process();
+    }
+
+    public void process() {
         if (shouldRunCallback.shouldRun()) {
             executor.submit(this::processMessages);
         }
