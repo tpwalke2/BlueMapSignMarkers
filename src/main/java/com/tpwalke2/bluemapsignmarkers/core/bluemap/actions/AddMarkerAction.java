@@ -19,4 +19,13 @@ public class AddMarkerAction extends MarkerAction {
     public String getDetail() {
         return detail;
     }
+
+    @Override
+    public String toString() {
+        return "AddMarkerAction{" +
+                "markerIdentifier=" + getMarkerIdentifier() +
+                ", label='" + label + '\'' +
+                ", detail='" + detail + '\'' +
+                '}';
+    }
 }

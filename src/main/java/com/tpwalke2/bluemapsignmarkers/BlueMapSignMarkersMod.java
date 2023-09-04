@@ -2,15 +2,18 @@ package com.tpwalke2.bluemapsignmarkers;
 
 import com.tpwalke2.bluemapsignmarkers.core.SignManager;
 import net.fabricmc.api.DedicatedServerModInitializer;
-import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerBlockEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.SignBlockEntity;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.world.ServerWorld;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class BlueMapSignMarkersMod implements DedicatedServerModInitializer {
+	private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
+
 	@Override
 	public void onInitializeServer() {
 		ServerLifecycleEvents.SERVER_STARTING.register(this::onServerStarting);
@@ -22,6 +25,7 @@ public class BlueMapSignMarkersMod implements DedicatedServerModInitializer {
 
 	private void onServerStarting(MinecraftServer server) {
 		// TODO load markers from file
+		LOGGER.info("Loading markers from file...");
 	}
 
 	private void onServerStopped(MinecraftServer server) {

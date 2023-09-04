@@ -7,12 +7,9 @@ import com.tpwalke2.bluemapsignmarkers.core.bluemap.markers.MarkerType;
 
 public class ActionFactory {
     private final MarkerSetIdentifierCollection markerSetIdentifierCollection;
-    private final String worldId;
 
-    public ActionFactory(MarkerSetIdentifierCollection markerSetIdentifierCollection,
-                         String worldId) {
+    public ActionFactory(MarkerSetIdentifierCollection markerSetIdentifierCollection) {
         this.markerSetIdentifierCollection = markerSetIdentifierCollection;
-        this.worldId = worldId;
     }
 
     public AddMarkerAction createAddPOIAction(
@@ -27,7 +24,7 @@ public class ActionFactory {
                         x,
                         y,
                         z,
-                        markerSetIdentifierCollection.getIdentifier(worldId, map, MarkerType.POI)),
+                        markerSetIdentifierCollection.getIdentifier(map, MarkerType.POI)),
                 label,
                 detail);
     }
@@ -42,7 +39,7 @@ public class ActionFactory {
                         x,
                         y,
                         z,
-                        markerSetIdentifierCollection.getIdentifier(worldId, map, MarkerType.POI)));
+                        markerSetIdentifierCollection.getIdentifier(map, MarkerType.POI)));
     }
 
     public UpdateMarkerAction createUpdatePOIAction(
@@ -57,7 +54,7 @@ public class ActionFactory {
                         x,
                         y,
                         z,
-                        markerSetIdentifierCollection.getIdentifier(worldId, map, MarkerType.POI)),
+                        markerSetIdentifierCollection.getIdentifier(map, MarkerType.POI)),
                 newLabel,
                 newDetail);
     }

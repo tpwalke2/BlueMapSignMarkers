@@ -24,4 +24,11 @@ public abstract class MarkerAction {
     public double getZ() {
         return markerIdentifier.z();
     }
+
+    @Override
+    public String toString() {
+        return "MarkerAction{" +
+                "markerIdentifier=" + markerIdentifier +
+                '}';
+    }
 }
