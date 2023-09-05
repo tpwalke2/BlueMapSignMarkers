@@ -1,7 +1,5 @@
 package com.tpwalke2.bluemapsignmarkers.core.reactive;
 
-import org.jetbrains.annotations.NotNull;
-
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -14,9 +12,9 @@ public class ReactiveQueue<T> {
     private final MessageProcessorErrorCallback messageProcessorErrorCallback;
 
     public ReactiveQueue(
-            @NotNull ShouldRunCallback shouldRunCallback,
-            @NotNull MessageProcessorCallback<T> messageProcessorCallback,
-            @NotNull MessageProcessorErrorCallback messageProcessorErrorCallback) {
+            ShouldRunCallback shouldRunCallback,
+            MessageProcessorCallback<T> messageProcessorCallback,
+            MessageProcessorErrorCallback messageProcessorErrorCallback) {
         this.queue = new ConcurrentLinkedQueue<>();
         this.executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
         this.shouldRunCallback = shouldRunCallback;
