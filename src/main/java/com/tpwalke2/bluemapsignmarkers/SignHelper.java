@@ -1,20 +1,18 @@
 package com.tpwalke2.bluemapsignmarkers;
 
-import com.tpwalke2.bluemapsignmarkers.core.SignEntry;
-import com.tpwalke2.bluemapsignmarkers.core.SignEntryKey;
+import com.tpwalke2.bluemapsignmarkers.core.signs.SignEntry;
+import com.tpwalke2.bluemapsignmarkers.core.signs.SignEntryKey;
 import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
 
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.block.entity.SignBlockEntity;
 import net.minecraft.block.entity.SignText;
 import net.minecraft.text.Text;
 import net.minecraft.world.World;
 
 import java.util.Arrays;
-import java.util.Objects;
 
-public class SignBlockEntityHelper {
-    private SignBlockEntityHelper() {}
+public class SignHelper {
+    private SignHelper() {}
 
     public static SignEntry createSignEntry(SignBlockEntity signBlockEntity) {
         var pos = signBlockEntity.getPos();
@@ -29,7 +27,7 @@ public class SignBlockEntityHelper {
                 getSignText(signBlockEntity.getBackText()));
     }
 
-    private static WorldMap getSignParentMap(World world) {
+    public static WorldMap getSignParentMap(World world) {
         if (world == null) return WorldMap.UNKNOWN;
 
         var registryKey = world.getRegistryKey();
