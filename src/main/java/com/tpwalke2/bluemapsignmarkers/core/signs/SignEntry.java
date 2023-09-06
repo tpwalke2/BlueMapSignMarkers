@@ -1,4 +1,4 @@
-package com.tpwalke2.bluemapsignmarkers.core;
+package com.tpwalke2.bluemapsignmarkers.core.signs;
 
 import java.util.Arrays;
 

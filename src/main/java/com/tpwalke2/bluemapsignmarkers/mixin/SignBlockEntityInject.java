@@ -1,18 +1,21 @@
 package com.tpwalke2.bluemapsignmarkers.mixin;
 
-import com.tpwalke2.bluemapsignmarkers.SignBlockEntityHelper;
-import com.tpwalke2.bluemapsignmarkers.core.SignManager;
+import com.tpwalke2.bluemapsignmarkers.SignHelper;
+import com.tpwalke2.bluemapsignmarkers.core.signs.SignManager;
 import net.minecraft.block.entity.SignBlockEntity;
-import net.minecraft.block.entity.SignText;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.server.filter.FilteredMessage;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+import java.util.List;
 
 @Mixin(SignBlockEntity.class)
 public class SignBlockEntityInject {
-    @Inject(method = "setText", at = @At("HEAD"))
-    void onSetText(SignText text, boolean front, CallbackInfoReturnable<Boolean> cir) {
-        SignManager.addOrUpdate(SignBlockEntityHelper.createSignEntry((SignBlockEntity) (Object) this));
+    @Inject(method = "tryChangeText", at = @At("TAIL"))
+    void onTryChangeText(PlayerEntity player, boolean front, List<FilteredMessage> messages, CallbackInfo cir) {
+        SignManager.addOrUpdate(SignHelper.createSignEntry((SignBlockEntity) (Object) this));
     }
 }

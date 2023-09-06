@@ -12,7 +12,6 @@ import com.tpwalke2.bluemapsignmarkers.core.bluemap.markers.MarkerType;
 import com.tpwalke2.bluemapsignmarkers.core.reactive.ReactiveQueue;
 import de.bluecolored.bluemap.api.BlueMapAPI;
 import de.bluecolored.bluemap.api.BlueMapMap;
-import de.bluecolored.bluemap.api.BlueMapWorld;
 import de.bluecolored.bluemap.api.markers.MarkerSet;
 import de.bluecolored.bluemap.api.markers.POIMarker;
 import org.slf4j.Logger;
@@ -55,12 +54,13 @@ public class BlueMapAPIConnector {
         LOGGER.info("Processing marker action: {}", markerAction);
 
         var markerSet = Optional.ofNullable(markerSets.get(markerAction.getMarkerIdentifier().parentSet()));
-        LOGGER.info("Marker set: {}", markerSet);
 
         if (markerSet.isEmpty()) {
-            LOGGER.warn("Marker set not found: {}", markerAction.getMarkerIdentifier().parentSet());
+            LOGGER.warn("Marker set not found.");
             return;
         }
+
+        LOGGER.info("Marker set found.");
         var markerSetMap = markerSet.get().getMarkers();
 
         if (markerAction instanceof AddMarkerAction addAction) {

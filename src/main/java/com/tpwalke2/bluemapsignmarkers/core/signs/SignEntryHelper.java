@@ -1,4 +1,4 @@
-package com.tpwalke2.bluemapsignmarkers.core;
+package com.tpwalke2.bluemapsignmarkers.core.signs;
 
 public class SignEntryHelper {
     private SignEntryHelper() {}
@@ -12,15 +12,28 @@ public class SignEntryHelper {
         return false;
     }
 
-    public static boolean isPOIMarker(SignEntry signEntry, String sentinel) {
+    public static boolean hasSentinel(SignEntry signEntry, String sentinel) {
         return startsWithSentinel(signEntry.frontTextLines(), sentinel)
                 || startsWithSentinel(signEntry.backTextLines(), sentinel);
     }
 
     private static String getFirstPhraseAfterSentinel(String[] lines, String sentinel) {
+        var phraseFoundOnPreviousLine = false;
         for (var line : lines) {
-            if (line.trim().startsWith(sentinel)) {
-                return line.trim().substring(sentinel.length()).trim();
+            var trimmed = line.trim();
+            if (phraseFoundOnPreviousLine) {
+                return trimmed;
+            }
+
+            if (trimmed.startsWith(sentinel)) {
+                var phrase = trimmed.substring(sentinel.length()).trim();
+
+                if (phrase.isBlank()) {
+                    phraseFoundOnPreviousLine = true;
+                    continue;
+                }
+
+                return phrase;
             }
         }
 
@@ -31,16 +44,21 @@ public class SignEntryHelper {
         var frontLabel = getFirstPhraseAfterSentinel(signEntry.frontTextLines(), sentinel);
         var backLabel = getFirstPhraseAfterSentinel(signEntry.backTextLines(), sentinel);
 
-        return frontLabel.isBlank() ? backLabel : frontLabel;
+        if (!frontLabel.isBlank()) {
+            return frontLabel;
+        }
+
+        return backLabel.isBlank() ? "" : backLabel;
     }
 
     private static String getDetail(String[] lines, String sentinel) {
         var detail = new StringBuilder();
         for (var line : lines) {
-            if (line.trim().startsWith(sentinel)) {
-                detail.append(line.trim().substring(sentinel.length()).trim()).append("\n");
+            var trimmed = line.trim();
+            if (trimmed.startsWith(sentinel)) {
+                detail.append(trimmed.substring(sentinel.length()).trim()).append("\n");
             } else {
-                detail.append(line.trim()).append("\n");
+                detail.append(trimmed).append("\n");
             }
         }
 
