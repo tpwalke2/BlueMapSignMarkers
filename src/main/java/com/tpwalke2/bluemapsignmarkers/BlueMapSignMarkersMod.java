@@ -30,8 +30,8 @@ public class BlueMapSignMarkersMod implements DedicatedServerModInitializer {
 	}
 
 	private String getMarkerFilePath(MinecraftServer server) {
-		var worldSave = server.getSavePath(WorldSavePath.ROOT).toAbsolutePath().getFileName();
-		return String.format("config/%s/%s/signs.json", Constants.MOD_ID, worldSave);
+		var worldSaveName = server.getSavePath(WorldSavePath.ROOT).toAbsolutePath().getParent().getFileName();
+		return String.format("config/%s/%s/signs.json", Constants.MOD_ID, worldSaveName);
 	}
 
 	private void onBlockEntityLoad(BlockEntity blockEntity, ServerWorld world) {

@@ -8,6 +8,9 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 
 public class SignProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
@@ -36,6 +39,17 @@ public class SignProvider {
 
     public static void saveSigns(String path) {
         LOGGER.info("Saving markers to file: {}...", path);
+
+        var file = new File(path);
+        var parent = file.getParentFile();
+        if (!parent.exists()) {
+            try {
+                Files.createDirectories(Paths.get(parent.getAbsolutePath()));
+            } catch (IOException e) {
+                LOGGER.error("Failed to create parent directories for markers file", e);
+                return;
+            }
+        }
 
         try (FileWriter writer = new FileWriter(path)) {
             var signEntries = SignManager.getAll();
