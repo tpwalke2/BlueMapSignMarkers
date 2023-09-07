@@ -1,11 +1,9 @@
 package com.tpwalke2.bluemapsignmarkers.core.signs;
 
-import java.util.Arrays;
-
 public record SignEntry(
         SignEntryKey key,
-        String[] frontTextLines,
-        String[] backTextLines) {
+        SignLinesParseResult frontTextLines,
+        SignLinesParseResult backTextLines) {
 
     @Override
     public boolean equals(Object o) {
@@ -13,15 +11,15 @@ public record SignEntry(
         if (!(o instanceof SignEntry signEntry)) return false;
 
         return key.equals(signEntry.key)
-                && Arrays.equals(frontTextLines, signEntry.frontTextLines)
-                && Arrays.equals(backTextLines, signEntry.backTextLines);
+                && frontTextLines.equals(signEntry.frontTextLines)
+                && backTextLines.equals(signEntry.backTextLines);
     }
 
     @Override
     public int hashCode() {
         int result = key.hashCode();
-        result = 31 * result + Arrays.hashCode(frontTextLines);
-        result = 31 * result + Arrays.hashCode(backTextLines);
+        result = 31 * result + frontTextLines.hashCode();
+        result = 31 * result + backTextLines.hashCode();
         return result;
     }
 
@@ -29,8 +27,8 @@ public record SignEntry(
     public String toString() {
         return "SignEntry{" +
                 "key=" + key +
-                ", frontTextLines=" + Arrays.toString(frontTextLines) +
-                ", backTextLines=" + Arrays.toString(backTextLines) +
+                ", frontTextLines=" + frontTextLines.toString() +
+                ", backTextLines=" + backTextLines.toString() +
                 '}';
     }
 }

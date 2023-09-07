@@ -1,9 +1,9 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap.actions;
 
 import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.markers.MarkerIdentifier;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.markers.MarkerSetIdentifierCollection;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.markers.MarkerType;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerIdentifier;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifierCollection;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerType;
 
 public class ActionFactory {
     private final MarkerSetIdentifierCollection markerSetIdentifierCollection;

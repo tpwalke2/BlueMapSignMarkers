@@ -1,4 +1,4 @@
-package com.tpwalke2.bluemapsignmarkers.core.bluemap.markers;
+package com.tpwalke2.bluemapsignmarkers.core.markers;
 
 public record MarkerIdentifier(int x, int y, int z, MarkerSetIdentifier parentSet) {
     public String getId() {

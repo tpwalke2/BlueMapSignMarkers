@@ -1,4 +1,4 @@
-package com.tpwalke2.bluemapsignmarkers.core.bluemap.markers;
+package com.tpwalke2.bluemapsignmarkers.core.markers;
 
 import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
 

@@ -1,5 +1,6 @@
 package com.tpwalke2.bluemapsignmarkers;
 
+import com.tpwalke2.bluemapsignmarkers.core.signs.SignHelper;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignManager;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignProvider;
 import net.fabricmc.api.DedicatedServerModInitializer;

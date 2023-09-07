@@ -1,4 +1,4 @@
-package com.tpwalke2.bluemapsignmarkers.core.bluemap.markers;
+package com.tpwalke2.bluemapsignmarkers.core.markers;
 
 public enum MarkerType {
     POI("points_of_interest", "Points of Interest", "[map]");
