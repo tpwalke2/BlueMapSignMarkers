@@ -6,21 +6,21 @@ public class SignEntryHelper {
     private SignEntryHelper() {}
 
     public static boolean isMarkerType(SignEntry signEntry, MarkerType markerType) {
-        return signEntry.frontTextLines().markerType() == markerType
-                || signEntry.backTextLines().markerType() == markerType;
+        return signEntry.frontText().markerType() == markerType
+                || signEntry.backText().markerType() == markerType;
     }
 
     public static String getLabel(SignEntry signEntry) {
-        if (!signEntry.frontTextLines().label().isBlank()) {
-            return signEntry.frontTextLines().label();
+        if (!signEntry.frontText().label().isBlank()) {
+            return signEntry.frontText().label();
         }
 
-        return signEntry.backTextLines().label().isBlank() ? "" : signEntry.backTextLines().label();
+        return signEntry.backText().label().isBlank() ? "" : signEntry.backText().label();
     }
 
     public static String getDetail(SignEntry signEntry) {
-        var frontDetail = signEntry.frontTextLines().detail();
-        var backDetail = signEntry.backTextLines().detail();
+        var frontDetail = signEntry.frontText().detail();
+        var backDetail = signEntry.backText().detail();
 
         if (frontDetail.isBlank()) {
             return backDetail;
