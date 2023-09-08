@@ -38,6 +38,6 @@ public class BlueMapSignMarkersMod implements DedicatedServerModInitializer {
 	private void onBlockEntityLoad(BlockEntity blockEntity, ServerWorld world) {
 		if (!(blockEntity instanceof SignBlockEntity castBlockEntity)) return;
 
-		SignManager.addOrUpdate(SignHelper.createSignEntry(castBlockEntity));
+		SignManager.addOrUpdate(SignHelper.createSignEntry(castBlockEntity, "unknown"));
 	}
 }

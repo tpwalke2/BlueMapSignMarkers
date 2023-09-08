@@ -11,7 +11,7 @@ import java.util.Arrays;
 public class SignHelper {
     private SignHelper() {}
 
-    public static SignEntry createSignEntry(SignBlockEntity signBlockEntity) {
+    public static SignEntry createSignEntry(SignBlockEntity signBlockEntity, String playerId) {
         var pos = signBlockEntity.getPos();
 
         return new SignEntry(
@@ -20,6 +20,7 @@ public class SignHelper {
                         pos.getY(),
                         pos.getZ(),
                         getSignParentMap(signBlockEntity.getWorld())),
+                playerId,
                 getParsedSignText(signBlockEntity.getFrontText()),
                 getParsedSignText(signBlockEntity.getBackText()));
     }

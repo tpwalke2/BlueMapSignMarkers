@@ -61,10 +61,10 @@ public class SignManager {
             signCache.put(key, signEntry);
             blueMapAPIConnector.dispatch(
                     actionFactory.createAddPOIAction(
-                            signEntry.key().x(),
-                            signEntry.key().y(),
-                            signEntry.key().z(),
-                            signEntry.key().parentMap(),
+                            key.x(),
+                            key.y(),
+                            key.z(),
+                            key.parentMap(),
                             label,
                             detail));
             return;
@@ -77,33 +77,38 @@ public class SignManager {
 
         if (existing != null && isPOIMarker) {
             LOGGER.info("Updating POI marker: {}", signEntry);
-            signCache.put(key, signEntry);
+            if (signEntry.playerId().equals("unknown")) {
+                signCache.put(key, new SignEntry(
+                        key,
+                        existing.playerId(),
+                        signEntry.frontText(),
+                        signEntry.backText()));
+            } else {
+                signCache.put(key, signEntry);
+            }
             blueMapAPIConnector.dispatch(
                     actionFactory.createUpdatePOIAction(
-                            signEntry.key().x(),
-                            signEntry.key().y(),
-                            signEntry.key().z(),
-                            signEntry.key().parentMap(),
+                            key.x(),
+                            key.y(),
+                            key.z(),
+                            key.parentMap(),
                             label,
                             detail));
         }
     }
 
     private void removeByKey(SignEntryKey key) {
-        var existing = signCache.get(key);
-        if (existing == null) return;
-
-        removeEntry(existing);
-    }
-
-    private void removeEntry(SignEntry signEntry) {
-        signCache.remove(signEntry.key());
+        signCache.remove(key);
 
         blueMapAPIConnector.dispatch(
                 actionFactory.createRemovePOIAction(
-                        signEntry.key().x(),
-                        signEntry.key().y(),
-                        signEntry.key().z(),
-                        signEntry.key().parentMap()));
+                        key.x(),
+                        key.y(),
+                        key.z(),
+                        key.parentMap()));
+    }
+
+    private void removeEntry(SignEntry signEntry) {
+        removeByKey(signEntry.key());
     }
 }

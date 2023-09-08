@@ -16,6 +16,6 @@ import java.util.List;
 public class SignBlockEntityInject {
     @Inject(method = "tryChangeText", at = @At("TAIL"))
     void onTryChangeText(PlayerEntity player, boolean front, List<FilteredMessage> messages, CallbackInfo cir) {
-        SignManager.addOrUpdate(SignHelper.createSignEntry((SignBlockEntity) (Object) this));
+        SignManager.addOrUpdate(SignHelper.createSignEntry((SignBlockEntity) (Object) this, player.getUuidAsString()));
     }
 }
