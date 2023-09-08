@@ -1,6 +1,6 @@
 package com.tpwalke2.bluemapsignmarkers.mixin;
 
-import com.tpwalke2.bluemapsignmarkers.SignHelper;
+import com.tpwalke2.bluemapsignmarkers.core.signs.SignHelper;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignManager;
 import net.minecraft.block.entity.SignBlockEntity;
 import net.minecraft.entity.player.PlayerEntity;

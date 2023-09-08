@@ -1,9 +1,6 @@
-package com.tpwalke2.bluemapsignmarkers;
+package com.tpwalke2.bluemapsignmarkers.core.signs;
 
-import com.tpwalke2.bluemapsignmarkers.core.signs.SignEntry;
-import com.tpwalke2.bluemapsignmarkers.core.signs.SignEntryKey;
 import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
-
 import net.minecraft.block.entity.SignBlockEntity;
 import net.minecraft.block.entity.SignText;
 import net.minecraft.text.Text;
@@ -23,8 +20,8 @@ public class SignHelper {
                         pos.getY(),
                         pos.getZ(),
                         getSignParentMap(signBlockEntity.getWorld())),
-                getSignText(signBlockEntity.getFrontText()),
-                getSignText(signBlockEntity.getBackText()));
+                getParsedSignText(signBlockEntity.getFrontText()),
+                getParsedSignText(signBlockEntity.getBackText()));
     }
 
     public static WorldMap getSignParentMap(World world) {
@@ -39,10 +36,10 @@ public class SignHelper {
         return WorldMap.UNKNOWN;
     }
 
-    private static String[] getSignText(SignText signText) {
-        return Arrays
-                .stream(signText.getMessages(false))
-                .map(Text::getString)
-                .toArray(String[]::new);
+    private static SignLinesParseResult getParsedSignText(SignText signText) {
+        return SignLinesParser
+                .parse(Arrays.stream(signText.getMessages(false))
+                        .map(Text::getString)
+                        .toArray(String[]::new));
     }
 }

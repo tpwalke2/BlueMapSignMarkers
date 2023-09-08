@@ -1,6 +1,6 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap.actions;
 
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.markers.MarkerIdentifier;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerIdentifier;
 
 public class AddMarkerAction extends MarkerAction {
     private final String label;

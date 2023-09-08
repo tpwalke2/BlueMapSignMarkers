@@ -1,73 +1,34 @@
 package com.tpwalke2.bluemapsignmarkers.core.signs;
 
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerType;
+
 public class SignEntryHelper {
     private SignEntryHelper() {}
 
-    private static boolean startsWithSentinel(String[] lines, String sentinel) {
-        for (var line : lines) {
-            if (line.isBlank()) continue;
-            return line.trim().startsWith(sentinel);
+    public static boolean isMarkerType(SignEntry signEntry, MarkerType markerType) {
+        return signEntry.frontText().markerType() == markerType
+                || signEntry.backText().markerType() == markerType;
+    }
+
+    public static String getLabel(SignEntry signEntry) {
+        if (!signEntry.frontText().label().isBlank()) {
+            return signEntry.frontText().label();
         }
 
-        return false;
+        return signEntry.backText().label().isBlank() ? "" : signEntry.backText().label();
     }
 
-    public static boolean hasSentinel(SignEntry signEntry, String sentinel) {
-        return startsWithSentinel(signEntry.frontTextLines(), sentinel)
-                || startsWithSentinel(signEntry.backTextLines(), sentinel);
-    }
+    public static String getDetail(SignEntry signEntry) {
+        var frontDetail = signEntry.frontText().detail();
+        var backDetail = signEntry.backText().detail();
 
-    private static String getFirstPhraseAfterSentinel(String[] lines, String sentinel) {
-        var phraseFoundOnPreviousLine = false;
-        for (var line : lines) {
-            var trimmed = line.trim();
-            if (phraseFoundOnPreviousLine) {
-                return trimmed;
-            }
-
-            if (trimmed.startsWith(sentinel)) {
-                var phrase = trimmed.substring(sentinel.length()).trim();
-
-                if (phrase.isBlank()) {
-                    phraseFoundOnPreviousLine = true;
-                    continue;
-                }
-
-                return phrase;
-            }
+        if (frontDetail.isBlank()) {
+            return backDetail;
         }
 
-        return "";
-    }
-
-    public static String getLabel(SignEntry signEntry, String sentinel) {
-        var frontLabel = getFirstPhraseAfterSentinel(signEntry.frontTextLines(), sentinel);
-        var backLabel = getFirstPhraseAfterSentinel(signEntry.backTextLines(), sentinel);
-
-        if (!frontLabel.isBlank()) {
-            return frontLabel;
+        if (backDetail.isBlank()) {
+            return frontDetail;
         }
-
-        return backLabel.isBlank() ? "" : backLabel;
-    }
-
-    private static String getDetail(String[] lines, String sentinel) {
-        var detail = new StringBuilder();
-        for (var line : lines) {
-            var trimmed = line.trim();
-            if (trimmed.startsWith(sentinel)) {
-                detail.append(trimmed.substring(sentinel.length()).trim()).append("\n");
-            } else {
-                detail.append(trimmed).append("\n");
-            }
-        }
-
-        return detail.toString();
-    }
-
-    public static String getDetail(SignEntry signEntry, String sentinel) {
-        var frontDetail = getDetail(signEntry.frontTextLines(), sentinel);
-        var backDetail = getDetail(signEntry.backTextLines(), sentinel);
 
         return String.format("FRONT: %s%nBACK: %s", frontDetail, backDetail);
     }
