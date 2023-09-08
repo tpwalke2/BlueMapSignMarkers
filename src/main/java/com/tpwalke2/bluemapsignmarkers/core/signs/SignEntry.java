@@ -2,6 +2,7 @@ package com.tpwalke2.bluemapsignmarkers.core.signs;
 
 public record SignEntry(
         SignEntryKey key,
+        String playerId,
         SignLinesParseResult frontText,
         SignLinesParseResult backText) {
 
