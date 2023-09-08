@@ -81,24 +81,8 @@ modrinth {
 	gameVersions.addAll("1.20", "1.20.1")
 	loaders.add("fabric")
 	dependencies {
-		required.project("P7dR8mSH")
-		required.project("swbUV1cr")
+		required.project("P7dR8mSH") // Fabric API
+		required.project("swbUV1cr") // BlueMap
 	}
-}
-
-// configure the maven publication
-publishing {
-	publications {
-		mavenJava(MavenPublication) {
-			from components.java
-		}
-	}
-
-	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
-	repositories {
-		// Add repositories to publish to here.
-		// Notice: This block does NOT have the same function as the block in the top level.
-		// The repositories here will be used for publishing your artifact, not for
-		// retrieving dependencies.
-	}
+	syncBodyFrom = rootProject.file("README.md").text
 }
