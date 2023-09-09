@@ -24,6 +24,8 @@ jobs:
           key: "${{ runner.os }}-bluemapsignmarkers-${{ hashFiles('**/*.gradle*') }}"
           restore-keys: |
             ${{ runner.os }}-bluemapsignmarkers-
+      - name: make gradle wrapper executable
+        run: chmod +x ./gradlew
       - name: Build with Gradle
         env:
           MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
