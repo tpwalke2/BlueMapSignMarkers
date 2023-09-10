@@ -16,7 +16,7 @@ jobs:
         with:
           java-version: 17
           distribution: 'microsoft'
-      - uses: actions/cache@v2
+      - uses: actions/cache@v3
         with:
           path: |
             ~/.gradle/caches
@@ -26,7 +26,7 @@ jobs:
             ${{ runner.os }}-bluemapsignmarkers-
       - name: make gradle wrapper executable
         run: chmod +x ./gradlew
-      - name: Build with Gradle
+      - name: Publish to Modrinth
         env:
           MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
         run: ./gradlew modrinth
