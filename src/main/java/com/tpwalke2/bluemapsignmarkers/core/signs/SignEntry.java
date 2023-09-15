@@ -12,6 +12,7 @@ public record SignEntry(
         if (!(o instanceof SignEntry signEntry)) return false;
 
         return key.equals(signEntry.key)
+                && playerId.equals(signEntry.playerId)
                 && frontText.equals(signEntry.frontText)
                 && backText.equals(signEntry.backText);
     }
@@ -19,6 +20,7 @@ public record SignEntry(
     @Override
     public int hashCode() {
         int result = key.hashCode();
+        result = 31 * result + playerId.hashCode();
         result = 31 * result + frontText.hashCode();
         result = 31 * result + backText.hashCode();
         return result;
@@ -28,6 +30,7 @@ public record SignEntry(
     public String toString() {
         return "SignEntry{" +
                 "key=" + key +
+                ", playerId='" + playerId + "'" +
                 ", frontText=" + frontText.toString() +
                 ", backText=" + backText.toString() +
                 '}';
