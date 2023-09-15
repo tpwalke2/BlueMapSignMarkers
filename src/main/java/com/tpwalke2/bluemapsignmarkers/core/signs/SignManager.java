@@ -36,7 +36,7 @@ public class SignManager {
 
     private SignManager() {
         MarkerSetIdentifierCollection markerSetIdentifierCollection = new MarkerSetIdentifierCollection();
-        blueMapAPIConnector = new BlueMapAPIConnector(markerSetIdentifierCollection);
+        blueMapAPIConnector = new BlueMapAPIConnector();
         actionFactory = new ActionFactory(markerSetIdentifierCollection);
     }
 
