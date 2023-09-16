@@ -7,11 +7,9 @@ import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.MarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.UpdateMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifier;
-import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifierCollection;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerType;
 import com.tpwalke2.bluemapsignmarkers.core.reactive.ReactiveQueue;
 import de.bluecolored.bluemap.api.BlueMapAPI;
-import de.bluecolored.bluemap.api.BlueMapMap;
 import de.bluecolored.bluemap.api.markers.MarkerSet;
 import de.bluecolored.bluemap.api.markers.POIMarker;
 import org.slf4j.Logger;
@@ -22,13 +20,11 @@ import java.util.Optional;
 
 public class BlueMapAPIConnector {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
-    private final MarkerSetIdentifierCollection markerSetIdentifierCollection;
     private final ReactiveQueue<MarkerAction> markerActionQueue;
     private final HashMap<MarkerSetIdentifier, MarkerSet> markerSets;
+    private BlueMapAPI blueMapAPI;
 
-    public BlueMapAPIConnector(MarkerSetIdentifierCollection markerSetIdentifierCollection) {
-        this.markerSetIdentifierCollection = markerSetIdentifierCollection;
-
+    public BlueMapAPIConnector() {
         markerActionQueue = new ReactiveQueue<>(
                 () -> BlueMapAPI.getInstance().isPresent(),
                 this::processMarkerAction,
@@ -53,7 +49,7 @@ public class BlueMapAPIConnector {
     private void processMarkerAction(MarkerAction markerAction) {
         LOGGER.info("Processing marker action: {}", markerAction);
 
-        var markerSet = Optional.ofNullable(markerSets.get(markerAction.getMarkerIdentifier().parentSet()));
+        var markerSet = getMarkerSet(markerAction.getMarkerIdentifier().parentSet());
 
         if (markerSet.isEmpty()) {
             LOGGER.warn("Marker set not found.");
@@ -93,7 +89,7 @@ public class BlueMapAPIConnector {
     }
 
     private void onEnable(BlueMapAPI api) {
-        buildMarkerSets(api);
+        this.blueMapAPI = api;
         markerActionQueue.process();
     }
 
@@ -101,33 +97,33 @@ public class BlueMapAPIConnector {
         markerActionQueue.shutdown();
     }
 
-    private WorldMap getMap(String mapId) {
-        return Optional
-                .ofNullable(WorldMap.valueOfId(mapId.toLowerCase()))
-                .orElse(WorldMap.UNKNOWN);
-    }
+    private Optional<MarkerSet> getMarkerSet(MarkerSetIdentifier markerSetIdentifier) {
+        var result = Optional.ofNullable(markerSets.get(markerSetIdentifier));
 
-    private void buildMarkerSets(BlueMapAPI api) {
-        LOGGER.info("Building marker sets...");
-        for (BlueMapMap map : api.getMaps()) {
-            var markerMap = getMap(map.getId());
-            if (markerMap == WorldMap.UNKNOWN) continue;
+        if (result.isPresent()) return result;
+        if (markerSetIdentifier.map() == WorldMap.UNKNOWN) {
+            LOGGER.warn("Unknown map: {}", markerSetIdentifier.map());
+            return result;
+        }
 
-            for (MarkerType markerType: MarkerType.values()) {
-                var key = markerSetIdentifierCollection.getIdentifier(
-                        markerMap,
-                        markerType);
+        LOGGER.info("Marker set not found. Attempting to build marker set: {}", markerSetIdentifier);
 
-                var markerSet = Optional.ofNullable(markerSets.get(key))
-                        .or(() -> Optional.ofNullable(map.getMarkerSets().get(markerType.id)))
-                        .orElseGet(() -> MarkerSet.builder()
-                        .label(markerType.label)
+        var map = this.blueMapAPI.getMap(markerSetIdentifier.map().id.toLowerCase());
+        if (map.isEmpty()) {
+            LOGGER.warn("Map not found: {}", markerSetIdentifier.map());
+            return result;
+        }
+
+        var markerSet = Optional.ofNullable(markerSets.get(markerSetIdentifier))
+                .or(() -> Optional.ofNullable(map.get().getMarkerSets().get(markerSetIdentifier.markerType().id)))
+                .orElseGet(() -> MarkerSet.builder()
+                        .label(markerSetIdentifier.markerType().label)
                         .build());
 
-                LOGGER.info("Caching marker set: {}", key);
-                markerSets.putIfAbsent(key, markerSet);
-                map.getMarkerSets().putIfAbsent(markerType.id, markerSet);
-            }
-        }
+        LOGGER.info("Caching marker set: {}", markerSetIdentifier);
+        markerSets.putIfAbsent(markerSetIdentifier, markerSet);
+        map.get().getMarkerSets().putIfAbsent(markerSetIdentifier.markerType().id, markerSet);
+
+        return Optional.of(markerSet);
     }
 }
