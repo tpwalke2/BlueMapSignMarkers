@@ -3,7 +3,9 @@
 # certain platforms or Java versions, and provides a first line of defence
 # against bad commits.
 
-name: build
+name: Build
+run-name: Build by @${{ github.actor }}
+
 on: [pull_request, push]
 
 jobs:
