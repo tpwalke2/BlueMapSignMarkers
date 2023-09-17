@@ -75,8 +75,14 @@ jar {
 modrinth {
 	token = System.getenv("MODRINTH_TOKEN")
 	projectId = "i5ZtmNIW"
-	version = project.mod_version
-	changelog.set("Releasenotes and Changelog:\\nhttps://github.com/tpwalke2/BlueMapSignMarkers/releases/tag/v${project.version}")
+	if (project.hasProperty('isRelease')) {
+		version = version = "${project.mod_version}.${project.findProperty('buildNumber')}"
+		versionType = "release"
+		changelog.set("Releasenotes and Changelog:\\nhttps://github.com/tpwalke2/BlueMapSignMarkers/releases/tag/v${project.mod_version}")
+	} else {
+		version = "${project.mod_version}.${project.findProperty('buildNumber')}-alpha"
+		versionType = "alpha"
+	}
 	uploadFile = remapJar
 	gameVersions.addAll("1.20", "1.20.1")
 	loaders.add("fabric")
