@@ -1,7 +1,8 @@
 package com.tpwalke2.bluemapsignmarkers.core.signs;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.tpwalke2.bluemapsignmarkers.Constants;
-import de.bluecolored.bluemap.api.gson.MarkerGson;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -14,6 +15,9 @@ import java.nio.file.Paths;
 
 public class SignProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
+    private static final Gson INSTANCE = new GsonBuilder()
+            .setLenient()
+            .create();
 
     private SignProvider() {}
 
@@ -27,7 +31,7 @@ public class SignProvider {
         }
 
         try (FileReader reader = new FileReader(file)) {
-            var signEntries = MarkerGson.INSTANCE.fromJson(reader, SignEntry[].class);
+            var signEntries = INSTANCE.fromJson(reader, SignEntry[].class);
 
             for (SignEntry signEntry : signEntries) {
                 SignManager.addOrUpdate(signEntry);
@@ -53,7 +57,7 @@ public class SignProvider {
 
         try (FileWriter writer = new FileWriter(path)) {
             var signEntries = SignManager.getAll();
-            MarkerGson.INSTANCE.toJson(signEntries, writer);
+            INSTANCE.toJson(signEntries, writer);
         } catch (Exception e) {
             LOGGER.error("Failed to save markers to file", e);
         }
