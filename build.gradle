@@ -35,6 +35,9 @@ dependencies {
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
 	compileOnly "com.github.BlueMap-Minecraft:BlueMapAPI:v${project.blue_map_api_version}"
+
+	compileOnly 'org.spongepowered:configurate-hocon:4.0.0'
+	compileOnly 'org.spongepowered:configurate-gson:4.0.0'
 }
 
 processResources {
