@@ -15,7 +15,7 @@ import java.nio.file.Paths;
 
 public class SignProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
-    private static final Gson INSTANCE = new GsonBuilder()
+    private static final Gson GSON = new GsonBuilder()
             .setLenient()
             .create();
 
@@ -31,7 +31,7 @@ public class SignProvider {
         }
 
         try (FileReader reader = new FileReader(file)) {
-            var signEntries = INSTANCE.fromJson(reader, SignEntry[].class);
+            var signEntries = GSON.fromJson(reader, SignEntry[].class);
 
             for (SignEntry signEntry : signEntries) {
                 SignManager.addOrUpdate(signEntry);
@@ -57,7 +57,7 @@ public class SignProvider {
 
         try (FileWriter writer = new FileWriter(path)) {
             var signEntries = SignManager.getAll();
-            INSTANCE.toJson(signEntries, writer);
+            GSON.toJson(signEntries, writer);
         } catch (Exception e) {
             LOGGER.error("Failed to save markers to file", e);
         }

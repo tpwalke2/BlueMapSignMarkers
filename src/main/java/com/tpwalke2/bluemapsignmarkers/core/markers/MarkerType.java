@@ -1,14 +1,12 @@
 package com.tpwalke2.bluemapsignmarkers.core.markers;
 
 public enum MarkerType {
-    POI("points_of_interest", "Points of Interest", "[map]");
+    POI("points_of_interest", "Points of Interest");
     public final String id;
     public final String label;
-    public final String prefix;
 
-    MarkerType(String id, String label, String prefix) {
+    MarkerType(String id, String label) {
         this.id = id;
         this.label = label;
-        this.prefix = prefix;
     }
 }

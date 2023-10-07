@@ -4,7 +4,7 @@ import org.spongepowered.configurate.objectmapping.ConfigSerializable;
 
 @SuppressWarnings({"FieldMayBeFinal", "FieldCanBeLocal"})
 @ConfigSerializable
-public class CoreConfig {
+public class BMSMConfig {
     private String poiPrefix = "[poi]";
 
     public String getPoiPrefix() {
