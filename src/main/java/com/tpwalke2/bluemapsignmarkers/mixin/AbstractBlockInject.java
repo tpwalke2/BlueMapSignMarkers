@@ -1,7 +1,7 @@
 package com.tpwalke2.bluemapsignmarkers.mixin;
 
-import com.tpwalke2.bluemapsignmarkers.core.signs.SignHelper;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignEntryKey;
+import com.tpwalke2.bluemapsignmarkers.core.signs.SignHelper;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignManager;
 import net.minecraft.block.AbstractBlock;
 import net.minecraft.block.AbstractSignBlock;
