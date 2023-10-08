@@ -5,8 +5,8 @@
   "mixins": [],
   "client": [],
   "server": [
-    "SignBlockEntityInject",
-    "AbstractBlockInject"
+    "AbstractBlockInject",
+    "SignBlockEntityInject"
   ],
   "injectors": {
     "defaultRequire": 1

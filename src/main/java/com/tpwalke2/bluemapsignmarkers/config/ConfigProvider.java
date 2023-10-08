@@ -1,81 +1,79 @@
 package com.tpwalke2.bluemapsignmarkers.config;
 
+import com.google.gson.ExclusionStrategy;
+import com.google.gson.FieldAttributes;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.tpwalke2.bluemapsignmarkers.Constants;
 import org.apache.commons.io.IOUtils;
-import org.spongepowered.configurate.ConfigurationNode;
-import org.spongepowered.configurate.hocon.HoconConfigurationLoader;
-import org.spongepowered.configurate.loader.ConfigurationLoader;
-import org.spongepowered.configurate.serialize.SerializationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Objects;
+import java.nio.file.Paths;
 
 public class ConfigProvider {
-    private final Path configRoot;
+    private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
+    private static final Gson GSON = new GsonBuilder()
+            .setLenient()
+            .setPrettyPrinting()
+            .create();
 
-    public ConfigProvider(Path configRoot) {
-        this.configRoot = configRoot;
+    private ConfigProvider() {}
+
+    private static Path getConfigPath() {
+        return Path.of("config", Constants.MOD_ID, "BMSM-Core.json");
     }
 
-    public <T> T loadConfig(Path rawPath, Class<T> type) throws ConfigurationException {
-        Path path = findConfigPath(rawPath);
-        ConfigurationNode configNode = loadConfigFile(path);
-        try {
-            return Objects.requireNonNull(configNode.get(type));
-        } catch (SerializationException | NullPointerException ex) {
-            throw new ConfigurationException(
-                    "BlueMap failed to parse this file:\n" +
-                            path + "\n" +
-                            "Check if the file is correctly formatted and all values are correct!",
-                    ex);
+    public static BMSMConfig loadConfig() {
+        return loadConfigFile(getConfigPath());
+    }
+
+    public static void saveConfig(BMSMConfig config) {
+        var path = getConfigPath();
+        LOGGER.info("Saving config to file: {}...", path);
+
+        var file = path.toFile();
+        var parent = file.getParentFile();
+        if (!parent.exists()) {
+            try {
+                Files.createDirectories(Paths.get(parent.getAbsolutePath()));
+            } catch (IOException e) {
+                LOGGER.error("Failed to create parent directories for config", e);
+                return;
+            }
+        }
+
+        try (FileWriter writer = new FileWriter(file)) {
+            GSON.toJson(config, writer);
+        } catch (Exception e) {
+            LOGGER.error("Failed to save config", e);
         }
     }
 
-    public String loadDefaultConfig(String resource) throws IOException {
+    public static BMSMConfig loadDefaultConfig(String resource) throws IOException {
         var in = ConfigProvider.class.getResourceAsStream(resource);
         if (in == null) throw new IOException("Resource not found: " + resource);
-        return IOUtils.toString(in, StandardCharsets.UTF_8);
+        return GSON.fromJson(IOUtils.toString(in, StandardCharsets.UTF_8), BMSMConfig.class);
     }
 
-    public Path findConfigPath(Path rawPath) {
-        if (!rawPath.startsWith(configRoot)) {
-            rawPath = configRoot.resolve(rawPath);
-        }
-
-        return rawPath.getFileName().endsWith(".conf")
-                ? rawPath
-                : rawPath.resolveSibling(rawPath.getFileName() + ".conf");
-    }
-
-    private ConfigurationNode loadConfigFile(Path path) throws ConfigurationException {
+    private static BMSMConfig loadConfigFile(Path path) {
         if (!Files.exists(path)) {
-            throw new ConfigurationException(
-                    "This config file does not exist:\n" +
-                            path);
+            LOGGER.info("Config file does not exist: {}", path);
+            return null;
         }
 
-        if (!Files.isReadable(path)) {
-            throw new ConfigurationException(
-                    "This file is not accessible:\n" +
-                            path);
+        try (FileReader reader = new FileReader(path.toFile())) {
+            LOGGER.info("Loading config file: {}", path);
+            return GSON.fromJson(reader, BMSMConfig.class);
+        } catch (Exception e) {
+            LOGGER.error("Failed to load config:", e);
+            return null;
         }
-
-        try {
-            return  getLoader(path).load();
-        } catch (IOException ex) {
-            throw new ConfigurationException(
-                    "BlueMap tried to read this file, but failed:\n" +
-                            path + "\n" +
-                            "Check if BlueMap has the permission to read this file.",
-                    ex);
-        }
-    }
-
-    private ConfigurationLoader<? extends ConfigurationNode> getLoader(Path path) {
-        return HoconConfigurationLoader.builder()
-                .path(path)
-                .build();
     }
 }
