@@ -34,16 +34,10 @@ public class SignHelper {
                 getParsedSignText(signBlockEntity.getBackText()));
     }
 
-    public static WorldMap getSignParentMap(World world) {
+    public static String getSignParentMap(World world) {
         if (world == null) return WorldMap.UNKNOWN;
 
-        var registryKey = world.getRegistryKey();
-
-        if (registryKey.equals(World.NETHER)) return WorldMap.NETHER;
-        if (registryKey.equals(World.END)) return WorldMap.END;
-        if (registryKey.equals(World.OVERWORLD)) return WorldMap.OVERWORLD;
-
-        return WorldMap.UNKNOWN;
+        return world.getRegistryKey().getValue().toString();
     }
 
     private static SignLinesParseResult getParsedSignText(SignText signText) {

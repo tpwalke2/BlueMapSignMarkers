@@ -1,6 +1,5 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap.actions;
 
-import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifierCollection;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerType;
@@ -16,7 +15,7 @@ public class ActionFactory {
             int x,
             int y,
             int z,
-            WorldMap map,
+            String map,
             String label,
             String detail) {
         return new AddMarkerAction(
@@ -33,7 +32,7 @@ public class ActionFactory {
             int x,
             int y,
             int z,
-            WorldMap map) {
+            String map) {
         return new RemoveMarkerAction(
                 new MarkerIdentifier(
                         x,
@@ -46,7 +45,7 @@ public class ActionFactory {
             int x,
             int y,
             int z,
-            WorldMap map,
+            String map,
             String newLabel,
             String newDetail) {
         return new UpdateMarkerAction(

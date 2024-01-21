@@ -49,7 +49,7 @@ public class SignManager {
     }
 
     private void addOrUpdateSign(SignEntry signEntry) {
-        var key = signEntry.key();
+        var key = signEntry.key().withNormalizedMapId();
         var existing = signCache.get(key);
 
         var isPOIMarker = SignEntryHelper.isMarkerType(signEntry, MarkerType.POI);
@@ -64,7 +64,7 @@ public class SignManager {
                             key.x(),
                             key.y(),
                             key.z(),
-                            key.parentMap(),
+                            key.getParentMap(),
                             label,
                             detail));
             return;
@@ -91,7 +91,7 @@ public class SignManager {
                             key.x(),
                             key.y(),
                             key.z(),
-                            key.parentMap(),
+                            key.getParentMap(),
                             label,
                             detail));
         }
@@ -105,7 +105,7 @@ public class SignManager {
                         key.x(),
                         key.y(),
                         key.z(),
-                        key.parentMap()));
+                        key.getParentMap()));
     }
 
     private void removeEntry(SignEntry signEntry) {

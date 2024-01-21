@@ -1,24 +1,22 @@
 package com.tpwalke2.bluemapsignmarkers.core.markers;
 
-import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
-
 import java.util.*;
 
 public class MarkerSetIdentifierCollection {
-    private final Map<WorldMap, Set<MarkerSetIdentifier>> mapByMap;
+    private final Map<String, Set<MarkerSetIdentifier>> mapByMap;
     private final Map<MarkerType, Set<MarkerSetIdentifier>> mapByMarkerSetId;
 
     public MarkerSetIdentifierCollection() {
-        mapByMap = new EnumMap<>(WorldMap.class);
+        mapByMap = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         mapByMarkerSetId = new EnumMap<>(MarkerType.class);
     }
 
-    public MarkerSetIdentifier getIdentifier(WorldMap map, MarkerType markerSetId) {
-        var byMap = Optional.ofNullable(mapByMap.get(map));
+    public MarkerSetIdentifier getIdentifier(String mapId, MarkerType markerSetId) {
+        var byMap = Optional.ofNullable(mapByMap.get(mapId));
         var byMarkerSetId = Optional.ofNullable(mapByMarkerSetId.get(markerSetId));
 
         if (byMap.isEmpty()
-                || byMarkerSetId.isEmpty()) return addIdentifier(map, markerSetId);
+                || byMarkerSetId.isEmpty()) return addIdentifier(mapId, markerSetId);
 
         var intersection = byMap.get()
                 .stream()
@@ -26,15 +24,15 @@ public class MarkerSetIdentifierCollection {
                 .toList();
 
         return intersection.isEmpty()
-                ? addIdentifier(map, markerSetId)
+                ? addIdentifier(mapId, markerSetId)
                 : intersection.get(0);
     }
 
-    private MarkerSetIdentifier addIdentifier(WorldMap map, MarkerType markerSetId) {
-        var markerKey = new MarkerSetIdentifier(map, markerSetId);
+    private MarkerSetIdentifier addIdentifier(String mapId, MarkerType markerSetId) {
+        var markerKey = new MarkerSetIdentifier(mapId, markerSetId);
 
-        mapByMap.putIfAbsent(markerKey.map(), new HashSet<>());
-        mapByMap.get(markerKey.map()).add(markerKey);
+        mapByMap.putIfAbsent(markerKey.mapId(), new HashSet<>());
+        mapByMap.get(markerKey.mapId()).add(markerKey);
 
         mapByMarkerSetId.putIfAbsent(markerKey.markerType(), new HashSet<>());
         mapByMarkerSetId.get(markerKey.markerType()).add(markerKey);
