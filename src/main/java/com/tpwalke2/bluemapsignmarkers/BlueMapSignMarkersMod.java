@@ -3,7 +3,7 @@ package com.tpwalke2.bluemapsignmarkers;
 import com.tpwalke2.bluemapsignmarkers.config.ConfigManager;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignHelper;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignManager;
-import com.tpwalke2.bluemapsignmarkers.core.signs.SignProvider;
+import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.SignProvider;
 import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerBlockEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
