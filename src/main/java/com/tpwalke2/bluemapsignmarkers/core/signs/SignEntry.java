@@ -6,6 +6,10 @@ public record SignEntry(
         SignLinesParseResult frontText,
         SignLinesParseResult backText) {
 
+    public SignEntry withKey(SignEntryKey key) {
+        return new SignEntry(key, playerId, frontText, backText);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

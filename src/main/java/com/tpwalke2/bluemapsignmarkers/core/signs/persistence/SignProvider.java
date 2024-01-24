@@ -5,6 +5,8 @@ import com.google.gson.GsonBuilder;
 import com.tpwalke2.bluemapsignmarkers.Constants;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignEntry;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignManager;
+import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.loaders.Version1SignEntryLoader;
+import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.loaders.VersionedFileSignEntryLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,7 +23,8 @@ public class SignProvider {
             .setLenient()
             .create();
 
-    private SignProvider() {}
+    private SignProvider() {
+    }
 
     public static void loadSigns(String path) {
         LOGGER.info("Loading markers from file: {}...", path);
@@ -42,19 +45,11 @@ public class SignProvider {
 
         try {
             // versioned file attempt
-            var signEntries = loadVersionedSignEntries(signsContent);
+            var signEntries = VersionedFileSignEntryLoader.loadSignEntries(signsContent, GSON);
 
             // version 1 attempt
             if (signEntries == null) {
-
-                signEntries = GSON.fromJson(signsContent, SignEntry[].class);
-
-                var preMigrationBackupPath = path + ".v1.bak";
-                var preMigrationBackupFile = new File(preMigrationBackupPath);
-                if (!preMigrationBackupFile.exists()) {
-                    LOGGER.info("Creating backup of markers file...");
-                    copyFile(path, preMigrationBackupPath);
-                }
+                signEntries = Version1SignEntryLoader.loadSignEntries(path, signsContent, GSON);
             }
 
             for (SignEntry signEntry : signEntries) {
@@ -62,26 +57,6 @@ public class SignProvider {
             }
         } catch (Exception e) {
             LOGGER.error("Failed to load markers from file", e);
-        }
-    }
-
-    private static SignEntry[] loadVersionedSignEntries(String content) {
-        try {
-            var versionedSignFile = GSON.fromJson(content, VersionedSignFile.class);
-            if (versionedSignFile.version() == SignFileVersions.V2) {
-                return GSON.fromJson(versionedSignFile.data(), SignEntry[].class);
-            }
-        } catch (Exception e) {
-            LOGGER.warn("Failed to load versioned sign file, falling back to version 1", e);
-        }
-        return null;
-    }
-
-    private static void copyFile(String sourcePath, String destinationPath) {
-        try {
-            Files.copy(Paths.get(sourcePath), Paths.get(destinationPath));
-        } catch (IOException e) {
-            LOGGER.warn("Failed to copy {} to {}: {}", sourcePath, destinationPath, e);
         }
     }
 

@@ -1,6 +1,12 @@
 package com.tpwalke2.bluemapsignmarkers.core.signs;
 
-import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
+public record SignEntryKey(
+        int x,
+        int y,
+        int z,
+        String parentMap) {
 
-public record SignEntryKey(int x, int y, int z, WorldMap parentMap) {
+    public SignEntryKey withParentMap(String parentMap) {
+        return new SignEntryKey(x, y, z, parentMap);
+    }
 }

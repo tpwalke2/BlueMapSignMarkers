@@ -1,7 +1,6 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap;
 
 import com.tpwalke2.bluemapsignmarkers.Constants;
-import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.AddMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.MarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMarkerAction;
@@ -10,18 +9,23 @@ import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerType;
 import com.tpwalke2.bluemapsignmarkers.core.reactive.ReactiveQueue;
 import de.bluecolored.bluemap.api.BlueMapAPI;
+import de.bluecolored.bluemap.api.BlueMapMap;
 import de.bluecolored.bluemap.api.markers.MarkerSet;
 import de.bluecolored.bluemap.api.markers.POIMarker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class BlueMapAPIConnector {
+    public static final String MAP_NOT_FOUND = "Map not found: {}";
+    public static final String WORLD_NOT_FOUND = "World not found: {}";
+    public static final String WORLD_MAPS_EMPTY = "World maps empty: {}";
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
     private final ReactiveQueue<MarkerAction> markerActionQueue;
-    private final HashMap<MarkerSetIdentifier, MarkerSet> markerSets;
+    private final Map<MarkerSetIdentifier, MarkerSet> markerSets;
     private BlueMapAPI blueMapAPI;
 
     public BlueMapAPIConnector() {
@@ -31,7 +35,7 @@ public class BlueMapAPIConnector {
                 this::onError
         );
 
-        markerSets = new HashMap<>();
+        markerSets = new ConcurrentHashMap<>();
 
         BlueMapAPI.onEnable(this::onEnable);
         BlueMapAPI.onDisable(this::onDisable);
@@ -97,20 +101,15 @@ public class BlueMapAPIConnector {
         markerActionQueue.shutdown();
     }
 
-    private Optional<MarkerSet> getMarkerSet(MarkerSetIdentifier markerSetIdentifier) {
+    private synchronized Optional<MarkerSet> getMarkerSet(MarkerSetIdentifier markerSetIdentifier) {
         var result = Optional.ofNullable(markerSets.get(markerSetIdentifier));
 
         if (result.isPresent()) return result;
-        if (markerSetIdentifier.map() == WorldMap.UNKNOWN) {
-            LOGGER.warn("Unknown map: {}", markerSetIdentifier.map());
-            return result;
-        }
 
         LOGGER.info("Marker set not found. Attempting to build marker set: {}", markerSetIdentifier);
-
-        var map = this.blueMapAPI.getMap(markerSetIdentifier.map().id.toLowerCase());
+        var map = getMap(markerSetIdentifier.mapId());
         if (map.isEmpty()) {
-            LOGGER.warn("Map not found: {}", markerSetIdentifier.map());
+            LOGGER.warn(MAP_NOT_FOUND, markerSetIdentifier.mapId());
             return result;
         }
 
@@ -125,5 +124,26 @@ public class BlueMapAPIConnector {
         map.get().getMarkerSets().putIfAbsent(markerSetIdentifier.markerType().id, markerSet);
 
         return Optional.of(markerSet);
+    }
+
+    private Optional<BlueMapMap> getMap(String mapId) {
+        var result = this.blueMapAPI.getMap(mapId);
+
+        if (result.isPresent()) return result;
+
+        var world = this.blueMapAPI.getWorld(mapId);
+
+        if (world.isEmpty()) {
+            LOGGER.warn(WORLD_NOT_FOUND, mapId);
+            return Optional.empty();
+        }
+
+        var maps = world.get().getMaps();
+        if (maps.isEmpty()) {
+            LOGGER.warn(WORLD_MAPS_EMPTY, mapId);
+            return Optional.empty();
+        }
+
+        return maps.stream().findFirst();
     }
 }
