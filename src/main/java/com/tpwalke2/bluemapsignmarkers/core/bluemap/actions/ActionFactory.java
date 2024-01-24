@@ -15,7 +15,7 @@ public class ActionFactory {
             int x,
             int y,
             int z,
-            String map,
+            String mapId,
             String label,
             String detail) {
         return new AddMarkerAction(
@@ -23,7 +23,7 @@ public class ActionFactory {
                         x,
                         y,
                         z,
-                        markerSetIdentifierCollection.getIdentifier(map, MarkerType.POI)),
+                        markerSetIdentifierCollection.getIdentifier(mapId, MarkerType.POI)),
                 label,
                 detail);
     }
@@ -32,20 +32,20 @@ public class ActionFactory {
             int x,
             int y,
             int z,
-            String map) {
+            String mapId) {
         return new RemoveMarkerAction(
                 new MarkerIdentifier(
                         x,
                         y,
                         z,
-                        markerSetIdentifierCollection.getIdentifier(map, MarkerType.POI)));
+                        markerSetIdentifierCollection.getIdentifier(mapId, MarkerType.POI)));
     }
 
     public UpdateMarkerAction createUpdatePOIAction(
             int x,
             int y,
             int z,
-            String map,
+            String mapId,
             String newLabel,
             String newDetail) {
         return new UpdateMarkerAction(
@@ -53,7 +53,7 @@ public class ActionFactory {
                         x,
                         y,
                         z,
-                        markerSetIdentifierCollection.getIdentifier(map, MarkerType.POI)),
+                        markerSetIdentifierCollection.getIdentifier(mapId, MarkerType.POI)),
                 newLabel,
                 newDetail);
     }
