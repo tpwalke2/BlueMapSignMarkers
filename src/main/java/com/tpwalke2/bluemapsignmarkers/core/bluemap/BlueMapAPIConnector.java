@@ -15,8 +15,9 @@ import de.bluecolored.bluemap.api.markers.POIMarker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class BlueMapAPIConnector {
     public static final String MAP_NOT_FOUND = "Map not found: {}";
@@ -24,7 +25,7 @@ public class BlueMapAPIConnector {
     public static final String WORLD_MAPS_EMPTY = "World maps empty: {}";
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
     private final ReactiveQueue<MarkerAction> markerActionQueue;
-    private final HashMap<MarkerSetIdentifier, MarkerSet> markerSets;
+    private final Map<MarkerSetIdentifier, MarkerSet> markerSets;
     private BlueMapAPI blueMapAPI;
 
     public BlueMapAPIConnector() {
@@ -34,7 +35,7 @@ public class BlueMapAPIConnector {
                 this::onError
         );
 
-        markerSets = new HashMap<>();
+        markerSets = new ConcurrentHashMap<>();
 
         BlueMapAPI.onEnable(this::onEnable);
         BlueMapAPI.onDisable(this::onDisable);
@@ -100,13 +101,13 @@ public class BlueMapAPIConnector {
         markerActionQueue.shutdown();
     }
 
-    private Optional<MarkerSet> getMarkerSet(MarkerSetIdentifier markerSetIdentifier) {
+    private synchronized Optional<MarkerSet> getMarkerSet(MarkerSetIdentifier markerSetIdentifier) {
         var result = Optional.ofNullable(markerSets.get(markerSetIdentifier));
 
         if (result.isPresent()) return result;
 
         LOGGER.info("Marker set not found. Attempting to build marker set: {}", markerSetIdentifier);
-        var map = getMap(markerSetIdentifier.mapId().toLowerCase());
+        var map = getMap(markerSetIdentifier.mapId());
         if (map.isEmpty()) {
             LOGGER.warn(MAP_NOT_FOUND, markerSetIdentifier.mapId());
             return result;
