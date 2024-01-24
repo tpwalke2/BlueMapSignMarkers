@@ -6,7 +6,13 @@
 name: Build
 run-name: Build by @${{ github.actor }}
 
-on: [pull_request, push]
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
   build:
