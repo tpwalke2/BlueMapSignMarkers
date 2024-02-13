@@ -57,7 +57,7 @@ public class SignManager {
         var detail = SignEntryHelper.getDetail(signEntry);
 
         if (existing == null && isPOIMarker) {
-            LOGGER.info("Adding POI marker: {}", signEntry);
+            LOGGER.debug("Adding POI marker: {}", signEntry);
             signCache.put(key, signEntry);
             blueMapAPIConnector.dispatch(
                     actionFactory.createAddPOIAction(
@@ -71,12 +71,12 @@ public class SignManager {
         }
 
         if (existing != null && !isPOIMarker) {
-            LOGGER.info("Removing POI marker: {}", signEntry);
+            LOGGER.debug("Removing POI marker: {}", signEntry);
             removeEntry(signEntry);
         }
 
         if (existing != null && isPOIMarker) {
-            LOGGER.info("Updating POI marker: {}", signEntry);
+            LOGGER.debug("Updating POI marker: {}", signEntry);
             if (signEntry.playerId().equals("unknown")) {
                 signCache.put(key, new SignEntry(
                         key,
