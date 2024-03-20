@@ -1,10 +1,9 @@
 package com.tpwalke2.bluemapsignmarkers.config;
 
-import com.google.gson.ExclusionStrategy;
-import com.google.gson.FieldAttributes;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.tpwalke2.bluemapsignmarkers.Constants;
+import com.tpwalke2.bluemapsignmarkers.config.models.BMSMConfigV1;
 import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,11 +29,11 @@ public class ConfigProvider {
         return Path.of("config", Constants.MOD_ID, "BMSM-Core.json");
     }
 
-    public static BMSMConfig loadConfig() {
+    public static BMSMConfigV1 loadConfig() {
         return loadConfigFile(getConfigPath());
     }
 
-    public static void saveConfig(BMSMConfig config) {
+    public static void saveConfig(BMSMConfigV1 config) {
         var path = getConfigPath();
         LOGGER.info("Saving config to file: {}...", path);
 
@@ -56,13 +55,13 @@ public class ConfigProvider {
         }
     }
 
-    public static BMSMConfig loadDefaultConfig(String resource) throws IOException {
+    public static BMSMConfigV1 loadDefaultConfig(String resource) throws IOException {
         var in = ConfigProvider.class.getResourceAsStream(resource);
         if (in == null) throw new IOException("Resource not found: " + resource);
-        return GSON.fromJson(IOUtils.toString(in, StandardCharsets.UTF_8), BMSMConfig.class);
+        return GSON.fromJson(IOUtils.toString(in, StandardCharsets.UTF_8), BMSMConfigV1.class);
     }
 
-    private static BMSMConfig loadConfigFile(Path path) {
+    private static BMSMConfigV1 loadConfigFile(Path path) {
         if (!Files.exists(path)) {
             LOGGER.info("Config file does not exist: {}", path);
             return null;
@@ -70,7 +69,7 @@ public class ConfigProvider {
 
         try (FileReader reader = new FileReader(path.toFile())) {
             LOGGER.info("Loading config file: {}", path);
-            return GSON.fromJson(reader, BMSMConfig.class);
+            return GSON.fromJson(reader, BMSMConfigV1.class);
         } catch (Exception e) {
             LOGGER.error("Failed to load config:", e);
             return null;
