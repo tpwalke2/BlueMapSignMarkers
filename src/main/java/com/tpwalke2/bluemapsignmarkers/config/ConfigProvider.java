@@ -4,11 +4,13 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.tpwalke2.bluemapsignmarkers.Constants;
 import com.tpwalke2.bluemapsignmarkers.config.models.BMSMConfigV1;
-import org.apache.commons.io.IOUtils;
+import com.tpwalke2.bluemapsignmarkers.config.models.BMSMConfigV2;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.FileReader;
+import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -29,11 +31,7 @@ public class ConfigProvider {
         return Path.of("config", Constants.MOD_ID, "BMSM-Core.json");
     }
 
-    public static BMSMConfigV1 loadConfig() {
-        return loadConfigFile(getConfigPath());
-    }
-
-    public static void saveConfig(BMSMConfigV1 config) {
+    public static void saveConfig(BMSMConfigV2 config) {
         var path = getConfigPath();
         LOGGER.info("Saving config to file: {}...", path);
 
@@ -55,24 +53,61 @@ public class ConfigProvider {
         }
     }
 
-    public static BMSMConfigV1 loadDefaultConfig(String resource) throws IOException {
-        var in = ConfigProvider.class.getResourceAsStream(resource);
-        if (in == null) throw new IOException("Resource not found: " + resource);
-        return GSON.fromJson(IOUtils.toString(in, StandardCharsets.UTF_8), BMSMConfigV1.class);
-    }
+    public static BMSMConfigV2 loadConfig() {
+        var file = getConfigPath().toFile();
 
-    private static BMSMConfigV1 loadConfigFile(Path path) {
-        if (!Files.exists(path)) {
-            LOGGER.info("Config file does not exist: {}", path);
+        LOGGER.info("Loading config from file: {}...", file);
+
+        if (!file.exists()) {
+            LOGGER.info("Markers file does not yet exist, skipping...");
+            return new BMSMConfigV2();
+        }
+
+        String configContent;
+        try {
+            configContent = Files.readString(file.toPath(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            LOGGER.error("Failed to read config file", e);
             return null;
         }
 
-        try (FileReader reader = new FileReader(path.toFile())) {
-            LOGGER.info("Loading config file: {}", path);
-            return GSON.fromJson(reader, BMSMConfigV1.class);
+        try {
+            // v1 attempt
+            var v1Config = GSON.fromJson(configContent, BMSMConfigV1.class);
+            if (v1Config != null && v1Config.getPoiPrefix() != null && !v1Config.getPoiPrefix().isEmpty()) {
+                return loadV1Config(file, v1Config);
+            }
+
+            // v2 attempt
+            return GSON.fromJson(configContent, BMSMConfigV2.class);
         } catch (Exception e) {
             LOGGER.error("Failed to load config:", e);
             return null;
+        }
+    }
+
+    private static BMSMConfigV2 loadV1Config(File file, BMSMConfigV1 v1Config) {
+        var path = file.toString();
+        LOGGER.info("Migrating config from v1 to v2...");
+        // make copy of v1 config
+        var preMigrationBackupPath = path + ".v1.bak";
+        var preMigrationBackupFile = new File(preMigrationBackupPath);
+        if (!preMigrationBackupFile.exists()) {
+            LOGGER.info("Creating backup of config file...");
+            copyFile(path, preMigrationBackupPath);
+        }
+
+        var v2Config = new BMSMConfigV2(new MarkerGroup(v1Config.getPoiPrefix(), MarkerGroupType.POI, "Points of Interest", null, 0, 0));
+        saveConfig(v2Config);
+        return v2Config;
+    }
+
+    // TODO: consolidate this with the same method in Version1SignEntryLoader
+    private static void copyFile(String sourcePath, String destinationPath) {
+        try {
+            Files.copy(Paths.get(sourcePath), Paths.get(destinationPath));
+        } catch (IOException e) {
+            LOGGER.warn("Failed to copy {} to {}: {}", sourcePath, destinationPath, e);
         }
     }
 }
