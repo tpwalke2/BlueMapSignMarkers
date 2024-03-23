@@ -3,6 +3,7 @@ package com.tpwalke2.bluemapsignmarkers.config;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.tpwalke2.bluemapsignmarkers.Constants;
+import com.tpwalke2.bluemapsignmarkers.common.FileUtils;
 import com.tpwalke2.bluemapsignmarkers.config.models.BMSMConfigV1;
 import com.tpwalke2.bluemapsignmarkers.config.models.BMSMConfigV2;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
@@ -94,20 +95,11 @@ public class ConfigProvider {
         var preMigrationBackupFile = new File(preMigrationBackupPath);
         if (!preMigrationBackupFile.exists()) {
             LOGGER.info("Creating backup of config file...");
-            copyFile(path, preMigrationBackupPath);
+            FileUtils.copyFile(path, preMigrationBackupPath);
         }
 
         var v2Config = new BMSMConfigV2(new MarkerGroup(v1Config.getPoiPrefix(), MarkerGroupType.POI, "Points of Interest", null, 0, 0));
         saveConfig(v2Config);
         return v2Config;
-    }
-
-    // TODO: consolidate this with the same method in Version1SignEntryLoader
-    private static void copyFile(String sourcePath, String destinationPath) {
-        try {
-            Files.copy(Paths.get(sourcePath), Paths.get(destinationPath));
-        } catch (IOException e) {
-            LOGGER.warn("Failed to copy {} to {}: {}", sourcePath, destinationPath, e);
-        }
     }
 }

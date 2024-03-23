@@ -2,6 +2,7 @@ package com.tpwalke2.bluemapsignmarkers.core.signs.persistence.loaders;
 
 import com.google.gson.Gson;
 import com.tpwalke2.bluemapsignmarkers.Constants;
+import com.tpwalke2.bluemapsignmarkers.common.FileUtils;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignEntry;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignEntryKey;
 import net.minecraft.world.World;
@@ -9,9 +10,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.Arrays;
 
 public class Version1SignEntryLoader {
@@ -29,7 +27,7 @@ public class Version1SignEntryLoader {
         var preMigrationBackupFile = new File(preMigrationBackupPath);
         if (!preMigrationBackupFile.exists()) {
             LOGGER.info("Creating backup of markers file...");
-            copyFile(path, preMigrationBackupPath);
+            FileUtils.copyFile(path, preMigrationBackupPath);
         }
 
         return signEntries;
@@ -56,13 +54,5 @@ public class Version1SignEntryLoader {
         if (result.equals(OVERWORLD)) return World.OVERWORLD.getValue().toString();
 
         return result;
-    }
-
-    private static void copyFile(String sourcePath, String destinationPath) {
-        try {
-            Files.copy(Paths.get(sourcePath), Paths.get(destinationPath));
-        } catch (IOException e) {
-            LOGGER.warn("Failed to copy {} to {}: {}", sourcePath, destinationPath, e);
-        }
     }
 }

@@ -16,6 +16,7 @@ public class VersionedFileSignEntryLoader {
     public static SignEntry[] loadSignEntries(String content, Gson gson) {
         try {
             var versionedSignFile = gson.fromJson(content, VersionedSignFile.class);
+            // TODO address loading prefix vs type in each sign entry
             if (versionedSignFile.version() == SignFileVersions.V2) {
                 LOGGER.info("Loading version 2 markers file...");
                 return gson.fromJson(versionedSignFile.data(), SignEntry[].class);

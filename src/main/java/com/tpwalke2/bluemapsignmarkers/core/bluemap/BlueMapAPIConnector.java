@@ -5,8 +5,8 @@ import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.AddMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.MarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.UpdateMarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifier;
-import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerType;
 import com.tpwalke2.bluemapsignmarkers.core.reactive.ReactiveQueue;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignManager;
 import de.bluecolored.bluemap.api.BlueMapAPI;
@@ -70,7 +70,7 @@ public class BlueMapAPIConnector {
 
         if (markerAction instanceof AddMarkerAction addAction) {
             LOGGER.debug("Adding marker...");
-            if (addAction.getMarkerIdentifier().parentSet().markerType() == MarkerType.POI) {
+            if (addAction.getMarkerIdentifier().parentSet().markerGroup().type() == MarkerGroupType.POI) {
                 var marker = POIMarker.builder()
                         .position(addAction.getX(), addAction.getY(), addAction.getZ())
                         .label(addAction.getLabel())
@@ -125,14 +125,14 @@ public class BlueMapAPIConnector {
         }
 
         var markerSet = Optional.ofNullable(markerSets.get(markerSetIdentifier))
-                .or(() -> Optional.ofNullable(map.get().getMarkerSets().get(markerSetIdentifier.markerType().id)))
+                .or(() -> Optional.ofNullable(map.get().getMarkerSets().get(markerSetIdentifier.markerGroup().prefix())))
                 .orElseGet(() -> MarkerSet.builder()
-                        .label(markerSetIdentifier.markerType().label)
+                        .label(markerSetIdentifier.markerGroup().name())
                         .build());
 
         LOGGER.debug("Caching marker set: {}", markerSetIdentifier);
         markerSets.putIfAbsent(markerSetIdentifier, markerSet);
-        map.get().getMarkerSets().putIfAbsent(markerSetIdentifier.markerType().id, markerSet);
+        map.get().getMarkerSets().putIfAbsent(markerSetIdentifier.markerGroup().prefix(), markerSet);
 
         return Optional.of(markerSet);
     }

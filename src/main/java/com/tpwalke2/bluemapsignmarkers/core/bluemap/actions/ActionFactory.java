@@ -1,8 +1,8 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap.actions;
 
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifierCollection;
-import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerType;
 
 public class ActionFactory {
     private final MarkerSetIdentifierCollection markerSetIdentifierCollection;
@@ -17,13 +17,14 @@ public class ActionFactory {
             int z,
             String mapId,
             String label,
-            String detail) {
+            String detail,
+            MarkerGroup markerGroup) {
         return new AddMarkerAction(
                 new MarkerIdentifier(
                         x,
                         y,
                         z,
-                        markerSetIdentifierCollection.getIdentifier(mapId, MarkerType.POI)),
+                        markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
                 label,
                 detail);
     }
@@ -32,13 +33,14 @@ public class ActionFactory {
             int x,
             int y,
             int z,
-            String mapId) {
+            String mapId,
+            MarkerGroup markerGroup) {
         return new RemoveMarkerAction(
                 new MarkerIdentifier(
                         x,
                         y,
                         z,
-                        markerSetIdentifierCollection.getIdentifier(mapId, MarkerType.POI)));
+                        markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)));
     }
 
     public UpdateMarkerAction createUpdatePOIAction(
@@ -47,13 +49,14 @@ public class ActionFactory {
             int z,
             String mapId,
             String newLabel,
-            String newDetail) {
+            String newDetail,
+            MarkerGroup markerGroup) {
         return new UpdateMarkerAction(
                 new MarkerIdentifier(
                         x,
                         y,
                         z,
-                        markerSetIdentifierCollection.getIdentifier(mapId, MarkerType.POI)),
+                        markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
                 newLabel,
                 newDetail);
     }

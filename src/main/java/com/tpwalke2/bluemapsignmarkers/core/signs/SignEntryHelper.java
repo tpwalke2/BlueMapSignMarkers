@@ -1,13 +1,19 @@
 package com.tpwalke2.bluemapsignmarkers.core.signs;
 
-import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerType;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
+
+import java.util.Map;
 
 public class SignEntryHelper {
     private SignEntryHelper() {}
 
-    public static boolean isMarkerType(SignEntry signEntry, MarkerType markerType) {
-        return signEntry.frontText().markerType() == markerType
-                || signEntry.backText().markerType() == markerType;
+    public static boolean isMarkerType(
+            SignEntry signEntry,
+            Map<String, MarkerGroup> prefixGroupMap,
+            MarkerGroupType markerGroupType) {
+        return prefixGroupMap.get(signEntry.frontText().prefix()).type() == markerGroupType
+                || prefixGroupMap.get(signEntry.backText().prefix()).type() == markerGroupType;
     }
 
     public static String getLabel(SignEntry signEntry) {
