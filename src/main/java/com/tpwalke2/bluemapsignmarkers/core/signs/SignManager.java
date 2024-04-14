@@ -30,6 +30,10 @@ public class SignManager {
         INSTANCE.shutdown();
     }
 
+    public static void reload() {
+        INSTANCE.reloadSigns();
+    }
+
     private final BlueMapAPIConnector blueMapAPIConnector;
     private final ActionFactory actionFactory;
     private final ConcurrentMap<SignEntryKey, SignEntry> signCache = new ConcurrentHashMap<>();
@@ -46,6 +50,15 @@ public class SignManager {
 
     private void shutdown() {
         blueMapAPIConnector.shutdown();
+    }
+
+    private void reloadSigns() {
+        LOGGER.info("Reloading all signs...");
+        var existingSigns = getAllSigns();
+        signCache.clear();
+        for (SignEntry signEntry : existingSigns) {
+            addOrUpdateSign(signEntry);
+        }
     }
 
     private void addOrUpdateSign(SignEntry signEntry) {
