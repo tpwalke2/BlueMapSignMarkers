@@ -8,6 +8,7 @@ import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.UpdateMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerType;
 import com.tpwalke2.bluemapsignmarkers.core.reactive.ReactiveQueue;
+import com.tpwalke2.bluemapsignmarkers.core.signs.SignManager;
 import de.bluecolored.bluemap.api.BlueMapAPI;
 import de.bluecolored.bluemap.api.BlueMapMap;
 import de.bluecolored.bluemap.api.markers.MarkerSet;
@@ -24,18 +25,12 @@ public class BlueMapAPIConnector {
     public static final String WORLD_NOT_FOUND = "World not found: {}";
     public static final String WORLD_MAPS_EMPTY = "World maps empty: {}";
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
-    private final ReactiveQueue<MarkerAction> markerActionQueue;
-    private final Map<MarkerSetIdentifier, MarkerSet> markerSets;
+    private ReactiveQueue<MarkerAction> markerActionQueue;
+    private Map<MarkerSetIdentifier, MarkerSet> markerSets;
     private BlueMapAPI blueMapAPI;
 
     public BlueMapAPIConnector() {
-        markerActionQueue = new ReactiveQueue<>(
-                () -> BlueMapAPI.getInstance().isPresent(),
-                this::processMarkerAction,
-                this::onError
-        );
-
-        markerSets = new ConcurrentHashMap<>();
+        resetQueue();
 
         BlueMapAPI.onEnable(this::onEnable);
         BlueMapAPI.onDisable(this::onDisable);
@@ -48,6 +43,16 @@ public class BlueMapAPIConnector {
 
     public void dispatch(MarkerAction action) {
         markerActionQueue.enqueue(action);
+    }
+
+    private void resetQueue() {
+        markerActionQueue = new ReactiveQueue<>(
+                () -> BlueMapAPI.getInstance().isPresent(),
+                this::processMarkerAction,
+                this::onError
+        );
+
+        markerSets = new ConcurrentHashMap<>();
     }
 
     private void processMarkerAction(MarkerAction markerAction) {
@@ -93,6 +98,12 @@ public class BlueMapAPIConnector {
     }
 
     private void onEnable(BlueMapAPI api) {
+        if (markerActionQueue.isShutdown()) {
+            resetQueue();
+
+            SignManager.reload();
+        }
+
         this.blueMapAPI = api;
         markerActionQueue.process();
     }

@@ -6,7 +6,7 @@ import java.util.concurrent.Executors;
 
 public class ReactiveQueue<T> {
     private final ConcurrentLinkedQueue<T> queue;
-    private final ExecutorService executor;
+    private ExecutorService executor;
     private final ShouldRunCallback shouldRunCallback;
     private final MessageProcessorCallback<T> messageProcessorCallback;
     private final MessageProcessorErrorCallback messageProcessorErrorCallback;
@@ -16,7 +16,6 @@ public class ReactiveQueue<T> {
             MessageProcessorCallback<T> messageProcessorCallback,
             MessageProcessorErrorCallback messageProcessorErrorCallback) {
         this.queue = new ConcurrentLinkedQueue<>();
-        this.executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
         this.shouldRunCallback = shouldRunCallback;
         this.messageProcessorCallback = messageProcessorCallback;
         this.messageProcessorErrorCallback = messageProcessorErrorCallback;
@@ -29,7 +28,7 @@ public class ReactiveQueue<T> {
 
     public void process() {
         if (shouldRunCallback.shouldRun()) {
-            executor.submit(this::processMessages);
+            getExecutor().submit(this::processMessages);
         }
     }
 
@@ -38,7 +37,7 @@ public class ReactiveQueue<T> {
             T message = queue.poll();
             if (message != null) {
                 try {
-                    executor.submit(() -> messageProcessorCallback.processMessage(message));
+                    getExecutor().submit(() -> messageProcessorCallback.processMessage(message));
                 } catch (Exception e) {
                     messageProcessorErrorCallback.onError(e);
                 }
@@ -46,7 +45,19 @@ public class ReactiveQueue<T> {
         }
     }
 
+    public boolean isShutdown() {
+        return executor == null || executor.isShutdown();
+    }
+
     public void shutdown() {
-        executor.shutdown();
+        getExecutor().shutdown();
+    }
+
+    private synchronized ExecutorService getExecutor() {
+        if (isShutdown()) {
+            executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+        }
+
+        return executor;
     }
 }
