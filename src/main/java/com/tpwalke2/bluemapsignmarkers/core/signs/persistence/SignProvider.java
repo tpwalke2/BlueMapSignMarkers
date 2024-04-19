@@ -3,6 +3,7 @@ package com.tpwalke2.bluemapsignmarkers.core.signs.persistence;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.tpwalke2.bluemapsignmarkers.Constants;
+import com.tpwalke2.bluemapsignmarkers.config.ConfigManager;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignEntry;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignManager;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.loaders.Version1SignEntryLoader;
@@ -44,12 +45,14 @@ public class SignProvider {
         }
 
         try {
+            var groups = ConfigManager.get().getMarkerGroups();
+
             // versioned file attempt
-            var signEntries = VersionedFileSignEntryLoader.loadSignEntries(signsContent, GSON);
+            var signEntries = VersionedFileSignEntryLoader.loadSignEntries(path, signsContent, groups, GSON);
 
             // version 1 attempt
             if (signEntries == null) {
-                signEntries = Version1SignEntryLoader.loadSignEntries(path, signsContent, GSON);
+                signEntries = Version1SignEntryLoader.loadSignEntries(path, signsContent, groups, GSON);
             }
 
             for (SignEntry signEntry : signEntries) {

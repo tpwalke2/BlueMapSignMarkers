@@ -60,7 +60,7 @@ public class ConfigProvider {
         LOGGER.info("Loading config from file: {}...", file);
 
         if (!file.exists()) {
-            LOGGER.info("Markers file does not yet exist, skipping...");
+            LOGGER.info("Config file does not yet exist, skipping...");
             return new BMSMConfigV2();
         }
 
@@ -90,13 +90,7 @@ public class ConfigProvider {
     private static BMSMConfigV2 loadV1Config(File file, BMSMConfigV1 v1Config) {
         var path = file.toString();
         LOGGER.info("Migrating config from v1 to v2...");
-        // make copy of v1 config
-        var preMigrationBackupPath = path + ".v1.bak";
-        var preMigrationBackupFile = new File(preMigrationBackupPath);
-        if (!preMigrationBackupFile.exists()) {
-            LOGGER.info("Creating backup of config file...");
-            FileUtils.copyFile(path, preMigrationBackupPath);
-        }
+        FileUtils.createBackup(path, ".v1.bak", "config file");
 
         var v2Config = new BMSMConfigV2(new MarkerGroup(v1Config.getPoiPrefix(), MarkerGroupType.POI, "Points of Interest", null, 0, 0));
         saveConfig(v2Config);
