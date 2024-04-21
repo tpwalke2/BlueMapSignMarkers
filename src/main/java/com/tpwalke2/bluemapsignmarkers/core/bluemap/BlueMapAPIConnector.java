@@ -70,13 +70,20 @@ public class BlueMapAPIConnector {
 
         if (markerAction instanceof AddMarkerAction addAction) {
             LOGGER.debug("Adding marker...");
-            if (addAction.getMarkerIdentifier().parentSet().markerGroup().type() == MarkerGroupType.POI) {
-                var marker = POIMarker.builder()
+            var markerGroup = addAction.getMarkerIdentifier().parentSet().markerGroup();
+            if (markerGroup.type() == MarkerGroupType.POI) {
+                LOGGER.debug("Adding POI marker...");
+                var markerBuilder = POIMarker.builder()
                         .position(addAction.getX(), addAction.getY(), addAction.getZ())
                         .label(addAction.getLabel())
-                        .detail(addAction.getDetail())
-                        .build();
-                markerSetMap.put(addAction.getMarkerIdentifier().getId(), marker);
+                        .detail(addAction.getDetail());
+
+                if (markerGroup.icon() != null && !markerGroup.icon().isEmpty()) {
+                    markerBuilder.icon(markerGroup.icon(), markerGroup.offsetX(), markerGroup.offsetY());
+                }
+
+                LOGGER.debug("Adding marker (id {}) to marker set: {}", addAction.getMarkerIdentifier().getId(), markerSetMap);
+                markerSetMap.put(addAction.getMarkerIdentifier().getId(), markerBuilder.build());
             }
         } else if (markerAction instanceof RemoveMarkerAction removeAction) {
             LOGGER.debug("Removing marker...");
@@ -117,7 +124,7 @@ public class BlueMapAPIConnector {
 
         if (result.isPresent()) return result;
 
-        LOGGER.debug("Marker set not found. Attempting to build marker set: {}", markerSetIdentifier);
+        LOGGER.info("Marker set not found. Attempting to build marker set: {}", markerSetIdentifier);
         var map = getMap(markerSetIdentifier.mapId());
         if (map.isEmpty()) {
             LOGGER.warn(MAP_NOT_FOUND, markerSetIdentifier.mapId());
@@ -130,7 +137,7 @@ public class BlueMapAPIConnector {
                         .label(markerSetIdentifier.markerGroup().name())
                         .build());
 
-        LOGGER.debug("Caching marker set: {}", markerSetIdentifier);
+        LOGGER.info("Caching marker set: {}", markerSetIdentifier);
         markerSets.putIfAbsent(markerSetIdentifier, markerSet);
         map.get().getMarkerSets().putIfAbsent(markerSetIdentifier.markerGroup().prefix(), markerSet);
 
