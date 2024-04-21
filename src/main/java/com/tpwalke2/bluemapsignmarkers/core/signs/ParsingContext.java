@@ -34,6 +34,10 @@ public class ParsingContext {
     }
 
     public SignLinesParseResult buildResult() {
+        if (this.markerGroup == null) {
+            return new SignLinesParseResult(null, "", "");
+        }
+
         return new SignLinesParseResult(this.markerGroup.prefix(), this.label, this.detailBuilder.toString().trim());
     }
 }

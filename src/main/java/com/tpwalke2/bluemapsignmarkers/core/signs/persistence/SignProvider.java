@@ -81,7 +81,7 @@ public class SignProvider {
         var signEntryData = GSON.toJson(signEntries);
 
         try (FileWriter writer = new FileWriter(path)) {
-            GSON.toJson(new VersionedSignFile(SignFileVersions.V2, signEntryData), writer);
+            GSON.toJson(new VersionedSignFile(SignFileVersions.V3, signEntryData), writer);
         } catch (Exception e) {
             LOGGER.error("Failed to save markers to file", e);
         }

@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Arrays;
 
 public class ConfigProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
@@ -26,7 +27,8 @@ public class ConfigProvider {
             .setPrettyPrinting()
             .create();
 
-    private ConfigProvider() {}
+    private ConfigProvider() {
+    }
 
     private static Path getConfigPath() {
         return Path.of("config", Constants.MOD_ID, "BMSM-Core.json");
@@ -74,13 +76,19 @@ public class ConfigProvider {
 
         try {
             // v1 attempt
-            var v1Config = GSON.fromJson(configContent, BMSMConfigV1.class);
-            if (v1Config != null && v1Config.getPoiPrefix() != null && !v1Config.getPoiPrefix().isEmpty()) {
+            if (configContent.contains("poiPrefix")) {
+                var v1Config = GSON.fromJson(configContent, BMSMConfigV1.class);
                 return loadV1Config(file, v1Config);
             }
 
             // v2 attempt
-            return GSON.fromJson(configContent, BMSMConfigV2.class);
+            var result = GSON.fromJson(configContent, BMSMConfigV2.class);
+
+            return new BMSMConfigV2(Arrays
+                    .stream(result.getMarkerGroups())
+                    .map(markerGroup -> markerGroup.type() == null ? markerGroup.withType(MarkerGroupType.POI) : markerGroup)
+                    .toArray(MarkerGroup[]::new));
+
         } catch (Exception e) {
             LOGGER.error("Failed to load config:", e);
             return null;

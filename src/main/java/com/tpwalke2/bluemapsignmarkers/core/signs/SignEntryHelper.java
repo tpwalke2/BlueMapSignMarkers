@@ -6,14 +6,15 @@ import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import java.util.Map;
 
 public class SignEntryHelper {
-    private SignEntryHelper() {}
+    private SignEntryHelper() {
+    }
 
     public static boolean isMarkerType(
             SignEntry signEntry,
             Map<String, MarkerGroup> prefixGroupMap,
             MarkerGroupType markerGroupType) {
-        return prefixGroupMap.get(signEntry.frontText().prefix()).type() == markerGroupType
-                || prefixGroupMap.get(signEntry.backText().prefix()).type() == markerGroupType;
+        return (signEntry.frontText().prefix() != null && prefixGroupMap.get(signEntry.frontText().prefix()).type() == markerGroupType)
+                || (signEntry.backText().prefix() != null && prefixGroupMap.get(signEntry.backText().prefix()).type() == markerGroupType);
     }
 
     public static String getLabel(SignEntry signEntry) {
