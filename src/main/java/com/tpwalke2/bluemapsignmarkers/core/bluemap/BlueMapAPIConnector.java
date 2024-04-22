@@ -124,7 +124,7 @@ public class BlueMapAPIConnector {
 
         if (result.isPresent()) return result;
 
-        LOGGER.info("Marker set not found. Attempting to build marker set: {}", markerSetIdentifier);
+        LOGGER.debug("Marker set not found. Attempting to build marker set: {}", markerSetIdentifier);
         var map = getMap(markerSetIdentifier.mapId());
         if (map.isEmpty()) {
             LOGGER.warn(MAP_NOT_FOUND, markerSetIdentifier.mapId());
@@ -137,7 +137,7 @@ public class BlueMapAPIConnector {
                         .label(markerSetIdentifier.markerGroup().name())
                         .build());
 
-        LOGGER.info("Caching marker set: {}", markerSetIdentifier);
+        LOGGER.debug("Caching marker set: {}", markerSetIdentifier);
         markerSets.putIfAbsent(markerSetIdentifier, markerSet);
         map.get().getMarkerSets().putIfAbsent(markerSetIdentifier.markerGroup().prefix(), markerSet);
 
