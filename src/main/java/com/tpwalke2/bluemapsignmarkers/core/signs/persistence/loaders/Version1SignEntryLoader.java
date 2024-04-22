@@ -50,10 +50,12 @@ public class Version1SignEntryLoader {
     private static String getNormalizedMapId(String mapId) {
         var result = mapId.toLowerCase();
 
-        if (result.equals(NETHER)) return World.NETHER.getValue().toString();
-        if (result.equals(END)) return World.END.getValue().toString();
-        if (result.equals(OVERWORLD)) return World.OVERWORLD.getValue().toString();
+        return switch (result) {
+            case NETHER -> World.NETHER.getValue().toString();
+            case END -> World.END.getValue().toString();
+            case OVERWORLD -> World.OVERWORLD.getValue().toString();
+            default -> result;
+        };
 
-        return result;
     }
 }
