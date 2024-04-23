@@ -27,8 +27,7 @@ public class ConfigProvider {
             .setPrettyPrinting()
             .create();
 
-    private ConfigProvider() {
-    }
+    private ConfigProvider() {}
 
     private static Path getConfigPath() {
         return Path.of("config", Constants.MOD_ID, "BMSM-Core.json");

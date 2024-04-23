@@ -14,20 +14,20 @@ public class FileUtils {
 
     private FileUtils() {}
 
-    public static void copyFile(String sourcePath, String destinationPath) {
-        try {
-            Files.copy(Paths.get(sourcePath), Paths.get(destinationPath));
-        } catch (IOException e) {
-            LOGGER.warn("Failed to copy {} to {}: {}", sourcePath, destinationPath, e);
-        }
-    }
-
     public static void createBackup(String originalPath, String suffix, String fileDescription) {
         var backupPath = originalPath + suffix;
         var backupFile = new File(backupPath);
         if (!backupFile.exists()) {
             LOGGER.info("Creating backup of {}...", fileDescription);
-            FileUtils.copyFile(originalPath, backupPath);
+            copyFile(originalPath, backupPath);
+        }
+    }
+
+    private static void copyFile(String sourcePath, String destinationPath) {
+        try {
+            Files.copy(Paths.get(sourcePath), Paths.get(destinationPath));
+        } catch (IOException e) {
+            LOGGER.warn("Failed to copy {} to {}: {}", sourcePath, destinationPath, e);
         }
     }
 }
