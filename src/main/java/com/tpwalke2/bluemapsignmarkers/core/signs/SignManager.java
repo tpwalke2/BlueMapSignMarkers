@@ -1,15 +1,19 @@
 package com.tpwalke2.bluemapsignmarkers.core.signs;
 
 import com.tpwalke2.bluemapsignmarkers.Constants;
+import com.tpwalke2.bluemapsignmarkers.config.ConfigManager;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.BlueMapAPIConnector;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.ActionFactory;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifierCollection;
-import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -37,8 +41,20 @@ public class SignManager {
     private final BlueMapAPIConnector blueMapAPIConnector;
     private final ActionFactory actionFactory;
     private final ConcurrentMap<SignEntryKey, SignEntry> signCache = new ConcurrentHashMap<>();
+    private final Map<String, MarkerGroup> prefixGroupMap;
 
     private SignManager() {
+        var groups = ConfigManager.get().getMarkerGroups();
+        prefixGroupMap = new TreeMap<>();
+        for (var group : groups) {
+            if (prefixGroupMap.containsKey(group.prefix())) {
+                LOGGER.warn("Duplicate marker group prefix found: {}", group.prefix());
+                continue;
+            }
+
+            prefixGroupMap.put(group.prefix(), group);
+        }
+
         MarkerSetIdentifierCollection markerSetIdentifierCollection = new MarkerSetIdentifierCollection();
         blueMapAPIConnector = new BlueMapAPIConnector();
         actionFactory = new ActionFactory(markerSetIdentifierCollection);
@@ -65,7 +81,7 @@ public class SignManager {
         var key = signEntry.key();
         var existing = signCache.get(key);
 
-        var isPOIMarker = SignEntryHelper.isMarkerType(signEntry, MarkerType.POI);
+        var isPOIMarker = SignEntryHelper.isMarkerType(signEntry, prefixGroupMap, MarkerGroupType.POI);
         var label = SignEntryHelper.getLabel(signEntry);
         var detail = SignEntryHelper.getDetail(signEntry);
 
@@ -79,7 +95,9 @@ public class SignManager {
                             key.z(),
                             key.parentMap(),
                             label,
-                            detail));
+                            detail,
+                            prefixGroupMap.get(signEntry.frontText().prefix())));
+            // TODO handle different back text marker groups
             return;
         }
 
@@ -106,19 +124,28 @@ public class SignManager {
                             key.z(),
                             key.parentMap(),
                             label,
-                            detail));
+                            detail,
+                            prefixGroupMap.get(signEntry.frontText().prefix())));
+            // TODO handle different back text marker groups
         }
     }
 
     private void removeByKey(SignEntryKey key) {
-        signCache.remove(key);
+        var removed = signCache.remove(key);
+
+        if (removed == null) {
+            LOGGER.debug("No sign found for key: {}", key);
+            return;
+        }
 
         blueMapAPIConnector.dispatch(
                 actionFactory.createRemovePOIAction(
                         key.x(),
                         key.y(),
                         key.z(),
-                        key.parentMap()));
+                        key.parentMap(),
+                        prefixGroupMap.get(removed.frontText().prefix())));
+        // TODO handle different back text marker groups
     }
 
     private void removeEntry(SignEntry signEntry) {

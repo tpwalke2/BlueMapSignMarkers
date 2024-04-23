@@ -1,8 +1,8 @@
 package com.tpwalke2.bluemapsignmarkers.core.signs;
 
-import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerType;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 
-import java.util.Map;
+import java.util.List;
 
 public class SignLinesParser {
     private enum ParseStates {
@@ -11,10 +11,10 @@ public class SignLinesParser {
         INVALID
     }
 
-    private final Map<MarkerType, String> prefixMap;
+    private final List<MarkerGroup> markerGroups;
 
-    public SignLinesParser(Map<MarkerType, String> prefixMap) {
-        this.prefixMap = prefixMap;
+    public SignLinesParser(List<MarkerGroup> markerGroups) {
+        this.markerGroups = markerGroups;
     }
 
     public SignLinesParseResult parse(String[] lines) {
@@ -25,7 +25,7 @@ public class SignLinesParser {
         for (String line : lines) {
             line = line.trim();
             if (state == ParseStates.START) {
-                state = processStartState(line, context, prefixMap);
+                state = processStartState(line, context, markerGroups);
             } else if (state == ParseStates.HAS_MARKER_TYPE) {
                 processHasMarkerType(line, context);
             }
@@ -39,17 +39,17 @@ public class SignLinesParser {
     private static ParseStates processStartState(
             String line,
             ParsingContext context,
-            Map<MarkerType, String> prefixMap) {
+            List<MarkerGroup> markerGroups) {
         if (line.isEmpty()) {
             return ParseStates.START;
         }
 
-        context.setMarkerType(getMarkerType(line, prefixMap));
-        if (context.getMarkerType() == null) {
+        context.setMarkerGroup(getMarkerGroup(line, markerGroups));
+        if (context.getMarkerGroup() == null) {
             return ParseStates.INVALID;
         }
 
-        context.setLabel(line.substring(prefixMap.get(context.getMarkerType()).length()).trim());
+        context.setLabel(line.substring(context.getMarkerGroup().prefix().length()).trim());
         if (!context.getLabel().isEmpty()) {
             context.appendDetail(context.getLabel());
         }
@@ -68,13 +68,10 @@ public class SignLinesParser {
         context.appendDetail(line);
     }
 
-    private static MarkerType getMarkerType(String line, Map<MarkerType, String> prefixMap) {
-        for (MarkerType markerType : prefixMap.keySet()) {
-            if (line.startsWith(prefixMap.get(markerType))) {
-                return markerType;
-            }
-        }
-
-        return null;
+    private static MarkerGroup getMarkerGroup(String line, List<MarkerGroup> markerGroups) {
+        return markerGroups.stream()
+                .filter(markerGroup -> line.startsWith(markerGroup.prefix()))
+                .findFirst()
+                .orElse(null);
     }
 }

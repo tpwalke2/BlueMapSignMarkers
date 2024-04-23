@@ -1,24 +1,24 @@
 package com.tpwalke2.bluemapsignmarkers.core.signs;
 
-import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerType;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 
 public class ParsingContext {
-    private MarkerType markerType;
+    private MarkerGroup markerGroup;
     private String label;
     private final StringBuilder detailBuilder;
 
     public ParsingContext() {
-        this.markerType = null;
+        this.markerGroup = null;
         this.label = "";
         this.detailBuilder = new StringBuilder();
     }
 
-    public void setMarkerType(MarkerType markerType) {
-        this.markerType = markerType;
+    public void setMarkerGroup(MarkerGroup markerGroup) {
+        this.markerGroup = markerGroup;
     }
 
-    public MarkerType getMarkerType() {
-        return this.markerType;
+    public MarkerGroup getMarkerGroup() {
+        return this.markerGroup;
     }
 
     public void setLabel(String label) {
@@ -34,6 +34,10 @@ public class ParsingContext {
     }
 
     public SignLinesParseResult buildResult() {
-        return new SignLinesParseResult(this.markerType, this.label, this.detailBuilder.toString().trim());
+        if (this.markerGroup == null) {
+            return new SignLinesParseResult(null, "", "");
+        }
+
+        return new SignLinesParseResult(this.markerGroup.prefix(), this.label, this.detailBuilder.toString().trim());
     }
 }

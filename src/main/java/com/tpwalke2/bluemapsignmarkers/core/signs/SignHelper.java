@@ -2,21 +2,18 @@ package com.tpwalke2.bluemapsignmarkers.core.signs;
 
 import com.tpwalke2.bluemapsignmarkers.config.ConfigManager;
 import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
-import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerType;
 import net.minecraft.block.entity.SignBlockEntity;
 import net.minecraft.block.entity.SignText;
 import net.minecraft.text.Text;
 import net.minecraft.world.World;
 
 import java.util.Arrays;
-import java.util.Map;
 
 public class SignHelper {
     private SignHelper() {
     }
 
-    private static final SignLinesParser signLinesParser = new SignLinesParser(Map.of(
-            MarkerType.POI, ConfigManager.get().getPoiPrefix()));
+    private static final SignLinesParser signLinesParser = new SignLinesParser(Arrays.asList(ConfigManager.get().getMarkerGroups()));
 
     public static SignEntry createSignEntry(
             SignBlockEntity signBlockEntity,

@@ -1,7 +1,7 @@
-package com.tpwalke2.bluemapsignmarkers.config;
+package com.tpwalke2.bluemapsignmarkers.config.models;
 
 @SuppressWarnings({"FieldMayBeFinal", "FieldCanBeLocal"})
-public class BMSMConfig {
+public final class BMSMConfigV1 {
     private String poiPrefix = "[poi]";
 
     public String getPoiPrefix() {

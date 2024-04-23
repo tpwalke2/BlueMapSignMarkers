@@ -5,8 +5,8 @@ import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.AddMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.MarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.UpdateMarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifier;
-import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerType;
 import com.tpwalke2.bluemapsignmarkers.core.reactive.ReactiveQueue;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignManager;
 import de.bluecolored.bluemap.api.BlueMapAPI;
@@ -70,13 +70,20 @@ public class BlueMapAPIConnector {
 
         if (markerAction instanceof AddMarkerAction addAction) {
             LOGGER.debug("Adding marker...");
-            if (addAction.getMarkerIdentifier().parentSet().markerType() == MarkerType.POI) {
-                var marker = POIMarker.builder()
+            var markerGroup = addAction.getMarkerIdentifier().parentSet().markerGroup();
+            if (markerGroup.type() == MarkerGroupType.POI) {
+                LOGGER.debug("Adding POI marker...");
+                var markerBuilder = POIMarker.builder()
                         .position(addAction.getX(), addAction.getY(), addAction.getZ())
                         .label(addAction.getLabel())
-                        .detail(addAction.getDetail())
-                        .build();
-                markerSetMap.put(addAction.getMarkerIdentifier().getId(), marker);
+                        .detail(addAction.getDetail());
+
+                if (markerGroup.icon() != null && !markerGroup.icon().isEmpty()) {
+                    markerBuilder.icon(markerGroup.icon(), markerGroup.offsetX(), markerGroup.offsetY());
+                }
+
+                LOGGER.debug("Adding marker (id {}) to marker set: {}", addAction.getMarkerIdentifier().getId(), markerSetMap);
+                markerSetMap.put(addAction.getMarkerIdentifier().getId(), markerBuilder.build());
             }
         } else if (markerAction instanceof RemoveMarkerAction removeAction) {
             LOGGER.debug("Removing marker...");
@@ -125,14 +132,14 @@ public class BlueMapAPIConnector {
         }
 
         var markerSet = Optional.ofNullable(markerSets.get(markerSetIdentifier))
-                .or(() -> Optional.ofNullable(map.get().getMarkerSets().get(markerSetIdentifier.markerType().id)))
+                .or(() -> Optional.ofNullable(map.get().getMarkerSets().get(markerSetIdentifier.markerGroup().prefix())))
                 .orElseGet(() -> MarkerSet.builder()
-                        .label(markerSetIdentifier.markerType().label)
+                        .label(markerSetIdentifier.markerGroup().name())
                         .build());
 
         LOGGER.debug("Caching marker set: {}", markerSetIdentifier);
         markerSets.putIfAbsent(markerSetIdentifier, markerSet);
-        map.get().getMarkerSets().putIfAbsent(markerSetIdentifier.markerType().id, markerSet);
+        map.get().getMarkerSets().putIfAbsent(markerSetIdentifier.markerGroup().prefix(), markerSet);
 
         return Optional.of(markerSet);
     }
