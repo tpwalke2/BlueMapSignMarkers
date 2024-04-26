@@ -85,7 +85,7 @@ public class SignManager {
         var label = SignEntryHelper.getLabel(signEntry);
         var detail = SignEntryHelper.getDetail(signEntry);
         if (signEntry.frontText().prefix() == null) {
-            LOGGER.warn("Cannot add or update sign as no prefix found: {}", signEntry);
+            LOGGER.debug("Cannot add or update sign as no prefix found: {}", signEntry);
             return;
         }
 
