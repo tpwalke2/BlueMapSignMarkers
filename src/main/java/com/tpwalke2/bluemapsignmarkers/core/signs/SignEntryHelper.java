@@ -9,12 +9,16 @@ public class SignEntryHelper {
     private SignEntryHelper() {
     }
 
+    public static String getPrefix(SignEntry signEntry) {
+        return signEntry.frontText().prefix() != null ? signEntry.frontText().prefix() : signEntry.backText().prefix();
+    }
+
     public static boolean isMarkerType(
             SignEntry signEntry,
             Map<String, MarkerGroup> prefixGroupMap,
             MarkerGroupType markerGroupType) {
-        return (signEntry.frontText().prefix() != null && prefixGroupMap.get(signEntry.frontText().prefix()).type() == markerGroupType)
-                || (signEntry.backText().prefix() != null && prefixGroupMap.get(signEntry.backText().prefix()).type() == markerGroupType);
+        var prefix = getPrefix(signEntry);
+        return prefix != null && prefixGroupMap.get(prefix).type() == markerGroupType;
     }
 
     public static String getLabel(SignEntry signEntry) {
