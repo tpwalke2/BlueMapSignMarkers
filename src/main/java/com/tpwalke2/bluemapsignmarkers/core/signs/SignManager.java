@@ -84,7 +84,9 @@ public class SignManager {
         var isPOIMarker = SignEntryHelper.isMarkerType(signEntry, prefixGroupMap, MarkerGroupType.POI);
         var label = SignEntryHelper.getLabel(signEntry);
         var detail = SignEntryHelper.getDetail(signEntry);
-        if (signEntry.frontText().prefix() == null) {
+        var prefix = SignEntryHelper.getPrefix(signEntry);
+
+        if (prefix == null) {
             LOGGER.debug("Cannot add or update sign as no prefix found: {}", signEntry);
             return;
         }
@@ -100,8 +102,7 @@ public class SignManager {
                             key.parentMap(),
                             label,
                             detail,
-                            prefixGroupMap.get(signEntry.frontText().prefix())));
-            // TODO handle different back text marker groups
+                            prefixGroupMap.get(prefix)));
             return;
         }
 
@@ -129,8 +130,7 @@ public class SignManager {
                             key.parentMap(),
                             label,
                             detail,
-                            prefixGroupMap.get(signEntry.frontText().prefix())));
-            // TODO handle different back text marker groups
+                            prefixGroupMap.get(prefix)));
         }
     }
 
@@ -142,14 +142,20 @@ public class SignManager {
             return;
         }
 
+        var prefix = SignEntryHelper.getPrefix(removed);
+
+        if (prefix == null) {
+            LOGGER.debug("Cannot remove sign as no prefix found: {}", removed);
+            return;
+        }
+
         blueMapAPIConnector.dispatch(
                 actionFactory.createRemovePOIAction(
                         key.x(),
                         key.y(),
                         key.z(),
                         key.parentMap(),
-                        prefixGroupMap.get(removed.frontText().prefix())));
-        // TODO handle different back text marker groups
+                        prefixGroupMap.get(prefix)));
     }
 
     private void removeEntry(SignEntry signEntry) {
