@@ -14,11 +14,13 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.lang.reflect.Array;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.stream.Stream;
 
 public class ConfigProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
@@ -74,24 +76,38 @@ public class ConfigProvider {
         }
 
         try {
-            // v1 attempt
-            if (configContent.contains("poiPrefix")) {
-                var v1Config = GSON.fromJson(configContent, BMSMConfigV1.class);
-                return loadV1Config(file, v1Config);
-            }
+            var result = loadConfig(configContent, file);
 
-            // v2 attempt
-            var result = GSON.fromJson(configContent, BMSMConfigV2.class);
-
-            return new BMSMConfigV2(Arrays
-                    .stream(result.getMarkerGroups())
-                    .map(markerGroup -> markerGroup.type() == null ? markerGroup.withType(MarkerGroupType.POI) : markerGroup)
-                    .toArray(MarkerGroup[]::new));
-
+            return normalizeConfig(result);
         } catch (Exception e) {
             LOGGER.error("Failed to load config:", e);
             return null;
         }
+    }
+
+    private static BMSMConfigV2 normalizeConfig(BMSMConfigV2 config) {
+        return new BMSMConfigV2(Stream.concat(
+                Arrays.stream(config.getMarkerGroups()),
+                MarkerGroupType.stream()
+                .filter(type -> Arrays.stream(config.getMarkerGroups()).noneMatch(group -> group.type() == type))
+                .map(type -> new MarkerGroup(type.defaultLabel, type, type.defaultLabel, null, 0, 0)))
+                .toArray(size -> (MarkerGroup[]) Array.newInstance(MarkerGroup.class, size)));
+    }
+
+    private static BMSMConfigV2 loadConfig(String configContent, File file) {
+        // v1 attempt
+        if (configContent.contains("poiPrefix")) {
+            var v1Config = GSON.fromJson(configContent, BMSMConfigV1.class);
+            return loadV1Config(file, v1Config);
+        }
+
+        // v2 attempt
+        var result = GSON.fromJson(configContent, BMSMConfigV2.class);
+
+        return new BMSMConfigV2(Arrays
+                .stream(result.getMarkerGroups())
+                .map(markerGroup -> markerGroup.type() == null ? markerGroup.withType(MarkerGroupType.POI) : markerGroup)
+                .toArray(MarkerGroup[]::new));
     }
 
     private static BMSMConfigV2 loadV1Config(File file, BMSMConfigV1 v1Config) {
