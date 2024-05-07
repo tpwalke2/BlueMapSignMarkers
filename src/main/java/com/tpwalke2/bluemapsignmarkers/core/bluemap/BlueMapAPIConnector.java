@@ -1,21 +1,23 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap;
 
+import com.flowpowered.math.vector.Vector3d;
 import com.tpwalke2.bluemapsignmarkers.Constants;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.AddMarkerAction;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.MarkerAction;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMarkerAction;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.UpdateMarkerAction;
-import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.*;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.reactive.ReactiveQueue;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignManager;
 import de.bluecolored.bluemap.api.BlueMapAPI;
 import de.bluecolored.bluemap.api.BlueMapMap;
+import de.bluecolored.bluemap.api.markers.LineMarker;
 import de.bluecolored.bluemap.api.markers.MarkerSet;
 import de.bluecolored.bluemap.api.markers.POIMarker;
+import de.bluecolored.bluemap.api.math.Color;
+import de.bluecolored.bluemap.api.math.Line;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -68,23 +70,41 @@ public class BlueMapAPIConnector {
         LOGGER.debug("Marker set found.");
         var markerSetMap = markerSet.get().getMarkers();
 
-        if (markerAction instanceof AddMarkerAction addAction) {
-            LOGGER.debug("Adding marker...");
-            var markerGroup = addAction.getMarkerIdentifier().parentSet().markerGroup();
-            if (markerGroup.type() == MarkerGroupType.POI) {
-                LOGGER.debug("Adding POI marker...");
-                var markerBuilder = POIMarker.builder()
-                        .position(addAction.getX(), addAction.getY(), addAction.getZ())
-                        .label(addAction.getLabel())
-                        .detail(addAction.getDetail());
+        if (markerAction instanceof AddPOIMarkerAction addPOIMarkerAction) {
+            LOGGER.debug("Adding POI marker...");
+            var markerGroup = addPOIMarkerAction.getMarkerIdentifier().parentSet().markerGroup();
+            var markerBuilder = POIMarker.builder()
+                    .position(addPOIMarkerAction.getX(), addPOIMarkerAction.getY(), addPOIMarkerAction.getZ())
+                    .label(addPOIMarkerAction.getLabel())
+                    .detail(addPOIMarkerAction.getDetail());
 
-                if (markerGroup.icon() != null && !markerGroup.icon().isEmpty()) {
-                    markerBuilder.icon(markerGroup.icon(), markerGroup.offsetX(), markerGroup.offsetY());
-                }
-
-                LOGGER.debug("Adding marker (id {}) to marker set: {}", addAction.getMarkerIdentifier().getId(), markerSetMap);
-                markerSetMap.put(addAction.getMarkerIdentifier().getId(), markerBuilder.build());
+            if (markerGroup.icon() != null && !markerGroup.icon().isEmpty()) {
+                markerBuilder.icon(markerGroup.icon(), markerGroup.offsetX(), markerGroup.offsetY());
             }
+
+            LOGGER.debug("Adding marker (id {}) to marker set: {}", addPOIMarkerAction.getMarkerIdentifier().getId(), markerSetMap);
+            markerSetMap.put(addPOIMarkerAction.getMarkerIdentifier().getId(), markerBuilder.build());
+        } else if (markerAction instanceof AddLineMarkerAction addLineMarkerAction) {
+            LOGGER.debug("Adding line marker...");
+            if (addLineMarkerAction.getPoints().length < 2) {
+                LOGGER.warn("Line marker must have at least 2 points: {}", addLineMarkerAction);
+                return;
+            }
+
+            var markerGroup = addLineMarkerAction.getMarkerIdentifier().parentSet().markerGroup();
+            var line = new Line(
+                    Arrays.stream(addLineMarkerAction.getPoints())
+                            .map(blockPosition -> new Vector3d(blockPosition.x(), blockPosition.y(), blockPosition.z()))
+                            .toArray(Vector3d[]::new));
+            var lineBuilder = LineMarker.builder()
+                    .position(line.getPoint(0))
+                    .label(addLineMarkerAction.getLabel())
+                    .line(line)
+                    .lineColor(getColor(markerGroup))
+                    .lineWidth(markerGroup.lineWidth());
+
+            LOGGER.debug("Adding marker (id {}) to marker set: {}", addLineMarkerAction.getMarkerIdentifier().getId(), markerSetMap);
+            markerSetMap.put(addLineMarkerAction.getMarkerIdentifier().getId(), lineBuilder.build());
         } else if (markerAction instanceof RemoveMarkerAction removeAction) {
             LOGGER.debug("Removing marker...");
             markerSetMap.remove(removeAction.getMarkerIdentifier().getId());
@@ -98,6 +118,10 @@ public class BlueMapAPIConnector {
         } else {
             LOGGER.warn("Unknown marker action: {}", markerAction);
         }
+    }
+
+    private Color getColor(MarkerGroup markerGroup) {
+        return new Color(markerGroup.lineColor().red(), markerGroup.lineColor().green(), markerGroup.lineColor().blue(), markerGroup.lineColor().alpha());
     }
 
     private void onError(Throwable throwable) {

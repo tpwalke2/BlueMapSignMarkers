@@ -2,6 +2,7 @@ package com.tpwalke2.bluemapsignmarkers.core.signs;
 
 import com.tpwalke2.bluemapsignmarkers.Constants;
 import com.tpwalke2.bluemapsignmarkers.config.ConfigManager;
+import com.tpwalke2.bluemapsignmarkers.core.BlockPosition;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.BlueMapAPIConnector;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.ActionFactory;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
@@ -10,10 +11,7 @@ import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifierCollectio
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -24,12 +22,15 @@ public class SignManager {
     public static void addOrUpdate(SignEntry signEntry) {
         INSTANCE.addOrUpdateSign(signEntry);
     }
+
     public static void remove(SignEntryKey key) {
         INSTANCE.removeByKey(key);
     }
+
     public static List<SignEntry> getAll() {
         return INSTANCE.getAllSigns();
     }
+
     public static void stop() {
         INSTANCE.shutdown();
     }
@@ -39,13 +40,14 @@ public class SignManager {
     }
 
     private final BlueMapAPIConnector blueMapAPIConnector;
-    private final ActionFactory actionFactory;
-    private final ConcurrentMap<SignEntryKey, SignEntry> signCache = new ConcurrentHashMap<>();
-    private final Map<String, MarkerGroup> prefixGroupMap;
+    private final SignMarkerReducer signMarkerReducer;
+    private final SignState signState = new SignState();
 
     private SignManager() {
         var groups = ConfigManager.get().getMarkerGroups();
-        prefixGroupMap = new TreeMap<>();
+        //private final ConcurrentMap<SignEntryKey, SignEntry> signCache = new ConcurrentHashMap<>();
+        //private final SignGroups lineSignsCache = new SignGroups();
+        var prefixGroupMap = new TreeMap<String, MarkerGroup>();
         for (var group : groups) {
             if (prefixGroupMap.containsKey(group.prefix())) {
                 LOGGER.warn("Duplicate marker group prefix found: {}", group.prefix());
@@ -55,13 +57,13 @@ public class SignManager {
             prefixGroupMap.put(group.prefix(), group);
         }
 
-        MarkerSetIdentifierCollection markerSetIdentifierCollection = new MarkerSetIdentifierCollection();
         blueMapAPIConnector = new BlueMapAPIConnector();
-        actionFactory = new ActionFactory(markerSetIdentifierCollection);
+        ActionFactory actionFactory = new ActionFactory(new MarkerSetIdentifierCollection());
+        signMarkerReducer = new SignMarkerReducer(actionFactory, prefixGroupMap);
     }
 
     private List<SignEntry> getAllSigns() {
-        return new ArrayList<>(signCache.values());
+        return signState.getAllSigns();
     }
 
     private void shutdown() {
@@ -71,17 +73,21 @@ public class SignManager {
     private void reloadSigns() {
         LOGGER.info("Reloading all signs...");
         var existingSigns = getAllSigns();
-        signCache.clear();
+        signState.clear();
         for (SignEntry signEntry : existingSigns) {
             addOrUpdateSign(signEntry);
         }
     }
 
     private void addOrUpdateSign(SignEntry signEntry) {
-        var key = signEntry.key();
+        signMarkerReducer.reduce(
+                        signEntry,
+                        SignMarkerOperation.UPSERT,
+                        signState)
+                .forEach(blueMapAPIConnector::dispatch);
+        /*var key = signEntry.key();
         var existing = signCache.get(key);
 
-        var isPOIMarker = SignEntryHelper.isMarkerType(signEntry, prefixGroupMap, MarkerGroupType.POI);
         var label = SignEntryHelper.getLabel(signEntry);
         var detail = SignEntryHelper.getDetail(signEntry);
         var prefix = SignEntryHelper.getPrefix(signEntry);
@@ -91,6 +97,100 @@ public class SignManager {
             return;
         }
 
+        processPOISigns(
+                signEntry,
+                existing,
+                SignEntryHelper.isMarkerType(signEntry, prefixGroupMap, MarkerGroupType.POI),
+                key,
+                label,
+                detail,
+                prefix);
+
+        processLineSigns(
+                signEntry,
+                existing,
+                SignEntryHelper.isMarkerType(signEntry, prefixGroupMap, MarkerGroupType.LINE),
+                key,
+                label,
+                prefix);*/
+    }
+
+    /*private void processLineSigns(SignEntry signEntry,
+                                  SignEntry existing,
+                                  boolean isLineMarker,
+                                  SignEntryKey key,
+                                  String label,
+                                  String prefix) {
+        var groupKey = new SignGroupKey(key.parentMap(), prefixGroupMap.get(prefix), label);
+
+        if (existing == null && isLineMarker) {
+            LOGGER.debug("Adding line marker: {}", signEntry);
+            lineSignsCache.addOrUpdateSign(
+                    groupKey,
+                    signEntry);
+            signCache.put(key, signEntry);
+
+            // TODO remove existing line
+            var lineSigns = lineSignsCache.getSigns(groupKey);
+
+            blueMapAPIConnector.dispatch(
+                    actionFactory.createAddLineAction(
+                            key.x(),
+                            key.y(),
+                            key.z(),
+                            key.parentMap(),
+                            label,
+                            prefixGroupMap.get(prefix),
+                            lineSigns.stream()
+                                    .map(s -> new BlockPosition(s.key().x(), s.key().y(), s.key().z()))));
+
+            return;
+        }
+
+        if (existing != null && !isLineMarker) {
+            LOGGER.debug("Removing line marker: {}", signEntry);
+            lineSignsCache.removeSign(signEntry);
+            signCache.remove(key);
+
+            // TODO remove existing line
+            var lineSigns = lineSignsCache.getSigns(groupKey);
+
+            blueMapAPIConnector.dispatch(
+                    actionFactory.createAddLineAction(
+                            key.x(),
+                            key.y(),
+                            key.z(),
+                            key.parentMap(),
+                            label,
+                            prefixGroupMap.get(prefix),
+                            lineSigns.stream()
+                                    .map(s -> new BlockPosition(s.key().x(), s.key().y(), s.key().z()))));
+        }
+
+        if (existing != null && isLineMarker) {
+            LOGGER.debug("Updating line marker: {}", signEntry);
+            lineSignsCache.addOrUpdateSign(
+                    groupKey,
+                    signEntry);
+            signCache.put(key, signEntry);
+
+            // TODO remove existing line
+            var lineSigns = lineSignsCache.getSigns(groupKey);
+
+            blueMapAPIConnector.dispatch(
+                    actionFactory.createAddLineAction(
+                            key.x(),
+                            key.y(),
+                            key.z(),
+                            key.parentMap(),
+                            label,
+                            prefixGroupMap.get(prefix),
+                            lineSigns.stream()
+                                    .map(s -> new BlockPosition(s.key().x(), s.key().y(), s.key().z()))));
+        }
+    }
+
+    private void processPOISigns(SignEntry signEntry, SignEntry existing, boolean isPOIMarker, SignEntryKey key, String label, String detail, String prefix) {
         if (existing == null && isPOIMarker) {
             LOGGER.debug("Adding POI marker: {}", signEntry);
             signCache.put(key, signEntry);
@@ -122,6 +222,7 @@ public class SignManager {
             } else {
                 signCache.put(key, signEntry);
             }
+
             blueMapAPIConnector.dispatch(
                     actionFactory.createUpdatePOIAction(
                             key.x(),
@@ -132,17 +233,23 @@ public class SignManager {
                             detail,
                             prefixGroupMap.get(prefix)));
         }
-    }
+    }*/
 
     private void removeByKey(SignEntryKey key) {
-        var removed = signCache.remove(key);
+        var removed = signState.getSign(key);
 
-        if (removed == null) {
+        if (removed.isEmpty()) {
             LOGGER.debug("No sign found for key: {}", key);
             return;
         }
 
-        var prefix = SignEntryHelper.getPrefix(removed);
+        signMarkerReducer.reduce(
+                        removed.get(),
+                        SignMarkerOperation.REMOVE,
+                        signState)
+                .forEach(blueMapAPIConnector::dispatch);
+
+        /*var prefix = SignEntryHelper.getPrefix(removed);
 
         if (prefix == null) {
             LOGGER.debug("Cannot remove sign as no prefix found: {}", removed);
@@ -150,15 +257,17 @@ public class SignManager {
         }
 
         blueMapAPIConnector.dispatch(
-                actionFactory.createRemovePOIAction(
+                actionFactory.createRemoveMarkerAction(
                         key.x(),
                         key.y(),
                         key.z(),
                         key.parentMap(),
-                        prefixGroupMap.get(prefix)));
+                        prefixGroupMap.get(prefix)));*/
     }
 
+    /*
     private void removeEntry(SignEntry signEntry) {
         removeByKey(signEntry.key());
     }
+    */
 }

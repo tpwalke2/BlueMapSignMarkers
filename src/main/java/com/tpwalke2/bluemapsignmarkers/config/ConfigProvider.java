@@ -7,6 +7,7 @@ import com.tpwalke2.bluemapsignmarkers.common.FileUtils;
 import com.tpwalke2.bluemapsignmarkers.config.models.BMSMConfigV1;
 import com.tpwalke2.bluemapsignmarkers.config.models.BMSMConfigV2;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupColor;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -90,7 +91,8 @@ public class ConfigProvider {
                 Arrays.stream(config.getMarkerGroups()),
                 MarkerGroupType.stream()
                 .filter(type -> Arrays.stream(config.getMarkerGroups()).noneMatch(group -> group.type() == type))
-                .map(type -> new MarkerGroup(type.defaultLabel, type, type.defaultLabel, null, 0, 0)))
+                .map(type -> new MarkerGroup(type.defaultLabel, type, type.defaultLabel, null, 0, 0, new MarkerGroupColor(0, 0, 0, 1.0f), 5)))
+                .map(markerGroup -> markerGroup.withColorAndWidth(markerGroup.lineColor() == null ? new MarkerGroupColor(0, 0, 0, 1.0f) : markerGroup.lineColor(), markerGroup.lineWidth() == 0 ? 5 : markerGroup.lineWidth()))
                 .toArray(size -> (MarkerGroup[]) Array.newInstance(MarkerGroup.class, size)));
     }
 
@@ -115,7 +117,7 @@ public class ConfigProvider {
         LOGGER.info("Migrating config from v1 to v2...");
         FileUtils.createBackup(path, ".v1.bak", "config file");
 
-        var v2Config = new BMSMConfigV2(new MarkerGroup(v1Config.getPoiPrefix(), MarkerGroupType.POI, "Points of Interest", null, 0, 0));
+        var v2Config = new BMSMConfigV2(new MarkerGroup(v1Config.getPoiPrefix(), MarkerGroupType.POI, "Points of Interest", null, 0, 0, new MarkerGroupColor(0, 0, 0, 1.0f), 5));
         saveConfig(v2Config);
         return v2Config;
     }
