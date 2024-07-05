@@ -26,8 +26,10 @@ public class SignMarkerReducer {
             SignEntry currentSignEntry,
             SignMarkerOperation signOperation,
             SignState signState) {
+        // TODO review all LOGGER.info calls before push
+        LOGGER.info("Processing sign: {}", currentSignEntry.key());
         var currentSignDetails = new SignDetails(currentSignEntry);
-        var currentMarkerGroupOptional = Optional.ofNullable(prefixGroupMap.get(currentSignDetails.getPrefix()));
+        var currentMarkerGroupOptional = Optional.ofNullable(currentSignDetails.getPrefix() == null ? null : prefixGroupMap.get(currentSignDetails.getPrefix()));
 
         var previousSignEntryOptional = signState.getSign(currentSignEntry.key());
         var previousPrefix = previousSignEntryOptional.isEmpty() ? "" : SignEntryHelper.getPrefix(previousSignEntryOptional.get());
@@ -41,7 +43,7 @@ public class SignMarkerReducer {
                 || currentMarkerGroupOptional.isEmpty())
                 || signOperation == SignMarkerOperation.REMOVE)) {
             if (previousMarkerGroupOptional.isEmpty()) {
-                LOGGER.warn("Cannot remove sign, no marker group found for previous prefix: {}", previousPrefix);
+                LOGGER.info("Cannot remove sign, no marker group found for previous prefix: {}", previousPrefix);
                 return Stream.empty();
             }
 
@@ -52,7 +54,7 @@ public class SignMarkerReducer {
         }
 
         if (currentMarkerGroupOptional.isEmpty()) {
-            LOGGER.warn("Cannot process sign, no marker group found for current prefix: {}", currentSignDetails.getPrefix());
+            LOGGER.info("Cannot process sign, no marker group found for current prefix: {}", currentSignDetails.getPrefix());
             return Stream.empty();
         }
 
@@ -81,7 +83,7 @@ public class SignMarkerReducer {
             }
 
             if (previousMarkerGroupOptional.isEmpty()) {
-                LOGGER.warn("Cannot update sign, no marker group found for previous prefix: {}", previousSignDetails.getPrefix());
+                LOGGER.info("Cannot update sign, no marker group found for previous prefix: {}", previousSignDetails.getPrefix());
                 return Stream.empty();
             }
 
@@ -94,7 +96,7 @@ public class SignMarkerReducer {
                     currentGroupKey);
         }
 
-        LOGGER.info("Unknown sign operation: {}", signOperation);
+        LOGGER.warn("Unknown sign operation: {}", signOperation);
         return Stream.empty();
     }
 
@@ -108,8 +110,8 @@ public class SignMarkerReducer {
     ) {
         // 8. Update only the label or detail on POI -> update POI marker
         // 9. Update the prefix on POI to different POI markerGroup -> update POI marker
-        if (currentMarkerGroup.type() == MarkerGroupType.POI
-                && currentMarkerGroup.equals(previousMarkerGroup)) {
+        if (previousMarkerGroup.type() == MarkerGroupType.POI
+                && currentMarkerGroup.type() == MarkerGroupType.POI) {
             return processUpdatePOISign(
                     currentSignDetails,
                     previousSignDetails,
@@ -118,7 +120,8 @@ public class SignMarkerReducer {
         }
 
         // 10. Update the prefix on POI to LINE markerGroup -> remove POI marker and create LINE marker
-        if (previousMarkerGroup.type() == MarkerGroupType.POI && currentMarkerGroup.type() == MarkerGroupType.LINE) {
+        if (previousMarkerGroup.type() == MarkerGroupType.POI
+                && currentMarkerGroup.type() == MarkerGroupType.LINE) {
             return processUpsertLineSign(
                     currentSignDetails,
                     previousSignDetails,
@@ -156,7 +159,7 @@ public class SignMarkerReducer {
         // 13. Update the prefix on LINE to POI markerGroup ->  Update LINE marker (if not empty) and create POI marker
         if (previousMarkerGroup.type() == MarkerGroupType.LINE && currentMarkerGroup.type() == MarkerGroupType.POI) {
             signState.removeSign(previousSignDetails.getSignEntry());
-            signState.addPoiSign(currentSignDetails.getSignEntry());
+            signState.addPoiSign(currentSignDetails.getSignEntry().withNormalizedPlayerId(previousSignDetails.getSignEntry().playerId()));
             return Stream.concat(
                     removeSign(
                             signState,
@@ -185,7 +188,11 @@ public class SignMarkerReducer {
             MarkerGroup previousMarkerGroup,
             SignGroupKey currentGroupKey) {
         signState.removeSign(previousSignDetails.getSignEntry());
-        signState.addLineSign(currentGroupKey, currentSignDetails.getSignEntry());
+        signState.addLineSign(
+                currentGroupKey,
+                currentSignDetails
+                        .getSignEntry()
+                        .withNormalizedPlayerId(previousSignDetails.getSignEntry().playerId()));
         var lineSigns = signState.getLineSigns(currentGroupKey);
 
         return Stream.concat(
@@ -212,7 +219,7 @@ public class SignMarkerReducer {
             SignState signState,
             MarkerGroup currentMarkerGroup) {
         signState.removeSign(previousSignDetails.getSignEntry());
-        signState.addPoiSign(currentSignDetails.getSignEntry());
+        signState.addPoiSign(currentSignDetails.getSignEntry().withNormalizedPlayerId(previousSignDetails.getSignEntry().playerId()));
         return Stream.of(actionFactory.createUpdatePOIAction(
                 currentSignDetails.getSignEntry().key().x(),
                 currentSignDetails.getSignEntry().key().y(),
@@ -226,6 +233,7 @@ public class SignMarkerReducer {
     private Stream<MarkerAction> removeSign(SignState signState,
                                             SignEntry previousSignEntry,
                                             MarkerGroup previousMarkerGroup) {
+        LOGGER.info("Removing sign: {}", previousSignEntry.key());
         signState.removeSign(previousSignEntry);
 
         return Stream.of(actionFactory.createRemoveMarkerAction(
@@ -242,6 +250,7 @@ public class SignMarkerReducer {
             SignState signState,
             SignGroupKey currentGroupKey
     ) {
+        LOGGER.info("Processing new sign: {}", currentSignDetails.getSignEntry().key());
         if (currentMarkerGroup.type() == MarkerGroupType.POI) {
             signState.addPoiSign(currentSignDetails.getSignEntry());
             return Stream.of(actionFactory.createAddPOIAction(

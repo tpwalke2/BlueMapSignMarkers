@@ -5,10 +5,13 @@ import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupColor;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 
 public final class BMSMConfigV2 {
-    public BMSMConfigV2() {}
+    public BMSMConfigV2() {
+    }
+
     public BMSMConfigV2(MarkerGroup[] markerGroups) {
         this.markerGroups = markerGroups;
     }
+
     public BMSMConfigV2(MarkerGroup markerGroup) {
         this.markerGroups = new MarkerGroup[]{markerGroup};
     }
@@ -20,7 +23,8 @@ public final class BMSMConfigV2 {
             null,
             0,
             0,
-            new MarkerGroupColor(0, 0, 0, 1), 1)};
+            new MarkerGroupColor(0, 0, 0, 1),
+            1)};
 
     public MarkerGroup[] getMarkerGroups() {
         return markerGroups;

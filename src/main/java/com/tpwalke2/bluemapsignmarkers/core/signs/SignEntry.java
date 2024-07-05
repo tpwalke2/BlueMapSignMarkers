@@ -6,8 +6,12 @@ public record SignEntry(
         SignLinesParseResult frontText,
         SignLinesParseResult backText) {
 
-    public SignEntry withKey(SignEntryKey key) {
-        return new SignEntry(key, playerId, frontText, backText);
+    public SignEntry withNormalizedPlayerId(String playerId) {
+        return new SignEntry(
+                key,
+                this.playerId.equals("unknown") ? playerId : this.playerId,
+                frontText,
+                backText);
     }
 
     @Override

@@ -101,7 +101,8 @@ public class BlueMapAPIConnector {
                     .label(addLineMarkerAction.getLabel())
                     .line(line)
                     .lineColor(getColor(markerGroup))
-                    .lineWidth(markerGroup.lineWidth());
+                    .lineWidth(markerGroup.lineWidth())
+                    .depthTestEnabled(false);
 
             LOGGER.debug("Adding marker (id {}) to marker set: {}", addLineMarkerAction.getMarkerIdentifier().getId(), markerSetMap);
             markerSetMap.put(addLineMarkerAction.getMarkerIdentifier().getId(), lineBuilder.build());

@@ -91,7 +91,7 @@ public class ConfigProvider {
                 Arrays.stream(config.getMarkerGroups()),
                 MarkerGroupType.stream()
                 .filter(type -> Arrays.stream(config.getMarkerGroups()).noneMatch(group -> group.type() == type))
-                .map(type -> new MarkerGroup(type.defaultLabel, type, type.defaultLabel, null, 0, 0, new MarkerGroupColor(0, 0, 0, 1.0f), 5)))
+                .map(type -> new MarkerGroup(String.format("[%s]", type.name().toLowerCase()), type, type.defaultLabel, null, 0, 0, new MarkerGroupColor(0, 0, 0, 1.0f), 5)))
                 .map(markerGroup -> markerGroup.withColorAndWidth(markerGroup.lineColor() == null ? new MarkerGroupColor(0, 0, 0, 1.0f) : markerGroup.lineColor(), markerGroup.lineWidth() == 0 ? 5 : markerGroup.lineWidth()))
                 .toArray(size -> (MarkerGroup[]) Array.newInstance(MarkerGroup.class, size)));
     }
