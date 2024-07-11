@@ -15,6 +15,7 @@ repositories {
 	// See https://docs.gradle.org/current/userguide/declaring_repositories.html
 	// for more information about repositories.
 	maven { url 'https://jitpack.io' }
+	maven { url 'https://repo.bluecolored.de/releases' }
 }
 
 loom {
@@ -34,7 +35,7 @@ dependencies {
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-	compileOnly "com.github.BlueMap-Minecraft:BlueMapAPI:v${project.blue_map_api_version}"
+	compileOnly "de.bluecolored.bluemap:BlueMapAPI:${project.blue_map_api_version}"
 }
 
 processResources {
@@ -46,6 +47,7 @@ processResources {
 				"mod_description": project.mod_description,
 				"version": project.mod_version,
 				"fabric_loader_version": project.loader_version,
+				"minecraft_version": project.minecraft_version,
 				"java_version": project.java_version,
 				"blue_map_version": project.blue_map_version,
 				"blue_map_api_version": project.blue_map_api_version])
@@ -53,7 +55,7 @@ processResources {
 }
 
 tasks.withType(JavaCompile).configureEach {
-	it.options.release = 17
+	it.options.release = project.java_version.toInteger()
 }
 
 java {
@@ -62,8 +64,8 @@ java {
 	// If you remove this line, sources will not be generated.
 	withSourcesJar()
 
-	sourceCompatibility = JavaVersion.VERSION_17
-	targetCompatibility = JavaVersion.VERSION_17
+	sourceCompatibility = JavaVersion.VERSION_21
+	targetCompatibility = JavaVersion.VERSION_21
 }
 
 jar {
@@ -84,7 +86,7 @@ modrinth {
 		versionType = "alpha"
 	}
 	uploadFile = remapJar
-	gameVersions.addAll("1.20", "1.20.1")
+	gameVersions.addAll("1.21")
 	loaders.add("fabric")
 	dependencies {
 		required.project("P7dR8mSH") // Fabric API
