@@ -1,7 +1,7 @@
 {
   "required": true,
   "package": "com.tpwalke2.bluemapsignmarkers.mixin",
-  "compatibilityLevel": "JAVA_17",
+  "compatibilityLevel": "JAVA_21",
   "mixins": [],
   "client": [],
   "server": [
