@@ -18,24 +18,39 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 public class SignManager {
-    private static final SignManager INSTANCE = new SignManager();
+    private static SignManager instance;
+    private static final Object mutex = new Object();
+
+    private static SignManager getInstance() {
+        SignManager result = instance;
+        if (result == null) {
+            synchronized (mutex) {
+                result = instance;
+                if (result == null) {
+                    instance = result = new SignManager();
+                }
+            }
+        }
+        return result;
+    }
+
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
 
     public static void addOrUpdate(SignEntry signEntry) {
-        INSTANCE.addOrUpdateSign(signEntry);
+        getInstance().addOrUpdateSign(signEntry);
     }
     public static void remove(SignEntryKey key) {
-        INSTANCE.removeByKey(key);
+        getInstance().removeByKey(key);
     }
     public static List<SignEntry> getAll() {
-        return INSTANCE.getAllSigns();
+        return getInstance().getAllSigns();
     }
     public static void stop() {
-        INSTANCE.shutdown();
+        getInstance().shutdown();
     }
 
     public static void reload() {
-        INSTANCE.reloadSigns();
+        getInstance().reloadSigns();
     }
 
     private final BlueMapAPIConnector blueMapAPIConnector;
