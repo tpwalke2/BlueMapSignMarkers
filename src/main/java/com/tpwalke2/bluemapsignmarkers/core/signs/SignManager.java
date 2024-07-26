@@ -3,6 +3,7 @@ package com.tpwalke2.bluemapsignmarkers.core.signs;
 import com.tpwalke2.bluemapsignmarkers.Constants;
 import com.tpwalke2.bluemapsignmarkers.config.ConfigManager;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.BlueMapAPIConnector;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.IResetHandler;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.ActionFactory;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
@@ -17,7 +18,7 @@ import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-public class SignManager {
+public class SignManager implements IResetHandler {
     private static SignManager instance;
     private static final Object mutex = new Object();
 
@@ -49,10 +50,6 @@ public class SignManager {
         getInstance().shutdown();
     }
 
-    public static void reload() {
-        getInstance().reloadSigns();
-    }
-
     private final BlueMapAPIConnector blueMapAPIConnector;
     private final ActionFactory actionFactory;
     private final ConcurrentMap<SignEntryKey, SignEntry> signCache = new ConcurrentHashMap<>();
@@ -71,8 +68,9 @@ public class SignManager {
         }
 
         MarkerSetIdentifierCollection markerSetIdentifierCollection = new MarkerSetIdentifierCollection();
-        blueMapAPIConnector = new BlueMapAPIConnector();
         actionFactory = new ActionFactory(markerSetIdentifierCollection);
+        blueMapAPIConnector = new BlueMapAPIConnector();
+        blueMapAPIConnector.addResetHandler(this);
     }
 
     private List<SignEntry> getAllSigns() {
@@ -175,5 +173,10 @@ public class SignManager {
 
     private void removeEntry(SignEntry signEntry) {
         removeByKey(signEntry.key());
+    }
+
+    @Override
+    public void reset() {
+        reloadSigns();
     }
 }
