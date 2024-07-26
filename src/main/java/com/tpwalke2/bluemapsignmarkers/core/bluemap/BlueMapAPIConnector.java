@@ -8,7 +8,6 @@ import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.UpdateMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.reactive.ReactiveQueue;
-import com.tpwalke2.bluemapsignmarkers.core.signs.SignManager;
 import de.bluecolored.bluemap.api.BlueMapAPI;
 import de.bluecolored.bluemap.api.BlueMapMap;
 import de.bluecolored.bluemap.api.markers.MarkerSet;
@@ -16,6 +15,8 @@ import de.bluecolored.bluemap.api.markers.POIMarker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,6 +29,7 @@ public class BlueMapAPIConnector {
     private ReactiveQueue<MarkerAction> markerActionQueue;
     private Map<MarkerSetIdentifier, MarkerSet> markerSets;
     private BlueMapAPI blueMapAPI;
+    private List<IResetHandler> resetHandlers = new ArrayList<>();
 
     public BlueMapAPIConnector() {
         resetQueue();
@@ -43,6 +45,14 @@ public class BlueMapAPIConnector {
 
     public void dispatch(MarkerAction action) {
         markerActionQueue.enqueue(action);
+    }
+
+    public void addResetHandler(IResetHandler handler) {
+        resetHandlers.add(handler);
+    }
+
+    private void fireReset() {
+        resetHandlers.forEach(IResetHandler::reset);
     }
 
     private void resetQueue() {
@@ -108,7 +118,7 @@ public class BlueMapAPIConnector {
         if (markerActionQueue.isShutdown()) {
             resetQueue();
 
-            SignManager.reload();
+            fireReset();
         }
 
         this.blueMapAPI = api;
