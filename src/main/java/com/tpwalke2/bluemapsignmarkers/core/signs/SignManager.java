@@ -3,6 +3,7 @@ package com.tpwalke2.bluemapsignmarkers.core.signs;
 import com.tpwalke2.bluemapsignmarkers.Constants;
 import com.tpwalke2.bluemapsignmarkers.config.ConfigManager;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.BlueMapAPIConnector;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.IResetHandler;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.ActionFactory;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
@@ -17,25 +18,36 @@ import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-public class SignManager {
-    private static final SignManager INSTANCE = new SignManager();
+public class SignManager implements IResetHandler {
+    private static SignManager instance;
+    private static final Object mutex = new Object();
+
+    private static SignManager getInstance() {
+        SignManager result = instance;
+        if (result == null) {
+            synchronized (mutex) {
+                result = instance;
+                if (result == null) {
+                    instance = result = new SignManager();
+                }
+            }
+        }
+        return result;
+    }
+
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
 
     public static void addOrUpdate(SignEntry signEntry) {
-        INSTANCE.addOrUpdateSign(signEntry);
+        getInstance().addOrUpdateSign(signEntry);
     }
     public static void remove(SignEntryKey key) {
-        INSTANCE.removeByKey(key);
+        getInstance().removeByKey(key);
     }
     public static List<SignEntry> getAll() {
-        return INSTANCE.getAllSigns();
+        return getInstance().getAllSigns();
     }
     public static void stop() {
-        INSTANCE.shutdown();
-    }
-
-    public static void reload() {
-        INSTANCE.reloadSigns();
+        getInstance().shutdown();
     }
 
     private final BlueMapAPIConnector blueMapAPIConnector;
@@ -56,8 +68,9 @@ public class SignManager {
         }
 
         MarkerSetIdentifierCollection markerSetIdentifierCollection = new MarkerSetIdentifierCollection();
-        blueMapAPIConnector = new BlueMapAPIConnector();
         actionFactory = new ActionFactory(markerSetIdentifierCollection);
+        blueMapAPIConnector = new BlueMapAPIConnector();
+        blueMapAPIConnector.addResetHandler(this);
     }
 
     private List<SignEntry> getAllSigns() {
@@ -160,5 +173,10 @@ public class SignManager {
 
     private void removeEntry(SignEntry signEntry) {
         removeByKey(signEntry.key());
+    }
+
+    @Override
+    public void reset() {
+        reloadSigns();
     }
 }
