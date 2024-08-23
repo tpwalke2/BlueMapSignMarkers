@@ -1,6 +1,7 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap;
 
 import com.tpwalke2.bluemapsignmarkers.Constants;
+import com.tpwalke2.bluemapsignmarkers.config.ConfigManager;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.AddMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.MarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMarkerAction;
@@ -66,7 +67,8 @@ public class BlueMapAPIConnector {
     }
 
     private void processMarkerAction(MarkerAction markerAction) {
-        LOGGER.info("Processing marker action: {}", markerAction);
+        if (!ConfigManager.get().isSilentLogs())
+            LOGGER.info("Processing marker action: {}", markerAction);
 
         var markerSet = getMarkerSet(markerAction.getMarkerIdentifier().parentSet());
 

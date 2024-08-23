@@ -86,7 +86,7 @@ public class ConfigProvider {
             return new BMSMConfigV2(Arrays
                     .stream(result.getMarkerGroups())
                     .map(markerGroup -> markerGroup.type() == null ? markerGroup.withType(MarkerGroupType.POI) : markerGroup)
-                    .toArray(MarkerGroup[]::new));
+                    .toArray(MarkerGroup[]::new), result.isSilentLogs());
 
         } catch (Exception e) {
             LOGGER.error("Failed to load config:", e);
