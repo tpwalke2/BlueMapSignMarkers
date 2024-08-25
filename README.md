@@ -32,7 +32,7 @@ configuration contains the following options:
 - `prefix` - prefix that the sign must contain to be included in the marker group; required;
 - `matchType` - the type of match to use when checking the first non-empty sign text line; optional; default is `STARTS_WITH` (case-sensitive exact match);
   - `STARTS_WITH` - line must start with the prefix;
-  - `REGEX` - line must match the regular expression;
+  - `REGEX` - line must match the regular expression (uses [Java regex engine](https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html));
 - `name` - the name of the marker group; required;
 - `type` - the type of marker to display; optional; default is `POI`
 - `icon` - the icon path or URL to display for the marker; optional; default is `null` (BlueMap default POI icon)
