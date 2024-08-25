@@ -50,7 +50,7 @@ public class SignLinesParser {
             return ParseStates.INVALID;
         }
 
-        context.setLabel(getLabel(line, context));
+        context.setLabel(getLabel(line, context.getMarkerGroup()));
         if (!context.getLabel().isEmpty()) {
             context.appendDetail(context.getLabel());
         }
@@ -71,24 +71,26 @@ public class SignLinesParser {
 
     private static MarkerGroup getMarkerGroup(String line, List<MarkerGroup> markerGroups) {
         return markerGroups.stream()
-                .filter(markerGroup -> {
-                    if (markerGroup.matchType() == MarkerGroupMatchType.REGEX) {
-                        return line.matches(markerGroup.prefix());
-                    }
-
-                    // Default match type -> STARTS_WITH
-                    return line.startsWith(markerGroup.prefix());
-                })
+                .filter(markerGroup -> lineMatchesMarkerGroup(line, markerGroup))
                 .findFirst()
                 .orElse(null);
     }
 
-    private static String getLabel(String line, ParsingContext context) {
-        if (context.getMarkerGroup().matchType() == MarkerGroupMatchType.REGEX) {
-            return line.replaceAll(context.getMarkerGroup().prefix(), "").trim();
+    private static boolean lineMatchesMarkerGroup(String line, MarkerGroup markerGroup) {
+        if (markerGroup.matchType() == MarkerGroupMatchType.REGEX) {
+            return line.matches(markerGroup.prefix());
         }
 
         // Default match type -> STARTS_WITH
-        return line.substring(context.getMarkerGroup().prefix().length()).trim();
+        return line.startsWith(markerGroup.prefix());
+    }
+
+    private static String getLabel(String line, MarkerGroup markerGroup) {
+        if (markerGroup.matchType() == MarkerGroupMatchType.REGEX) {
+            return line.replaceAll(markerGroup.prefix(), "").trim();
+        }
+
+        // Default match type -> STARTS_WITH
+        return line.substring(markerGroup.prefix().length()).trim();
     }
 }
