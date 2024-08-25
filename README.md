@@ -30,6 +30,9 @@ configured for the `[poi]` prefix.
 A marker group is a collection of markers that can be toggled on and off in the BlueMap UI. Each marker group
 configuration contains the following options:
 - `prefix` - prefix that the sign must contain to be included in the marker group; required;
+- `matchType` - the type of match to use when checking the first non-empty sign text line; optional; default is `STARTS_WITH` (case-sensitive exact match);
+  - `STARTS_WITH` - line must start with the prefix;
+  - `REGEX` - line must match the regular expression (uses [Java regex engine](https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html));
 - `name` - the name of the marker group; required;
 - `type` - the type of marker to display; optional; default is `POI`
 - `icon` - the icon path or URL to display for the marker; optional; default is `null` (BlueMap default POI icon)
@@ -49,15 +52,23 @@ configuration contains the following options:
       "prefix": "[store]",
       "name": "Stores",
       "icon": "assets/store.png"
+    },
+    {
+      "prefix": "\\[[vV][iI][lL][lL][aA][gG][eE]\\]",
+      "matchType": "REGEX",
+      "name": "Villages"
     }
   ]
 }
 ```
 
-This example configuration creates two marker groups: one for `[poi]` signs and one for `[store]` signs.
+This example configuration creates 3 marker groups: one for `[poi]` signs, one for `[store]` signs, and one for signs
+where the prefix is a regex match for villages (e.g. `[Village]` or `[VILLAGE]`).
 
-The `[poi]` marker group uses the default POI icon, while the `[store]` marker group uses a custom icon located at `assets/store.png`.
+The `[poi]` and `Villages` marker groups use the default POI icon, while the `[store]` marker group uses a custom icon
+located at `assets/store.png`.
 
-Any signs with the `[poi]` prefix will be displayed in the "Points of Interest" marker group, while any signs with the
-`[store]` prefix will be displayed in the "Stores" marker group.
+Signs with the `[poi]` prefix will be displayed in the "Points of Interest" marker group. Signs with the `[store]`
+prefix will be displayed in the "Stores" marker group. Signs that match the villages regex will be displayed in the
+'Villages' marker group.
 
