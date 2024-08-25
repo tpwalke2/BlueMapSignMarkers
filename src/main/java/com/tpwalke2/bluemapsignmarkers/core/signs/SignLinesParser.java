@@ -1,6 +1,7 @@
 package com.tpwalke2.bluemapsignmarkers.core.signs;
 
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupMatchType;
 
 import java.util.List;
 
@@ -49,7 +50,7 @@ public class SignLinesParser {
             return ParseStates.INVALID;
         }
 
-        context.setLabel(line.substring(context.getMarkerGroup().prefix().length()).trim());
+        context.setLabel(getLabel(line, context));
         if (!context.getLabel().isEmpty()) {
             context.appendDetail(context.getLabel());
         }
@@ -70,8 +71,24 @@ public class SignLinesParser {
 
     private static MarkerGroup getMarkerGroup(String line, List<MarkerGroup> markerGroups) {
         return markerGroups.stream()
-                .filter(markerGroup -> line.startsWith(markerGroup.prefix()))
+                .filter(markerGroup -> {
+                    if (markerGroup.matchType() == MarkerGroupMatchType.REGEX) {
+                        return line.matches(markerGroup.prefix());
+                    }
+
+                    // Default match type -> STARTS_WITH
+                    return line.startsWith(markerGroup.prefix());
+                })
                 .findFirst()
                 .orElse(null);
+    }
+
+    private static String getLabel(String line, ParsingContext context) {
+        if (context.getMarkerGroup().matchType() == MarkerGroupMatchType.REGEX) {
+            return line.replaceAll(context.getMarkerGroup().prefix(), "").trim();
+        }
+
+        // Default match type -> STARTS_WITH
+        return line.substring(context.getMarkerGroup().prefix().length()).trim();
     }
 }

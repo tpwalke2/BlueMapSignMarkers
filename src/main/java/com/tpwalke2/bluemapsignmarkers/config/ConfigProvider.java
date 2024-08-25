@@ -7,6 +7,7 @@ import com.tpwalke2.bluemapsignmarkers.common.FileUtils;
 import com.tpwalke2.bluemapsignmarkers.config.models.BMSMConfigV1;
 import com.tpwalke2.bluemapsignmarkers.config.models.BMSMConfigV2;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupMatchType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -99,7 +100,7 @@ public class ConfigProvider {
         LOGGER.info("Migrating config from v1 to v2...");
         FileUtils.createBackup(path, ".v1.bak", "config file");
 
-        var v2Config = new BMSMConfigV2(new MarkerGroup(v1Config.getPoiPrefix(), MarkerGroupType.POI, "Points of Interest", null, 0, 0));
+        var v2Config = new BMSMConfigV2(new MarkerGroup(v1Config.getPoiPrefix(), MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, "Points of Interest", null, 0, 0));
         saveConfig(v2Config);
         return v2Config;
     }
