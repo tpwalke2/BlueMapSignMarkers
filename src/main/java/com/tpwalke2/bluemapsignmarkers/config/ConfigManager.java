@@ -16,10 +16,6 @@ public class ConfigManager {
         return coreConfig;
     }
 
-    public static void save() {
-        ConfigProvider.saveConfig(coreConfig);
-    }
-
     private static synchronized BMSMConfigV2 loadCoreConfig() {
         var result = ConfigProvider.loadConfig();
         if (result == null) {
