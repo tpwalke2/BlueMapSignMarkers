@@ -1,6 +1,5 @@
 package com.tpwalke2.bluemapsignmarkers;
 
-import com.tpwalke2.bluemapsignmarkers.config.ConfigManager;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignHelper;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignManager;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.SignProvider;
@@ -30,8 +29,6 @@ public class BlueMapSignMarkersMod implements DedicatedServerModInitializer {
 		SignProvider.saveSigns(getMarkerFilePath(server));
 
 		SignManager.stop();
-
-		ConfigManager.save();
 	}
 
 	private String getMarkerFilePath(MinecraftServer server) {

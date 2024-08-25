@@ -62,8 +62,10 @@ public class ConfigProvider {
         LOGGER.info("Loading config from file: {}...", file);
 
         if (!file.exists()) {
-            LOGGER.info("Config file does not yet exist, skipping...");
-            return new BMSMConfigV2();
+            LOGGER.info("Config file does not yet exist, creating defaults...");
+            var result = new BMSMConfigV2();
+            saveConfig(result);
+            return result;
         }
 
         String configContent;
@@ -78,7 +80,9 @@ public class ConfigProvider {
             // v1 attempt
             if (configContent.contains("poiPrefix")) {
                 var v1Config = GSON.fromJson(configContent, BMSMConfigV1.class);
-                return loadV1Config(file, v1Config);
+                var migratedConfig = loadV1Config(file, v1Config);
+                saveConfig(migratedConfig);
+                return migratedConfig;
             }
 
             // v2 attempt
@@ -100,8 +104,6 @@ public class ConfigProvider {
         LOGGER.info("Migrating config from v1 to v2...");
         FileUtils.createBackup(path, ".v1.bak", "config file");
 
-        var v2Config = new BMSMConfigV2(new MarkerGroup(v1Config.getPoiPrefix(), MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, "Points of Interest", null, 0, 0));
-        saveConfig(v2Config);
-        return v2Config;
+        return new BMSMConfigV2(new MarkerGroup(v1Config.getPoiPrefix(), MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, "Points of Interest", null, 0, 0));
     }
 }
