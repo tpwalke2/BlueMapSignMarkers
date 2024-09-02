@@ -40,12 +40,15 @@ public class SignManager implements IResetHandler {
     public static void addOrUpdate(SignEntry signEntry) {
         getInstance().addOrUpdateSign(signEntry);
     }
+
     public static void remove(SignEntryKey key) {
         getInstance().removeByKey(key);
     }
+
     public static List<SignEntry> getAll() {
         return getInstance().getAllSigns();
     }
+
     public static void stop() {
         getInstance().shutdown();
     }
@@ -97,9 +100,9 @@ public class SignManager implements IResetHandler {
         var isPOIMarker = SignEntryHelper.isMarkerType(signEntry, prefixGroupMap, MarkerGroupType.POI);
         var label = SignEntryHelper.getLabel(signEntry);
         var detail = SignEntryHelper.getDetail(signEntry);
-        var prefix = SignEntryHelper.getPrefix(signEntry);
+        var newPrefix = SignEntryHelper.getPrefix(signEntry);
 
-        if (prefix == null) {
+        if (newPrefix == null) {
             LOGGER.debug("Cannot add or update sign as no prefix found: {}", signEntry);
             return;
         }
@@ -115,7 +118,7 @@ public class SignManager implements IResetHandler {
                             key.parentMap(),
                             label,
                             detail,
-                            prefixGroupMap.get(prefix)));
+                            prefixGroupMap.get(newPrefix)));
             return;
         }
 
@@ -125,6 +128,8 @@ public class SignManager implements IResetHandler {
         }
 
         if (existing != null && isPOIMarker) {
+            var existingPrefix = SignEntryHelper.getPrefix(existing);
+
             LOGGER.debug("Updating POI marker: {}", signEntry);
             if (signEntry.playerId().equals("unknown")) {
                 signCache.put(key, new SignEntry(
@@ -135,15 +140,36 @@ public class SignManager implements IResetHandler {
             } else {
                 signCache.put(key, signEntry);
             }
-            blueMapAPIConnector.dispatch(
-                    actionFactory.createUpdatePOIAction(
-                            key.x(),
-                            key.y(),
-                            key.z(),
-                            key.parentMap(),
-                            label,
-                            detail,
-                            prefixGroupMap.get(prefix)));
+
+            if (existingPrefix.equals(newPrefix)) {
+                blueMapAPIConnector.dispatch(
+                        actionFactory.createUpdatePOIAction(
+                                key.x(),
+                                key.y(),
+                                key.z(),
+                                key.parentMap(),
+                                label,
+                                detail,
+                                prefixGroupMap.get(newPrefix)));
+            } else {
+                blueMapAPIConnector.dispatch(
+                        actionFactory.createRemovePOIAction(
+                                key.x(),
+                                key.y(),
+                                key.z(),
+                                key.parentMap(),
+                                prefixGroupMap.get(existingPrefix)));
+
+                blueMapAPIConnector.dispatch(
+                        actionFactory.createAddPOIAction(
+                                key.x(),
+                                key.y(),
+                                key.z(),
+                                key.parentMap(),
+                                label,
+                                detail,
+                                prefixGroupMap.get(newPrefix)));
+            }
         }
     }
 
