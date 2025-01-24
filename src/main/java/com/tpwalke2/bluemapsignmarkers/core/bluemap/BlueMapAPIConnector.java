@@ -65,7 +65,7 @@ public class BlueMapAPIConnector {
     }
 
     private void processMarkerAction(MarkerAction markerAction) {
-        LOGGER.info("Processing marker action: {}", markerAction);
+        logProcessingMessage(markerAction);
 
         var markerSets = getMarkerSets(markerAction.getMarkerIdentifier().parentSet());
 
@@ -83,6 +83,31 @@ public class BlueMapAPIConnector {
             case UpdateMarkerAction updateAction -> updateMarker(updateAction, markerSetMaps);
             default -> LOGGER.warn("Unknown marker action: {}", markerAction);
         }
+    }
+
+    private void logProcessingMessage(MarkerAction action) {
+        var operation = switch (action) {
+            case AddMarkerAction ignored -> "Adding";
+            case RemoveMarkerAction ignored -> "Removing";
+            case UpdateMarkerAction ignored -> "Updating";
+            default -> "Processing";
+        };
+
+        var detail = "";
+        if (action instanceof AddMarkerAction addAction) {
+            detail = " with label='" + addAction.getDetail().replace("\n", "\\n") + "'";
+        } else if (action instanceof UpdateMarkerAction updateAction) {
+            detail = " to label='" + updateAction.getNewDetails().replace("\n", "\\n") + "'";
+        }
+
+        LOGGER.info("{} {} type marker in {} at x={} y={} z={}{}",
+                operation,
+                action.getMarkerIdentifier().parentSet().markerGroup().type(),
+                action.getMarkerIdentifier().parentSet().mapId(),
+                action.getX(),
+                action.getY(),
+                action.getZ(),
+                detail);
     }
 
     private static void updateMarker(UpdateMarkerAction updateAction, Stream<Map<String, Marker>> markerSetMaps) {
