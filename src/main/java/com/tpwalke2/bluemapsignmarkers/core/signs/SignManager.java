@@ -107,7 +107,7 @@ public class SignManager implements IResetHandler {
             return;
         }
 
-        if (existing == null && isPOIMarker) {
+        if (shouldAddPOIMarker(existing, isPOIMarker)) {
             LOGGER.debug("Adding POI marker: {}", signEntry);
             signCache.put(key, signEntry);
             blueMapAPIConnector.dispatch(
@@ -122,35 +122,41 @@ public class SignManager implements IResetHandler {
             return;
         }
 
-        if (existing != null && !isPOIMarker) {
+        if (shouldRemovePOIMarker(existing, isPOIMarker)) {
             LOGGER.debug("Removing POI marker: {}", signEntry);
             removeEntry(signEntry);
         }
 
-        if (existing != null && isPOIMarker) {
+        if (shouldUpdatePOIMarker(existing, isPOIMarker)) {
             var existingPrefix = SignEntryHelper.getPrefix(existing);
 
             LOGGER.debug("Updating POI marker: {}", signEntry);
-            if (signEntry.playerId().equals("unknown")) {
-                signCache.put(key, new SignEntry(
-                        key,
-                        existing.playerId(),
-                        signEntry.frontText(),
-                        signEntry.backText()));
-            } else {
-                signCache.put(key, signEntry);
-            }
+            signCache.put(
+                    key,
+                    signEntry.playerId().equals("unknown")
+                            ? new SignEntry(
+                                    key,
+                                    existing.playerId(),
+                                    signEntry.frontText(),
+                                    signEntry.backText())
+                            : signEntry);
 
             if (existingPrefix.equals(newPrefix)) {
-                blueMapAPIConnector.dispatch(
-                        actionFactory.createUpdatePOIAction(
-                                key.x(),
-                                key.y(),
-                                key.z(),
-                                key.parentMap(),
-                                label,
-                                detail,
-                                prefixGroupMap.get(newPrefix)));
+                var existingLabel = SignEntryHelper.getLabel(existing);
+                var existingDetail = SignEntryHelper.getDetail(existing);
+
+                if (isTextDifferent(existingLabel, label, existingDetail, detail)) {
+                    LOGGER.debug("Updating POI marker label and detail");
+                    blueMapAPIConnector.dispatch(
+                            actionFactory.createUpdatePOIAction(
+                                    key.x(),
+                                    key.y(),
+                                    key.z(),
+                                    key.parentMap(),
+                                    label,
+                                    detail,
+                                    prefixGroupMap.get(newPrefix)));
+                }
             } else {
                 blueMapAPIConnector.dispatch(
                         actionFactory.createRemovePOIAction(
@@ -171,6 +177,22 @@ public class SignManager implements IResetHandler {
                                 prefixGroupMap.get(newPrefix)));
             }
         }
+    }
+
+    private static boolean isTextDifferent(String existingLabel, String label, String existingDetail, String detail) {
+        return !existingLabel.equals(label) || !existingDetail.equals(detail);
+    }
+
+    private static boolean shouldUpdatePOIMarker(SignEntry existing, boolean isPOIMarker) {
+        return existing != null && isPOIMarker;
+    }
+
+    private static boolean shouldRemovePOIMarker(SignEntry existing, boolean isPOIMarker) {
+        return existing != null && !isPOIMarker;
+    }
+
+    private static boolean shouldAddPOIMarker(SignEntry existing, boolean isPOIMarker) {
+        return existing == null && isPOIMarker;
     }
 
     private void removeByKey(SignEntryKey key) {
