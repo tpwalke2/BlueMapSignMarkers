@@ -86,7 +86,7 @@ modrinth {
 		versionType = "alpha"
 	}
 	uploadFile = remapJar
-	gameVersions.addAll("1.21")
+	gameVersions.addAll("${project.minecraft_version}")
 	loaders.add("fabric")
 	dependencies {
 		required.project("P7dR8mSH") // Fabric API
