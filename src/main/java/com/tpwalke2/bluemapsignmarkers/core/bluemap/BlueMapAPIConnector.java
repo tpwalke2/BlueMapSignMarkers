@@ -191,6 +191,7 @@ public class BlueMapAPIConnector {
                 markerSet = MarkerSet
                         .builder()
                         .label(markerSetIdentifier.markerGroup().name())
+                        .defaultHidden(markerSetIdentifier.markerGroup().defaultHidden())
                         .build();
                 blueMapMap.getMarkerSets().putIfAbsent(markerSetIdentifier.markerGroup().prefix(), markerSet);
             }

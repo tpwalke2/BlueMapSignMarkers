@@ -13,7 +13,7 @@ public final class BMSMConfigV2 {
         this.markerGroups = new MarkerGroup[]{markerGroup};
     }
 
-    private MarkerGroup[] markerGroups = new MarkerGroup[]{new MarkerGroup("[poi]", MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, "Points of Interest", null, 0, 0)};
+    private MarkerGroup[] markerGroups = new MarkerGroup[]{new MarkerGroup("[poi]", MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, "Points of Interest", null, 0, 0, false)};
 
     public MarkerGroup[] getMarkerGroups() {
         return markerGroups;

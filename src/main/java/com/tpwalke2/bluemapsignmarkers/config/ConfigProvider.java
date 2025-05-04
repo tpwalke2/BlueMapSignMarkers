@@ -104,6 +104,6 @@ public class ConfigProvider {
         LOGGER.info("Migrating config from v1 to v2...");
         FileUtils.createBackup(path, ".v1.bak", "config file");
 
-        return new BMSMConfigV2(new MarkerGroup(v1Config.getPoiPrefix(), MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, "Points of Interest", null, 0, 0));
+        return new BMSMConfigV2(new MarkerGroup(v1Config.getPoiPrefix(), MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, "Points of Interest", null, 0, 0, false));
     }
 }
