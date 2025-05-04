@@ -38,6 +38,7 @@ configuration contains the following options:
 - `icon` - the icon path or URL to display for the marker; optional; default is `null` (BlueMap default POI icon)
 - `offsetX` - the x offset of the marker; optional; default is `0` (corresponds with `anchor.x` in BlueMap base configuration)
 - `offsetY` - the y offset of the marker; optional; default is `0` (corresponds with `anchor.y` in BlueMap base configuration)
+- `defaultHidden` - If this is true, the marker-set will be hidden by default and can be enabled by the user; optional; default is `false`
 
 ## Example
 
