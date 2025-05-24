@@ -2,6 +2,7 @@ package com.tpwalke2.bluemapsignmarkers.core.signs.persistence;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.Strictness;
 import com.tpwalke2.bluemapsignmarkers.Constants;
 import com.tpwalke2.bluemapsignmarkers.config.ConfigManager;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignEntry;
@@ -21,7 +22,7 @@ import java.nio.file.Paths;
 public class SignProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
     private static final Gson GSON = new GsonBuilder()
-            .setLenient()
+            .setStrictness(Strictness.LENIENT)
             .create();
 
     private SignProvider() {

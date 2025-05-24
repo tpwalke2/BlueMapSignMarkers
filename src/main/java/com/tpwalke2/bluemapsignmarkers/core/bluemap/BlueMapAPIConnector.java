@@ -143,7 +143,12 @@ public class BlueMapAPIConnector {
             }
 
             LOGGER.debug("Adding marker (id {}) to marker set: {}", addAction.getMarkerIdentifier().getId(), markerSetMaps);
-            markerSetMaps.forEach(stringMarkerMap -> stringMarkerMap.put(addAction.getMarkerIdentifier().getId(), markerBuilder.build()));
+            markerSetMaps.forEach(stringMarkerMap -> {
+                var marker = markerBuilder.build();
+                marker.setMinDistance(markerGroup.minDistance());
+                marker.setMaxDistance(markerGroup.maxDistance());
+                stringMarkerMap.put(addAction.getMarkerIdentifier().getId(), marker);
+            });
         }
     }
 

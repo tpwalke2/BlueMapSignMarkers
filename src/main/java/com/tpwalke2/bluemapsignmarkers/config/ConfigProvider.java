@@ -2,10 +2,12 @@ package com.tpwalke2.bluemapsignmarkers.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.Strictness;
 import com.tpwalke2.bluemapsignmarkers.Constants;
 import com.tpwalke2.bluemapsignmarkers.common.FileUtils;
 import com.tpwalke2.bluemapsignmarkers.config.models.BMSMConfigV1;
 import com.tpwalke2.bluemapsignmarkers.config.models.BMSMConfigV2;
+import com.tpwalke2.bluemapsignmarkers.config.persistence.LoadingBMSMConfigV2;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupMatchType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
@@ -24,7 +26,7 @@ import java.util.Arrays;
 public class ConfigProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
     private static final Gson GSON = new GsonBuilder()
-            .setLenient()
+            .setStrictness(Strictness.LENIENT)
             .setPrettyPrinting()
             .create();
 
@@ -86,11 +88,22 @@ public class ConfigProvider {
             }
 
             // v2 attempt
-            var result = GSON.fromJson(configContent, BMSMConfigV2.class);
+            var result = GSON.fromJson(configContent, LoadingBMSMConfigV2.class);
 
             return new BMSMConfigV2(Arrays
                     .stream(result.getMarkerGroups())
-                    .map(markerGroup -> markerGroup.type() == null ? markerGroup.withType(MarkerGroupType.POI) : markerGroup)
+                    .map(markerGroup -> new MarkerGroup(
+                            markerGroup.prefix(),
+                            markerGroup.matchType() == null ? MarkerGroupMatchType.STARTS_WITH : markerGroup.matchType(),
+                            markerGroup.type(),
+                            markerGroup.name(),
+                            markerGroup.icon(),
+                            markerGroup.offsetX() == null ? 0 : markerGroup.offsetX(),
+                            markerGroup.offsetY() == null ? 0 : markerGroup.offsetY(),
+                            markerGroup.defaultHidden() != null && markerGroup.defaultHidden(),
+                            markerGroup.minDistance() == null ? 0.0 : markerGroup.minDistance(),
+                            markerGroup.maxDistance() == null ? 10000000.0 : markerGroup.maxDistance()
+                    ))
                     .toArray(MarkerGroup[]::new));
 
         } catch (Exception e) {
@@ -104,6 +117,17 @@ public class ConfigProvider {
         LOGGER.info("Migrating config from v1 to v2...");
         FileUtils.createBackup(path, ".v1.bak", "config file");
 
-        return new BMSMConfigV2(new MarkerGroup(v1Config.getPoiPrefix(), MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, "Points of Interest", null, 0, 0, false));
+        return new BMSMConfigV2(
+                new MarkerGroup(
+                        v1Config.getPoiPrefix(),
+                        MarkerGroupMatchType.STARTS_WITH,
+                        MarkerGroupType.POI,
+                        "Points of Interest",
+                        null,
+                        0,
+                        0,
+                        false,
+                        0,
+                        10000000.0));
     }
 }
