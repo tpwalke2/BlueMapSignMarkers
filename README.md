@@ -39,6 +39,8 @@ configuration contains the following options:
 - `offsetX` - the x offset of the marker; optional; default is `0` (corresponds with `anchor.x` in BlueMap base configuration)
 - `offsetY` - the y offset of the marker; optional; default is `0` (corresponds with `anchor.y` in BlueMap base configuration)
 - `defaultHidden` - If this is true, the marker-set will be hidden by default and can be enabled by the user; optional; default is `false`
+- `minDistance` - the minimum distance from the camera at which the marker will be displayed; optional; default is `0.0` (floating point, double precision)
+- `maxDistance` - the maximum distance from the camera at which the marker will be displayed; optional; default is `10000000.0` (floating point, double precision)
 
 ## Example
 
