@@ -8,6 +8,7 @@ import com.tpwalke2.bluemapsignmarkers.common.FileUtils;
 import com.tpwalke2.bluemapsignmarkers.config.models.BMSMConfigV1;
 import com.tpwalke2.bluemapsignmarkers.config.models.BMSMConfigV2;
 import com.tpwalke2.bluemapsignmarkers.config.persistence.LoadingBMSMConfigV2;
+import com.tpwalke2.bluemapsignmarkers.config.persistence.LoadingMarkerGroupV2;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupMatchType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
@@ -92,24 +93,28 @@ public class ConfigProvider {
 
             return new BMSMConfigV2(Arrays
                     .stream(result.getMarkerGroups())
-                    .map(markerGroup -> new MarkerGroup(
-                            markerGroup.prefix(),
-                            markerGroup.matchType() == null ? MarkerGroupMatchType.STARTS_WITH : markerGroup.matchType(),
-                            markerGroup.type(),
-                            markerGroup.name(),
-                            markerGroup.icon(),
-                            markerGroup.offsetX() == null ? 0 : markerGroup.offsetX(),
-                            markerGroup.offsetY() == null ? 0 : markerGroup.offsetY(),
-                            markerGroup.defaultHidden() != null && markerGroup.defaultHidden(),
-                            markerGroup.minDistance() == null ? 0.0 : markerGroup.minDistance(),
-                            markerGroup.maxDistance() == null ? 10000000.0 : markerGroup.maxDistance()
-                    ))
+                    .map(ConfigProvider::convertToLoadedMarkerGroup)
                     .toArray(MarkerGroup[]::new));
 
         } catch (Exception e) {
             LOGGER.error("Failed to load config:", e);
             return null;
         }
+    }
+
+    private static MarkerGroup convertToLoadedMarkerGroup(LoadingMarkerGroupV2 markerGroup) {
+        return new MarkerGroup(
+                markerGroup.prefix(),
+                markerGroup.matchType() == null ? MarkerGroupMatchType.STARTS_WITH : markerGroup.matchType(),
+                markerGroup.type() == null ? MarkerGroupType.POI : markerGroup.type(),
+                markerGroup.name(),
+                markerGroup.icon(),
+                markerGroup.offsetX() == null ? 0 : markerGroup.offsetX(),
+                markerGroup.offsetY() == null ? 0 : markerGroup.offsetY(),
+                markerGroup.defaultHidden() != null && markerGroup.defaultHidden(),
+                markerGroup.minDistance() == null ? 0.0 : markerGroup.minDistance(),
+                markerGroup.maxDistance() == null ? 10000000.0 : markerGroup.maxDistance()
+        );
     }
 
     private static BMSMConfigV2 loadV1Config(File file, BMSMConfigV1 v1Config) {
