@@ -17,8 +17,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class AbstractBlockInject {
     @Inject(method = "onStateReplaced", at = @At("HEAD"))
     public void onStateReplaced(BlockState state, ServerWorld world, BlockPos pos, boolean moved, CallbackInfo ci) {
-        if (world.isClient) return;
-
         if (!(state.getBlock() instanceof AbstractSignBlock)) return;
 
         SignManager.remove(new SignEntryKey(pos.getX(), pos.getY(), pos.getZ(), SignHelper.getSignParentMap(world)));
