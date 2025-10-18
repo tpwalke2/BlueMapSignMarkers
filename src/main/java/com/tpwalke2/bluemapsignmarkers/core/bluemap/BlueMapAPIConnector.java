@@ -183,9 +183,6 @@ public class BlueMapAPIConnector {
             return result;
         }
 
-        var existingMarkerSets = Optional.ofNullable(markerSetsCache.get(markerSetIdentifier));
-        if (existingMarkerSets.isPresent()) return existingMarkerSets;
-
         var markerSetsToReturn = new ArrayList<MarkerSet>();
 
         maps.get().forEach(blueMapMap -> {
@@ -201,18 +198,14 @@ public class BlueMapAPIConnector {
                 blueMapMap.getMarkerSets().putIfAbsent(markerSetIdentifier.markerGroup().prefix(), markerSet);
             }
             LOGGER.debug("Caching marker set: {}", markerSetIdentifier);
-            markerSetsCache.putIfAbsent(markerSetIdentifier, List.of(markerSet));
             markerSetsToReturn.add(markerSet);
+            markerSetsCache.putIfAbsent(markerSetIdentifier, markerSetsToReturn);
         });
 
         return Optional.of(markerSetsToReturn);
     }
 
     private Optional<Collection<BlueMapMap>> getMaps(String mapId) {
-        var result = this.blueMapAPI.getMap(mapId);
-
-        if (result.isPresent()) return Optional.of(Collections.singletonList(result.get()));
-
         var world = this.blueMapAPI.getWorld(mapId);
 
         if (world.isEmpty()) {
