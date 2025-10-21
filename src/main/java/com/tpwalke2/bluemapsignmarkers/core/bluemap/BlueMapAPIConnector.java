@@ -188,14 +188,14 @@ public class BlueMapAPIConnector {
         maps.get().forEach(blueMapMap -> {
             var markerSet = blueMapMap
                     .getMarkerSets()
-                    .get(markerSetIdentifier.markerGroup().prefix());
+                    .get(markerSetIdentifier.markerGroup().name());
             if (markerSet == null) {
                 markerSet = MarkerSet
                         .builder()
                         .label(markerSetIdentifier.markerGroup().name())
                         .defaultHidden(markerSetIdentifier.markerGroup().defaultHidden())
                         .build();
-                blueMapMap.getMarkerSets().putIfAbsent(markerSetIdentifier.markerGroup().prefix(), markerSet);
+                blueMapMap.getMarkerSets().putIfAbsent(markerSetIdentifier.markerGroup().name(), markerSet);
             }
             LOGGER.debug("Caching marker set: {}", markerSetIdentifier);
             markerSetsToReturn.add(markerSet);
