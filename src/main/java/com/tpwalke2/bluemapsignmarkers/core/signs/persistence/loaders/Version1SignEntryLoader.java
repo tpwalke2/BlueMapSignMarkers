@@ -7,11 +7,11 @@ import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignEntry;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignEntryKey;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV2;
-import net.minecraft.world.World;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
+import net.minecraft.world.level.Level;
 
 public class Version1SignEntryLoader {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
@@ -51,9 +51,9 @@ public class Version1SignEntryLoader {
         var result = mapId.toLowerCase();
 
         return switch (result) {
-            case NETHER -> World.NETHER.getValue().toString();
-            case END -> World.END.getValue().toString();
-            case OVERWORLD -> World.OVERWORLD.getValue().toString();
+            case NETHER -> Level.NETHER.identifier().toString();
+            case END -> Level.END.identifier().toString();
+            case OVERWORLD -> Level.OVERWORLD.identifier().toString();
             default -> result;
         };
 
