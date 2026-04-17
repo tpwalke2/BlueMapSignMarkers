@@ -16,9 +16,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(BlockBehaviour.class)
 public class AbstractBlockInject {
     @Inject(method = "affectNeighborsAfterRemoval", at = @At("HEAD"))
-    public void onStateReplaced(BlockState state, ServerLevel world, BlockPos pos, boolean moved, CallbackInfo ci) {
+    public void onStateReplaced(BlockState state,
+                                ServerLevel level,
+                                BlockPos pos,
+                                boolean movedByPiston,
+                                CallbackInfo ci) {
         if (!(state.getBlock() instanceof SignBlock)) return;
 
-        SignManager.remove(new SignEntryKey(pos.getX(), pos.getY(), pos.getZ(), SignHelper.getSignParentMap(world)));
+        SignManager.remove(new SignEntryKey(pos.getX(), pos.getY(), pos.getZ(), SignHelper.getSignParentMap(level)));
     }
 }

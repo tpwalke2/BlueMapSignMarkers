@@ -15,7 +15,11 @@ import net.minecraft.world.level.block.entity.SignBlockEntity;
 @Mixin(SignBlockEntity.class)
 public class SignBlockEntityInject {
     @Inject(method = "updateSignText", at = @At("TAIL"))
-    void onTryChangeText(Player player, boolean front, List<FilteredText> messages, CallbackInfo cir) {
+    void onTryChangeText(
+            Player player,
+            boolean frontText,
+            List<FilteredText> lines,
+            CallbackInfo cir) {
         SignManager.addOrUpdate(SignHelper.createSignEntry(
                 (SignBlockEntity) (Object) this,
                 player.getStringUUID()));
