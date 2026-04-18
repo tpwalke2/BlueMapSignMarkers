@@ -6,11 +6,11 @@ import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.SignProvider;
 import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerBlockEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.SignBlockEntity;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.WorldSavePath;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.SignBlockEntity;
+import net.minecraft.world.level.storage.LevelResource;
 
 public class BlueMapSignMarkersMod implements DedicatedServerModInitializer {
 
@@ -32,11 +32,11 @@ public class BlueMapSignMarkersMod implements DedicatedServerModInitializer {
 	}
 
 	private String getMarkerFilePath(MinecraftServer server) {
-		var worldSaveName = server.getSavePath(WorldSavePath.ROOT).toAbsolutePath().getParent().getFileName();
+		var worldSaveName = server.getWorldPath(LevelResource.ROOT).toAbsolutePath().getParent().getFileName();
 		return String.format("config/%s/%s/signs.json", Constants.MOD_ID, worldSaveName);
 	}
 
-	private void onBlockEntityLoad(BlockEntity blockEntity, ServerWorld world) {
+	private void onBlockEntityLoad(BlockEntity blockEntity, ServerLevel world) {
 		if (!(blockEntity instanceof SignBlockEntity castBlockEntity)) return;
 
 		SignManager.addOrUpdate(SignHelper.createSignEntry(castBlockEntity, "unknown"));

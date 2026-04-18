@@ -2,12 +2,11 @@ package com.tpwalke2.bluemapsignmarkers.core.signs;
 
 import com.tpwalke2.bluemapsignmarkers.config.ConfigManager;
 import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
-import net.minecraft.block.entity.SignBlockEntity;
-import net.minecraft.block.entity.SignText;
-import net.minecraft.text.Text;
-import net.minecraft.world.World;
-
 import java.util.Arrays;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.SignBlockEntity;
+import net.minecraft.world.level.block.entity.SignText;
 
 public class SignHelper {
     private SignHelper() {
@@ -18,29 +17,29 @@ public class SignHelper {
     public static SignEntry createSignEntry(
             SignBlockEntity signBlockEntity,
             String playerId) {
-        var pos = signBlockEntity.getPos();
+        var pos = signBlockEntity.getBlockPos();
 
         return new SignEntry(
                 new SignEntryKey(
                         pos.getX(),
                         pos.getY(),
                         pos.getZ(),
-                        getSignParentMap(signBlockEntity.getWorld())),
+                        getSignParentMap(signBlockEntity.getLevel())),
                 playerId,
                 getParsedSignText(signBlockEntity.getFrontText()),
                 getParsedSignText(signBlockEntity.getBackText()));
     }
 
-    public static String getSignParentMap(World world) {
+    public static String getSignParentMap(Level world) {
         if (world == null) return WorldMap.UNKNOWN;
 
-        return world.getRegistryKey().getValue().toString();
+        return world.dimension().identifier().toString();
     }
 
     private static SignLinesParseResult getParsedSignText(SignText signText) {
         return signLinesParser
                 .parse(Arrays.stream(signText.getMessages(false))
-                        .map(Text::getString)
+                        .map(Component::getString)
                         .toArray(String[]::new));
     }
 }
