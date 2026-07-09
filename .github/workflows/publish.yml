@@ -27,6 +27,8 @@ jobs:
             ${{ runner.os }}-bluemapsignmarkers-
       - name: make gradle wrapper executable
         run: chmod +x ./gradlew
+      - name: run unit tests
+        run: ./gradlew test
       - name: Publish alpha to Modrinth
         if: startsWith(github.ref, 'refs/heads/')
         env:

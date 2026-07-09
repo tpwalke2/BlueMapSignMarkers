@@ -44,8 +44,10 @@ jobs:
             ${{ runner.os }}-bluemapsignmarkers-
       - name: make gradle wrapper executable
         run: chmod +x ./gradlew
+      - name: run unit tests
+        run: ./gradlew test
       - name: build with gradle
-        run: ./gradlew clean build
+        run: ./gradlew build
       - name: capture build artifacts
         uses: actions/upload-artifact@v7
         with:
