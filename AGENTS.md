@@ -35,6 +35,13 @@ CI (`.github/workflows/build.yml`) runs the unit tests and then `./gradlew build
 unit tests first (a failure blocks publishing), then runs `./gradlew modrinth` to publish to Modrinth (alpha from
 branch dispatch, release from a `v*` tag dispatch with `-PisRelease`).
 
+Both workflows also have a `summarize test results` step right after `run unit tests` (`if: always()`, so it still
+runs when tests fail). It sums the `tests`/`failures`/`errors`/`skipped` attributes out of Gradle's JUnit XML reports
+(`build/test-results/test/*.xml`) with plain shell (`sed`, no `xmllint` or third-party action) and writes a markdown
+table to `$GITHUB_STEP_SUMMARY`, so pass/fail counts show up on the workflow run's summary page instead of only in
+the raw log. This was a deliberate choice over `checks: write`-based reporter actions, which don't get that
+permission on PRs from forks by default in a public repo.
+
 ## Architecture
 
 ### Entry point and Minecraft hooks

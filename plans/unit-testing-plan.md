@@ -61,3 +61,40 @@ automatic as long as test code lives under `src/test/java`.
 - Run `./gradlew test` — confirms the new JUnit 5 wiring works and all `SignLinesParserTest` cases pass.
 - Run `./gradlew clean build` — confirms the full build (including `runServer`-independent test run) still succeeds
   and that `build/libs/*.jar` contains no `src/test` classes (spot-check with `jar tf` if desired).
+
+## Follow-up (implemented): CI test-count summary
+
+Both `.github/workflows/build.yml` and `.github/workflows/publish.yml` have an explicit `run unit tests` step
+(`./gradlew test`), which already fails the job on any test failure. That alone only shows pass/fail counts buried
+in the raw log ("N tests completed, M failed"); a `summarize test results` step was added right after each
+`run unit tests` step for a prominent, structured display.
+
+Preference honored: no third-party GitHub Actions, since `checks: write`-based reporter actions
+(`dorny/test-reporter`, `mikepenz/action-junit-report`, etc.) don't get that permission on PRs from forks by default
+in a public repo, and a `workflow_run`-triggered second workflow to handle that properly is more moving parts than
+this project needs.
+
+**What was implemented:** Gradle's `test` task writes JUnit XML reports to `build/test-results/test/*.xml` — one
+file per test class, each with a root `<testsuite ... tests="N" failures="N" errors="N" skipped="N">` attribute
+set. The new `summarize test results` step:
+1. Runs with `if: always()` so the summary is written even when the preceding test step failed — that's the case
+   where seeing the counts matters most.
+2. Sums the `tests`/`failures`/`errors`/`skipped` attributes across all XML files in `build/test-results/test/`
+   using `sed` (not `grep -oP` as originally sketched — `-P` (PCRE) support turned out to be locale-sensitive in
+   local testing, so a portable `sed -n 's/.../\1/p'` extraction is used instead; no `xmllint` or other extra
+   tooling needed either way).
+3. Writes a markdown table (total / passed / failed / errors / skipped) to the `$GITHUB_STEP_SUMMARY` file, which
+   GitHub renders on the workflow run's summary page. This uses only the built-in job-summary mechanism, so it
+   needs no extra permissions and behaves identically for PRs from forks.
+
+**Files changed:**
+- `.github/workflows/build.yml` — added the summary step after `run unit tests`.
+- `.github/workflows/publish.yml` — added the same summary step after its `run unit tests`.
+- `AGENTS.md` — documents the new step.
+- No other files changed; this was CI-only and didn't touch `build.gradle` or test code.
+
+**Verification performed:** locally ran the summarizer shell logic against `build/test-results/test/*.xml` for both
+an all-passing suite (10/10) and, by temporarily breaking then reverting an assertion in
+`SignLinesParserTest.labelOnPrefixLine`, a run with one failure — confirmed the table correctly reported `10/9/1/0/0`
+and `10/10/0/0/0` respectively. End-to-end confirmation that the summary actually renders on the GitHub Actions
+run-summary page (rather than just locally) still requires a push/PR to observe in the Actions UI.
