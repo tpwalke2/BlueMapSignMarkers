@@ -52,9 +52,8 @@ automatic as long as test code lives under `src/test/java`.
    - **Whitespace tolerance** — lines with leading/trailing whitespace around the prefix/content still parse
      correctly (each line is `.trim()`-ed before matching).
 
-3. **No other files change.** `README.md`, mixins, `fabric.mod.json`, and CI workflows are unaffected — CI's
-   existing `./gradlew clean build` already runs `check`/`test` as a dependency of `build`, so tests will start
-   running in CI automatically once added, with no workflow file changes required.
+3. **CI workflows** — unit tests will run in CI (explicit `./gradlew test` step) and a results summary will be written to the workflow run summary (see Follow-up below).
+   Other project files (`README.md`, mixins, `fabric.mod.json`) are unaffected.
 
 ## Verification
 
