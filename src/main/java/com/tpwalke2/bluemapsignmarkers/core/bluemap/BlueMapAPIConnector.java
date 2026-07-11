@@ -1,6 +1,7 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap;
 
 import com.tpwalke2.bluemapsignmarkers.Constants;
+import com.tpwalke2.bluemapsignmarkers.common.HtmlUtils;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.AddMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.MarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMarkerAction;
@@ -118,7 +119,7 @@ public class BlueMapAPIConnector {
             if (marker.isEmpty()) return;
             marker.get().setLabel(updateAction.getNewLabel());
             if (marker.get() instanceof POIMarker poiMarker) {
-                poiMarker.setDetail(updateAction.getNewDetails());
+                poiMarker.setDetail(HtmlUtils.toHtmlDetail(updateAction.getNewDetails()));
             }
         });
     }
@@ -136,7 +137,7 @@ public class BlueMapAPIConnector {
             var markerBuilder = POIMarker.builder()
                     .position(addAction.getX(), addAction.getY(), addAction.getZ())
                     .label(addAction.getLabel())
-                    .detail(addAction.getDetail());
+                    .detail(HtmlUtils.toHtmlDetail(addAction.getDetail()));
 
             if (markerGroup.icon() != null && !markerGroup.icon().isEmpty()) {
                 markerBuilder.icon(markerGroup.icon(), markerGroup.offsetX(), markerGroup.offsetY());
