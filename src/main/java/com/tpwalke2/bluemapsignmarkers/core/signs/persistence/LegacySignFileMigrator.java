@@ -59,7 +59,7 @@ public class LegacySignFileMigrator {
         var entryList = Arrays.asList(signEntries);
         RegionShardedSignEntryWriter.write(storageRoot, entryList, gson);
 
-        // Only back up the legacy file once we're confident something was written.
+        // Back up the legacy file once migration is complete (or immediately if it contained zero entries).
         if (entryList.isEmpty() || com.tpwalke2.bluemapsignmarkers.core.signs.persistence.loaders.RegionShardedSignEntryLoader.hasSignData(storageRoot)) {
             FileUtils.moveToBackup(legacyPath, ".migrated", "legacy markers file");
         } else {
