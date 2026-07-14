@@ -60,6 +60,8 @@ public class RegionShardedSignEntryLoader {
     }
 
     private static boolean isRegionFile(Path path) {
-        return Files.isRegularFile(path) && path.toString().endsWith(".json");
+        if (!Files.isRegularFile(path)) return false;
+        var name = path.getFileName().toString();
+        return name.startsWith("r.") && name.endsWith(".json");
     }
 }

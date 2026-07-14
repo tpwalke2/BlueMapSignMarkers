@@ -33,7 +33,11 @@ public class SignProvider {
                     : LegacySignFileMigrator.migrate(legacyPath, storageRoot, groups, GSON);
 
             for (SignEntry signEntry : signEntries) {
-                SignManager.addOrUpdate(signEntry);
+                try {
+                    SignManager.addOrUpdate(signEntry);
+                } catch (Exception entryException) {
+                    LOGGER.error("Failed to load sign entry {}", signEntry.key(), entryException);
+                }
             }
         } catch (Exception e) {
             LOGGER.error("Failed to load markers", e);

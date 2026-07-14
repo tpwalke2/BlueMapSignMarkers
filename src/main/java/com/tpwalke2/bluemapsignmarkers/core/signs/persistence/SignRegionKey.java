@@ -16,9 +16,18 @@ public record SignRegionKey(String dimension, int regionX, int regionZ) {
     public Path relativeFilePath() {
         var separatorIndex = dimension.indexOf(':');
         var namespace = separatorIndex < 0 ? dimension : dimension.substring(0, separatorIndex);
-        var path = separatorIndex < 0 ? "" : dimension.substring(separatorIndex + 1);
+        var rawPath = separatorIndex < 0 ? "" : dimension.substring(separatorIndex + 1);
         var fileName = "r." + regionX + "." + regionZ + ".json";
 
-        return path.isEmpty() ? Path.of(namespace, fileName) : Path.of(namespace, path, fileName);
+        if (namespace.isBlank() || namespace.equals(".") || namespace.equals("..")) {
+            throw new IllegalArgumentException("Invalid dimension namespace: " + namespace);
+        }
+
+        var relativeDir = Path.of(namespace).resolve(rawPath).normalize();
+        if (relativeDir.isAbsolute() || relativeDir.startsWith("..")) {
+            throw new IllegalArgumentException("Unsafe dimension id for storage path: " + dimension);
+        }
+
+        return relativeDir.resolve(fileName);
     }
 }

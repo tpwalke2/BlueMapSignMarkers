@@ -49,7 +49,10 @@ public class RegionShardedSignEntryWriter {
 
         try (var existing = Files.walk(storageRoot)) {
             existing.filter(Files::isRegularFile)
-                    .filter(path -> path.toString().endsWith(".json"))
+                    .filter(path -> {
+                        var name = path.getFileName().toString();
+                        return name.startsWith("r.") && name.endsWith(".json");
+                    })
                     .filter(path -> !writtenFiles.contains(path))
                     .forEach(RegionShardedSignEntryWriter::deleteQuietly);
         } catch (IOException e) {
