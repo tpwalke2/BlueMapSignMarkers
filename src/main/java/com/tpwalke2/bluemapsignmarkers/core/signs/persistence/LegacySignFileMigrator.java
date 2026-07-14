@@ -40,14 +40,31 @@ public class LegacySignFileMigrator {
             return List.of();
         }
 
-        var signEntries = VersionedFileSignEntryLoader.loadSignEntries(legacyPath, legacyContent, markerGroups, gson);
+        SignEntry[] signEntries;
+        try {
+            signEntries = VersionedFileSignEntryLoader.loadSignEntries(legacyPath, legacyContent, markerGroups, gson);
+            if (signEntries == null) {
+                signEntries = Version1SignEntryLoader.loadSignEntries(legacyPath, legacyContent, markerGroups, gson);
+            }
+        } catch (Exception e) {
+            LOGGER.error("Failed to parse legacy markers file {}, leaving it in place", legacyPath, e);
+            return List.of();
+        }
+
         if (signEntries == null) {
-            signEntries = Version1SignEntryLoader.loadSignEntries(legacyPath, legacyContent, markerGroups, gson);
+            LOGGER.error("Legacy markers file {} is not a recognized format; leaving it in place", legacyPath);
+            return List.of();
         }
 
         var entryList = Arrays.asList(signEntries);
         RegionShardedSignEntryWriter.write(storageRoot, entryList, gson);
-        FileUtils.moveToBackup(legacyPath, ".migrated", "legacy markers file");
+
+        // Only back up the legacy file once we're confident something was written.
+        if (entryList.isEmpty() || com.tpwalke2.bluemapsignmarkers.core.signs.persistence.loaders.RegionShardedSignEntryLoader.hasSignData(storageRoot)) {
+            FileUtils.moveToBackup(legacyPath, ".migrated", "legacy markers file");
+        } else {
+            LOGGER.error("Migration wrote no region files under {}; leaving legacy file in place at {}", storageRoot, legacyPath);
+        }
 
         LOGGER.info("Migration complete, {} sign(s) now stored under {}", entryList.size(), storageRoot);
 

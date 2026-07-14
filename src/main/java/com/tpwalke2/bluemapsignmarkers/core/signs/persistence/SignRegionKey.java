@@ -23,8 +23,9 @@ public record SignRegionKey(String dimension, int regionX, int regionZ) {
             throw new IllegalArgumentException("Invalid dimension namespace: " + namespace);
         }
 
-        var relativeDir = Path.of(namespace).resolve(rawPath).normalize();
-        if (relativeDir.isAbsolute() || relativeDir.startsWith("..")) {
+        var namespaceDir = Path.of(namespace);
+        var relativeDir = namespaceDir.resolve(rawPath).normalize();
+        if (relativeDir.isAbsolute() || relativeDir.startsWith("..") || !relativeDir.startsWith(namespaceDir)) {
             throw new IllegalArgumentException("Unsafe dimension id for storage path: " + dimension);
         }
 
