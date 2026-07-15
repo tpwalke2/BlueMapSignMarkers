@@ -10,12 +10,14 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 public class RegionShardedSignEntryWriter {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
+    private static final String STALE_SUFFIX = ".stale";
 
     private RegionShardedSignEntryWriter() {
     }
@@ -44,6 +46,8 @@ public class RegionShardedSignEntryWriter {
         }
     }
 
+    // A region absent from writtenFiles may be genuinely empty, or may have failed to load at
+    // startup - can't tell which here, so quarantine instead of delete to avoid losing real data.
     private static void deleteStaleRegionFiles(Path storageRoot, Set<Path> writtenFiles) {
         if (!Files.isDirectory(storageRoot)) return;
 
@@ -54,18 +58,20 @@ public class RegionShardedSignEntryWriter {
                         return name.startsWith("r.") && name.endsWith(".json");
                     })
                     .filter(path -> !writtenFiles.contains(path))
-                    .forEach(RegionShardedSignEntryWriter::deleteQuietly);
+                    .forEach(RegionShardedSignEntryWriter::quarantineStaleFile);
         } catch (IOException e) {
             LOGGER.error("Failed to clean up stale region files under {}", storageRoot, e);
         }
     }
 
-    private static void deleteQuietly(Path path) {
+    private static void quarantineStaleFile(Path path) {
+        var stalePath = path.resolveSibling(path.getFileName() + STALE_SUFFIX);
         try {
-            Files.delete(path);
-            LOGGER.debug("Removed stale region file {}", path);
+            Files.move(path, stalePath, StandardCopyOption.REPLACE_EXISTING);
+            LOGGER.warn("Region file {} had no signs in memory; moved it to {} instead of deleting, " +
+                    "in case it failed to load rather than being genuinely empty", path, stalePath);
         } catch (IOException e) {
-            LOGGER.warn("Failed to delete stale region file {}", path, e);
+            LOGGER.warn("Failed to quarantine stale region file {}", path, e);
         }
     }
 }

@@ -42,20 +42,22 @@ class RegionShardedSignEntryWriterTest {
     }
 
     @Test
-    void deletesStaleRegionFilesNotInCurrentSave(@TempDir Path storageRoot) throws IOException {
+    void quarantinesStaleRegionFilesNotInCurrentSave(@TempDir Path storageRoot) throws IOException {
         RegionShardedSignEntryWriter.write(
                 storageRoot, List.of(signEntry(0, 0, "minecraft:overworld", "Town Hall")), GSON);
         var staleFile = storageRoot.resolve("minecraft").resolve("overworld").resolve("r.0.0.json");
         assertTrue(Files.exists(staleFile));
 
-        // Re-save with that sign gone (e.g. removed) - the region file should disappear, not linger empty.
+        // Re-save with that sign gone (e.g. removed) - the region file should move aside, not
+        // vanish outright: it may be gone because it was removed, or because it failed to load.
         RegionShardedSignEntryWriter.write(storageRoot, List.of(), GSON);
 
         assertFalse(Files.exists(staleFile));
+        assertTrue(Files.exists(staleFile.resolveSibling(staleFile.getFileName() + ".stale")));
     }
 
     @Test
-    void movingASignToAnotherRegionDropsTheOldRegionFile(@TempDir Path storageRoot) throws IOException {
+    void movingASignToAnotherRegionQuarantinesTheOldRegionFile(@TempDir Path storageRoot) throws IOException {
         RegionShardedSignEntryWriter.write(
                 storageRoot, List.of(signEntry(0, 0, "minecraft:overworld", "Town Hall")), GSON);
 
@@ -65,6 +67,7 @@ class RegionShardedSignEntryWriterTest {
         var oldRegionFile = storageRoot.resolve("minecraft").resolve("overworld").resolve("r.0.0.json");
         var newRegionFile = storageRoot.resolve("minecraft").resolve("overworld").resolve("r.1.1.json");
         assertFalse(Files.exists(oldRegionFile));
+        assertTrue(Files.exists(oldRegionFile.resolveSibling(oldRegionFile.getFileName() + ".stale")));
         assertTrue(Files.exists(newRegionFile));
     }
 
