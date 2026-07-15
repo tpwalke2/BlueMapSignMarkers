@@ -12,7 +12,9 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.SignBlockEntity;
 import net.minecraft.world.level.storage.LevelResource;
 
-public class BlueMapSignMarkersMod implements DedicatedServerModInitializer {
+import java.nio.file.Path;
+
+public class BlueMapSignMarkersMod implements DedicatedServerModInitializer, ServerPathProvider {
 
 	@Override
 	public void onInitializeServer() {
@@ -22,16 +24,31 @@ public class BlueMapSignMarkersMod implements DedicatedServerModInitializer {
 	}
 
 	private void onServerStarting(MinecraftServer server) {
-		SignProvider.loadSigns(getMarkerFilePath(server));
+		SignProvider.loadSigns(getMarkerStorageRoot(server), getLegacyMarkerFilePath(server));
 	}
 
 	private void onServerStopping(MinecraftServer server) {
-		SignProvider.saveSigns(getMarkerFilePath(server));
+		SignProvider.saveSigns(getMarkerStorageRoot(server));
 
 		SignManager.stop();
 	}
 
-	private String getMarkerFilePath(MinecraftServer server) {
+	@Override
+	public Path getMarkerStorageRoot(MinecraftServer server) {
+		// normalize() is required: LevelResource.ROOT's relative path is ".", so without it levelDir keeps an
+		// unresolved trailing "." segment, shifting getParent()/getFileName() by one level (serverRoot would
+		// resolve to the level dir itself, and levelName to "." instead of the level name).
+		var levelDir = server.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize();
+		var serverRoot = levelDir.getParent();
+		var levelName = levelDir.getFileName();
+
+		return serverRoot.resolve(Constants.MOD_ID).resolve(levelName);
+	}
+
+	// Pre-existing (buggy) formula kept as-is: it resolves to the run directory's name, not the level name,
+	// which is exactly what's on disk for every install predating region-sharded storage. Migration needs to
+	// find files at the path they were actually written to, not the corrected one getMarkerStorageRoot uses.
+	private String getLegacyMarkerFilePath(MinecraftServer server) {
 		var worldSaveName = server.getWorldPath(LevelResource.ROOT).toAbsolutePath().getParent().getFileName();
 		return String.format("config/%s/%s/signs.json", Constants.MOD_ID, worldSaveName);
 	}
