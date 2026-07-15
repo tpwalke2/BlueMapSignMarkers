@@ -5,7 +5,8 @@ sign/config/persistence stack, one over the BlueMap integration/markers/reactive
 each were spot-checked directly against the source before inclusion here. Severities: Critical > High > Medium >
 Low > Nitpick.
 
-Findings are review-only — no fixes applied. Ordered by severity within each area.
+Findings were review-only at the time of writing (no fixes applied). Ordered by severity within each area; a
+**Resolved** note is added under a finding once it's fixed.
 
 ## Critical
 
@@ -21,6 +22,12 @@ same working directory resolves to the exact same `config/bluemapsignmarkers/<ru
 directly contradicting the per-world persistence design in AGENTS.md. Confirmed by direct read; looks like an
 accidental extra `.getParent()` hop (the variable name `worldSaveName` implies the level-name folder was intended).
 Verify with `runServer` under two different `level-name` values before fixing.
+
+**Resolved 2026-07-15 (`75b6270`, `#109 Region-sharded sign storage`).** `getMarkerStorageRoot` now calls
+`.toAbsolutePath().normalize()` on the level dir before taking `getParent()`/`getFileName()`, collapsing the `.`
+segment `LevelResource.ROOT` resolves to before stepping up — the missing normalize was the root cause. The old
+buggy formula is deliberately kept, unchanged, as `getLegacyMarkerFilePath`, used only to locate the pre-existing
+single-file `signs.json` for one-time migration. See `agent-context/context/config-and-persistence.md`.
 
 ### 2. `ReactiveQueue.getExecutor()` self-heals a shut-down executor, defeating `shutdown()` and leaking threads
 **`src/main/java/com/tpwalke2/bluemapsignmarkers/core/reactive/ReactiveQueue.java:56-62`**
@@ -70,6 +77,13 @@ silently dropping every remaining sign in the file for the rest of the session. 
 of `loadSigns` catches it, logging a generic "Failed to load markers from file" with no indication of partial loss.
 Directly conflicts with AGENTS.md's stated guarantee that old `signs.json` files "must keep loading." Same
 all-or-nothing pattern also exists in `Version1SignEntryLoader.java:28-31`.
+
+**Resolved 2026-07-15 (`7014f82`, "Apply suggestions from code review").** `SignProvider.loadSigns`'s load loop now
+wraps each `SignManager.addOrUpdate(signEntry)` call in its own try/catch, logging the failing entry's key and
+continuing with the rest of the file instead of aborting. Finding #3 itself (the underlying NPE source in
+`SignEntryHelper.isMarkerType`) is unaddressed — this fix contains the blast radius to one entry rather than
+removing the root cause. `Version1SignEntryLoader.java:28-31`'s same all-or-nothing pattern is also still
+unaddressed.
 
 ### 5. Concurrent, unsynchronized mutation of a shared BlueMap marker map
 **`src/main/java/com/tpwalke2/bluemapsignmarkers/core/bluemap/BlueMapAPIConnector.java`** — `addMarker` (132-154),
