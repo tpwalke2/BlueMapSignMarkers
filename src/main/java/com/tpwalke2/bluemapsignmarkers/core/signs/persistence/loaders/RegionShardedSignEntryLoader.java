@@ -26,10 +26,10 @@ public class RegionShardedSignEntryLoader {
 
         try (var files = Files.walk(storageRoot)) {
             return files.anyMatch(RegionShardedSignEntryLoader::isRegionFile);
-        } catch (IOException e) {
-            LOGGER.error("Failed to inspect markers storage directory {}", storageRoot, e);
-            return false;
-        }
+} catch (IOException e) {
+    LOGGER.error("Failed to inspect markers storage directory {}; assuming it contains sign data to avoid triggering legacy migration", storageRoot, e);
+    return true;
+}
     }
 
     public static List<SignEntry> loadSignEntries(Path storageRoot, MarkerGroup[] markerGroups, Gson gson) {

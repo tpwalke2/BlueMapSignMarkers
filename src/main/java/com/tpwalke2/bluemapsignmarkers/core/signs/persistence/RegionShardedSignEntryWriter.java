@@ -22,29 +22,48 @@ public class RegionShardedSignEntryWriter {
     private RegionShardedSignEntryWriter() {
     }
 
-    public static void write(Path storageRoot, List<SignEntry> signEntries, Gson gson) {
-        var partitions = SignRegionPartitioner.partition(signEntries);
+public static void write(Path storageRoot, List<SignEntry> signEntries, Gson gson) {
+    var partitions = SignRegionPartitioner.partition(signEntries);
 
-        var writtenFiles = new HashSet<Path>();
-        for (var partition : partitions.entrySet()) {
-            var filePath = storageRoot.resolve(partition.getKey().relativeFilePath());
-            writeRegionFile(filePath, partition.getValue(), gson);
-            writtenFiles.add(filePath);
-        }
+    var writtenFiles = new HashSet<Path>();
+    var hadWriteFailures = false;
 
-        quarantineStaleRegionFiles(storageRoot, writtenFiles);
-    }
-
-    private static void writeRegionFile(Path filePath, List<SignEntry> signEntries, Gson gson) {
+    for (var partition : partitions.entrySet()) {
+        Path filePath;
         try {
-            Files.createDirectories(filePath.getParent());
-            var signEntryData = gson.toJson(signEntries);
-            var json = gson.toJson(new VersionedSignFile(SignFileVersions.V3, signEntryData));
-            Files.writeString(filePath, json, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            LOGGER.error("Failed to write region file {}", filePath, e);
+            filePath = storageRoot.resolve(partition.getKey().relativeFilePath());
+        } catch (IllegalArgumentException e) {
+            hadWriteFailures = true;
+            LOGGER.error("Failed to resolve storage path for region key {}; skipping this partition", partition.getKey(), e);
+            continue;
+        }
+
+        if (writeRegionFile(filePath, partition.getValue(), gson)) {
+            writtenFiles.add(filePath);
+        } else {
+            hadWriteFailures = true;
         }
     }
+
+    if (!hadWriteFailures) {
+        quarantineStaleRegionFiles(storageRoot, writtenFiles);
+    } else {
+        LOGGER.warn("One or more region files failed to write; skipping stale-file quarantine under {}", storageRoot);
+    }
+}
+
+private static boolean writeRegionFile(Path filePath, List<SignEntry> signEntries, Gson gson) {
+    try {
+        Files.createDirectories(filePath.getParent());
+        var signEntryData = gson.toJson(signEntries);
+        var json = gson.toJson(new VersionedSignFile(SignFileVersions.V3, signEntryData));
+        Files.writeString(filePath, json, StandardCharsets.UTF_8);
+        return true;
+    } catch (IOException e) {
+        LOGGER.error("Failed to write region file {}", filePath, e);
+        return false;
+    }
+}
 
     // A region absent from writtenFiles may be genuinely empty, or may have failed to load at
     // startup - can't tell which here, so quarantine instead of delete to avoid losing real data.
