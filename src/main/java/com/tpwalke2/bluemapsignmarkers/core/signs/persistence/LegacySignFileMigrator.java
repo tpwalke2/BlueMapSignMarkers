@@ -60,10 +60,15 @@ public class LegacySignFileMigrator {
         RegionShardedSignEntryWriter.write(storageRoot, entryList, gson);
 
         // Back up the legacy file once migration is complete (or immediately if it contained zero entries).
-        if (entryList.isEmpty() || com.tpwalke2.bluemapsignmarkers.core.signs.persistence.loaders.RegionShardedSignEntryLoader.hasSignData(storageRoot)) {
+        var expectedRegionFiles = SignRegionPartitioner.partition(entryList).keySet().stream()
+                .map(key -> storageRoot.resolve(key.relativeFilePath()))
+                .toList();
+        var migrationWroteAllRegions = entryList.isEmpty() || expectedRegionFiles.stream().allMatch(Files::exists);
+
+        if (migrationWroteAllRegions) {
             FileUtils.moveToBackup(legacyPath, ".migrated", "legacy markers file");
         } else {
-            LOGGER.error("Migration wrote no region files under {}; leaving legacy file in place at {}", storageRoot, legacyPath);
+            LOGGER.error("Migration failed to write one or more region files under {}; leaving legacy file in place at {}", storageRoot, legacyPath);
         }
 
         LOGGER.info("Migration complete, {} sign(s) now stored under {}", entryList.size(), storageRoot);

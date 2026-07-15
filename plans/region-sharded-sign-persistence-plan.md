@@ -119,8 +119,8 @@ filesystem-safe on Windows/Linux/macOS. `unknown` (no colon) becomes a single fo
    - `loadSigns`: if the storage root exists and is non-empty, load via #3. Otherwise run migration (#5).
    - `saveSigns`: partition `SignManager.getAll()` via #2, write each partition as a `VersionedSignFile{V3, ...}`
      to its region path (creating parent dirs as needed) — same per-file write logic as today's single file, just
-     once per region. Then delete any region file already on disk under the tree that isn't in this save's
-     partition set (a region that's now empty), so stale empty-shard files don't accumulate.
+     once per region. Then quarantine (rename to `*.json.stale`) any region file already on disk under the tree that isn't in this save's
+     partition set (a region that's now empty), so potentially-unloaded data isn't deleted (at the cost of leaving `.stale` files behind).
 5. **Migration** (see dedicated section below) — one-time, triggered when the new storage root doesn't exist yet.
 6. **New tests**, `src/test/java/com/tpwalke2/bluemapsignmarkers/core/signs/persistence/`:
    - Region-key math: `floorDiv`-based region assignment is correct for negative coordinates and region boundaries

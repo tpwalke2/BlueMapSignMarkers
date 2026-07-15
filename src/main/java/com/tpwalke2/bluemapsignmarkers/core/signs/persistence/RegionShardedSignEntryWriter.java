@@ -32,7 +32,7 @@ public class RegionShardedSignEntryWriter {
             writtenFiles.add(filePath);
         }
 
-        deleteStaleRegionFiles(storageRoot, writtenFiles);
+        quarantineStaleRegionFiles(storageRoot, writtenFiles);
     }
 
     private static void writeRegionFile(Path filePath, List<SignEntry> signEntries, Gson gson) {
@@ -48,7 +48,7 @@ public class RegionShardedSignEntryWriter {
 
     // A region absent from writtenFiles may be genuinely empty, or may have failed to load at
     // startup - can't tell which here, so quarantine instead of delete to avoid losing real data.
-    private static void deleteStaleRegionFiles(Path storageRoot, Set<Path> writtenFiles) {
+    private static void quarantineStaleRegionFiles(Path storageRoot, Set<Path> writtenFiles) {
         if (!Files.isDirectory(storageRoot)) return;
 
         try (var existing = Files.walk(storageRoot)) {
