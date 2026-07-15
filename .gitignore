@@ -43,3 +43,4 @@ replay_*.log
 # other
 
 logs/
+.claude/settings.local.json
