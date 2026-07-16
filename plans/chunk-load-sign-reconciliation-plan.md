@@ -73,7 +73,7 @@ private void onChunkLoad(ServerLevel level, LevelChunk chunk, boolean generated)
     var parentMap = SignHelper.getSignParentMap(level);
     var chunkPos = chunk.getPos();
 
-    for (var key : SignManager.getKeysInChunk(parentMap, chunkPos.x, chunkPos.z)) {
+    for (var key : SignManager.getKeysInChunk(parentMap, chunkPos.x(), chunkPos.z())) {
         if (!(chunk.getBlockEntity(new BlockPos(key.x(), key.y(), key.z())) instanceof SignBlockEntity)) {
             LOGGER.info("Removing stale sign marker at {} - no sign block found on chunk load "
                     + "(external deletion/regen?)", key);
