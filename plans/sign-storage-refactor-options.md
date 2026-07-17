@@ -2,8 +2,8 @@
 
 ## Context
 
-`SignManager` (`src/main/java/com/tpwalke2/bluemapsignmarkers/core/signs/SignManager.java:58`) holds the only
-in-memory copy of known signs: a single flat `ConcurrentHashMap<SignEntryKey, SignEntry>` (`signCache`). Each
+`SignManager` (`src/main/java/com/tpwalke2/bluemapsignmarkers/core/signs/SignManager.java`, `signCache` field) holds
+the only in-memory copy of known signs: a single flat `ConcurrentHashMap<SignEntryKey, SignEntry>` (`signCache`). Each
 `SignEntry` (`core/signs/SignEntry.java`) carries `playerId` plus parsed front/back text
 (`SignLinesParseResult`: prefix/label/detail, `core/signs/SignLinesParseResult.java`). BlueMap itself only ever
 receives label/detail via dispatched `MarkerAction`s — it is not queried back for state.
@@ -14,10 +14,9 @@ sense to keep a full original copy of each sign in memory at all given markers a
 ## Performance analysis
 
 **Time.** Hot-path operations (`addOrUpdateSign`, `removeByKey`, both driven by mixin injects on player edit / block
-removal, and `BLOCK_ENTITY_LOAD`) are `ConcurrentHashMap` get/put/remove — O(1). `getAllSigns()`
-(`SignManager.java:79-81`) copies the whole map into an `ArrayList` — O(n), but its only callers are `saveSigns`
-(server stop) and `reloadSigns` (BlueMap reset, `SignManager.java:87-94`), both rare, whole-lifecycle events, not
-per-sign operations. No time bottleneck exists at any realistic scale.
+removal, and `BLOCK_ENTITY_LOAD`) are `ConcurrentHashMap` get/put/remove — O(1). `getAllSigns()` copies the whole map
+into an `ArrayList` — O(n), but its only callers are `saveSigns` (server stop) and `reloadSigns()` (BlueMap reset),
+both rare, whole-lifecycle events, not per-sign operations. No time bottleneck exists at any realistic scale.
 
 **Space.** Per sign: a `SignEntryKey` (3 ints + a `parentMap` String) stored twice — once as the map key, once again
 inside `SignEntry.key()` — plus `playerId` and two `SignLinesParseResult` records (3 Strings each). Call it
@@ -30,12 +29,12 @@ problem.
 Yes. BlueMap is a downstream projection of this cache, not a queryable store the mod can read back from. The cache
 is the only source of truth for three things a marker-only view can't provide:
 
-1. **Diffing.** `isTextDifferent` (`SignManager.java:182-184`) compares label/detail against the cached entry before
-   dispatching an update, so a player re-saving identical text doesn't spam BlueMap's marker store or connected
-   web clients with a no-op update.
-2. **Reset replay.** `reset()` → `reloadSigns()` clears and rebuilds the whole cache when BlueMap itself resets
-   (`SignManager.java:226-229`). There is no "ask BlueMap for current markers" path — the mod must be able to
-   resend everything from its own state.
+1. **Diffing.** `isTextDifferent(...)` compares label/detail against the cached entry before dispatching an update,
+   so a player re-saving identical text doesn't spam BlueMap's marker store or connected web clients with a no-op
+   update.
+2. **Reset replay.** `reset()` → `reloadSigns()` clears and rebuilds the whole cache when BlueMap itself resets.
+   There is no "ask BlueMap for current markers" path — the mod must be able to resend everything from its own
+   state.
 3. **Persistence.** `signs.json` (region-sharded per
    `plans/region-sharded-sign-persistence-plan.md`) is written from `SignManager.getAll()`. Nothing about BlueMap
    survives a server restart for this mod's purposes; this cache is what does.

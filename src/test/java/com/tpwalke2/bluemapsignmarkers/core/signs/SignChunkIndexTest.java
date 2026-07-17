@@ -152,7 +152,7 @@ class SignChunkIndexTest {
                     index.add(chunkB);
                 });
 
-                ready.await();
+                assertTrue(ready.await(5, TimeUnit.SECONDS), "iteration " + i + ": a task failed to start in time");
                 go.countDown();
                 removeTask.get(5, TimeUnit.SECONDS);
                 addTask.get(5, TimeUnit.SECONDS);
