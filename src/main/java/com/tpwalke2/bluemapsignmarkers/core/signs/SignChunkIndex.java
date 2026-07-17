@@ -10,23 +10,23 @@ import java.util.concurrent.ConcurrentHashMap;
 public class SignChunkIndex {
     private final ConcurrentHashMap<SignChunkKey, Set<SignEntryKey>> signsByChunk = new ConcurrentHashMap<>();
 
+    // add/remove mutate the per-chunk set inside the map's own compute-family remapping function (not via a
+    // fetch-then-mutate-outside-the-lock pattern) so the "does this chunk still have entries" decision and the
+    // mutation happen as one atomic step - ConcurrentHashMap serializes compute/computeIfPresent/computeIfAbsent
+    // calls against each other for the same key, so a concurrent add can never resurrect a set remove just deleted.
     public void add(SignEntryKey key) {
-        signsByChunk
-                .computeIfAbsent(SignChunkKey.forEntryKey(key), unused -> ConcurrentHashMap.newKeySet())
-                .add(key);
+        signsByChunk.compute(SignChunkKey.forEntryKey(key), (unusedKey, keysInChunk) -> {
+            var result = keysInChunk != null ? keysInChunk : ConcurrentHashMap.<SignEntryKey>newKeySet();
+            result.add(key);
+            return result;
+        });
     }
 
     public void remove(SignEntryKey key) {
-        var chunkKey = SignChunkKey.forEntryKey(key);
-        var keysInChunk = signsByChunk.get(chunkKey);
-        if (keysInChunk == null) {
-            return;
-        }
-
-        keysInChunk.remove(key);
-        if (keysInChunk.isEmpty()) {
-            signsByChunk.remove(chunkKey, keysInChunk);
-        }
+        signsByChunk.computeIfPresent(SignChunkKey.forEntryKey(key), (unusedKey, keysInChunk) -> {
+            keysInChunk.remove(key);
+            return keysInChunk.isEmpty() ? null : keysInChunk;
+        });
     }
 
     public List<SignEntryKey> keysInChunk(String parentMap, int chunkX, int chunkZ) {
