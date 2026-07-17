@@ -53,9 +53,14 @@ public class SignManager implements IResetHandler {
         getInstance().shutdown();
     }
 
+    public static List<SignEntryKey> getKeysInChunk(String parentMap, int chunkX, int chunkZ) {
+        return getInstance().chunkIndex.keysInChunk(parentMap, chunkX, chunkZ);
+    }
+
     private final BlueMapAPIConnector blueMapAPIConnector;
     private final ActionFactory actionFactory;
     private final ConcurrentMap<SignEntryKey, SignEntry> signCache = new ConcurrentHashMap<>();
+    private final SignChunkIndex chunkIndex = new SignChunkIndex();
     private final Map<String, MarkerGroup> prefixGroupMap;
 
     private SignManager() {
@@ -88,6 +93,7 @@ public class SignManager implements IResetHandler {
         LOGGER.info("Reloading all signs...");
         var existingSigns = getAllSigns();
         signCache.clear();
+        chunkIndex.clear();
         for (SignEntry signEntry : existingSigns) {
             addOrUpdateSign(signEntry);
         }
@@ -110,6 +116,7 @@ public class SignManager implements IResetHandler {
         if (shouldAddPOIMarker(existing, isPOIMarker)) {
             LOGGER.debug("Adding POI marker: {}", signEntry);
             signCache.put(key, signEntry);
+            chunkIndex.add(key);
             blueMapAPIConnector.dispatch(
                     actionFactory.createAddPOIAction(
                             key.x(),
@@ -202,6 +209,8 @@ public class SignManager implements IResetHandler {
             LOGGER.debug("No sign found for key: {}", key);
             return;
         }
+
+        chunkIndex.remove(key);
 
         var prefix = SignEntryHelper.getPrefix(removed);
 
