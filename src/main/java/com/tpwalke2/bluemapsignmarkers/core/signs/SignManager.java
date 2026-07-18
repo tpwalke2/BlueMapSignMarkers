@@ -121,7 +121,12 @@ public class SignManager implements IResetHandler {
         var newPrefix = SignEntryHelper.getPrefix(signEntry);
 
         if (newPrefix == null) {
-            LOGGER.debug("Cannot add or update sign as no prefix found: {}", signEntry);
+            if (existing != null) {
+                LOGGER.debug("Removing POI marker as sign no longer has a prefix: {}", signEntry);
+                removeEntry(signEntry);
+            } else {
+                LOGGER.debug("Cannot add or update sign as no prefix found: {}", signEntry);
+            }
             return;
         }
 
