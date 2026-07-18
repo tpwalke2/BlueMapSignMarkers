@@ -58,27 +58,30 @@ public class SignManager implements IResetHandler {
     }
 
     private final BlueMapAPIConnector blueMapAPIConnector;
-    private final ActionFactory actionFactory;
+    private volatile ActionFactory actionFactory;
     private final ConcurrentMap<SignEntryKey, SignEntry> signCache = new ConcurrentHashMap<>();
     private final SignChunkIndex chunkIndex = new SignChunkIndex();
-    private final Map<String, MarkerGroup> prefixGroupMap;
+    private volatile Map<String, MarkerGroup> prefixGroupMap;
 
     private SignManager() {
+        prefixGroupMap = buildPrefixGroupMap();
+        actionFactory = new ActionFactory(new MarkerSetIdentifierCollection());
+        blueMapAPIConnector = new BlueMapAPIConnector();
+        blueMapAPIConnector.addResetHandler(this);
+    }
+
+    private static Map<String, MarkerGroup> buildPrefixGroupMap() {
         var groups = ConfigManager.get().getMarkerGroups();
-        prefixGroupMap = new TreeMap<>();
+        Map<String, MarkerGroup> result = new TreeMap<>();
         for (var group : groups) {
-            if (prefixGroupMap.containsKey(group.prefix())) {
+            if (result.containsKey(group.prefix())) {
                 LOGGER.warn("Duplicate marker group prefix found: {}", group.prefix());
                 continue;
             }
 
-            prefixGroupMap.put(group.prefix(), group);
+            result.put(group.prefix(), group);
         }
-
-        MarkerSetIdentifierCollection markerSetIdentifierCollection = new MarkerSetIdentifierCollection();
-        actionFactory = new ActionFactory(markerSetIdentifierCollection);
-        blueMapAPIConnector = new BlueMapAPIConnector();
-        blueMapAPIConnector.addResetHandler(this);
+        return result;
     }
 
     private List<SignEntry> getAllSigns() {
@@ -234,6 +237,15 @@ public class SignManager implements IResetHandler {
 
     @Override
     public void reset() {
+        reloadConfig();
         reloadSigns();
+    }
+
+    private void reloadConfig() {
+        LOGGER.info("Reloading marker group configuration...");
+        ConfigManager.reload();
+        SignHelper.reloadParser();
+        prefixGroupMap = buildPrefixGroupMap();
+        actionFactory = new ActionFactory(new MarkerSetIdentifierCollection());
     }
 }

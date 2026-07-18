@@ -158,13 +158,14 @@ public class BlueMapAPIConnector {
     }
 
     private void onEnable(BlueMapAPI api) {
+        this.blueMapAPI = api;
+
         if (markerActionQueue.isShutdown()) {
             resetQueue();
 
             fireReset();
         }
 
-        this.blueMapAPI = api;
         markerActionQueue.process();
     }
 

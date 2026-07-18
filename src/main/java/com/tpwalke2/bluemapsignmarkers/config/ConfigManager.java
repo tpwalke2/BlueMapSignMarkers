@@ -7,13 +7,17 @@ import org.slf4j.LoggerFactory;
 
 public class ConfigManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
-    private static final BMSMConfigV2 coreConfig = loadCoreConfig();
+    private static volatile BMSMConfigV2 coreConfig = loadCoreConfig();
 
     private ConfigManager() {
     }
 
     public static BMSMConfigV2 get() {
         return coreConfig;
+    }
+
+    public static synchronized void reload() {
+        coreConfig = loadCoreConfig();
     }
 
     private static synchronized BMSMConfigV2 loadCoreConfig() {
