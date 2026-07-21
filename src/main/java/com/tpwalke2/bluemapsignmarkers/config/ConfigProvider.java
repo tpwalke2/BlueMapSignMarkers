@@ -38,7 +38,12 @@ public class ConfigProvider {
     }
 
     public static void saveConfig(BMSMConfigV2 config) {
-        var path = getConfigPath();
+        saveConfig(config, getConfigPath());
+    }
+
+    // Visible for testing: lets tests point saveConfig at a temp-directory path instead of the hardcoded
+    // config/<mod-id>/BMSM-Core.json path resolved relative to the process's working directory.
+    static void saveConfig(BMSMConfigV2 config, Path path) {
         LOGGER.info("Saving config to file: {}...", path);
 
         var file = path.toFile();
@@ -60,14 +65,20 @@ public class ConfigProvider {
     }
 
     public static BMSMConfigV2 loadConfig() {
-        var file = getConfigPath().toFile();
+        return loadConfig(getConfigPath());
+    }
+
+    // Visible for testing: lets tests point loadConfig at a temp-directory path instead of the hardcoded
+    // config/<mod-id>/BMSM-Core.json path resolved relative to the process's working directory.
+    static BMSMConfigV2 loadConfig(Path configPath) {
+        var file = configPath.toFile();
 
         LOGGER.info("Loading config from file: {}...", file);
 
         if (!file.exists()) {
             LOGGER.info("Config file does not yet exist, creating defaults...");
             var result = new BMSMConfigV2();
-            saveConfig(result);
+            saveConfig(result, configPath);
             return result;
         }
 
@@ -84,7 +95,7 @@ public class ConfigProvider {
             if (configContent.contains("poiPrefix")) {
                 var v1Config = GSON.fromJson(configContent, BMSMConfigV1.class);
                 var migratedConfig = loadV1Config(file, v1Config);
-                saveConfig(migratedConfig);
+                saveConfig(migratedConfig, configPath);
                 return migratedConfig;
             }
 

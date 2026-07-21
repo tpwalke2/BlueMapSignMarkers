@@ -60,13 +60,21 @@ partial coverage, plus a few items that look like test gaps but aren't.
 
 ## Priority 2 — testable per AGENTS.md, currently zero coverage
 
-- **`ConfigProvider`** (`config/ConfigProvider.java`) — explicitly named in AGENTS.md as testable; no test file
-  exists. Needed: `loadConfig` creates+persists defaults when the file is absent; loads a well-formed V2 file and
-  null-coalesces missing fields in `convertToLoadedMarkerGroup` (matchType/type/offsets/minDistance/maxDistance/
-  defaultHidden); malformed JSON returns `null` and logs rather than throwing; V1→V2 migration (`loadV1Config`)
-  produces one POI group plus a `.v1.bak` backup. Also worth a test that documents review finding #9 as-is: a V2
-  config whose JSON happens to contain the substring `poiPrefix` (e.g. in a group name/icon) gets misdetected as V1
-  and collapsed to defaults.
+- **`ConfigProvider`** (`config/ConfigProvider.java`) — DONE. `ConfigProviderTest` (5 cases) covers: `loadConfig`
+  creates and persists defaults when the file is absent; loading a well-formed V2 file null-coalesces missing
+  optional fields in `convertToLoadedMarkerGroup` (matchType→`STARTS_WITH`, type→`POI`, offsetX/offsetY→0,
+  defaultHidden→`false`, minDistance→0.0, maxDistance→10000000.0); malformed JSON returns `null` rather than
+  throwing; and V1→V2 migration (`loadV1Config`) produces one POI group plus a `.v1.bak` backup file. Also covers
+  review finding #9 as a documented "current behavior" test: a well-formed V2 config whose JSON happens to contain
+  the substring `poiPrefix` (here, inside a marker group's `name`) is misdetected as a V1 file and silently collapsed
+  to the single default POI group, discarding the actual configured prefix/name.
+
+  Testability required a seam: `getConfigPath()` resolves a path relative to the process's working directory
+  (`config/<mod-id>/BMSM-Core.json`), which tests can't safely point at a temp directory without it. Added
+  package-private `loadConfig(Path)`/`saveConfig(BMSMConfigV2, Path)` overloads containing the existing method
+  bodies parameterized on the path instead of always calling `getConfigPath()`; the public no-arg methods now just
+  delegate to these with `getConfigPath()`, and the V1-migration branch's internal `saveConfig(...)` call was updated
+  to pass the same path through instead of implicitly re-resolving `getConfigPath()`. No other behavior changed.
 - **`ConfigManager`** (`config/ConfigManager.java`) — zero tests. Needed: `get()` falls back to `new BMSMConfigV2()`
   defaults when `ConfigProvider.loadConfig()` returns null; `reload()` swaps in a freshly loaded config.
 - **`FileUtils`** (`common/FileUtils.java`) — zero tests. Needed: `createBackup` copies when no backup exists yet and
