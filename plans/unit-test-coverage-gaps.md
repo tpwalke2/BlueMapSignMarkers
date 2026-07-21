@@ -114,9 +114,13 @@ partial coverage, plus a few items that look like test gaps but aren't.
   an entry whose own `key` (or, by the same unguarded pattern, `playerId`/`frontText`/`backText`) is null throws NPE
   rather than behaving like a normal implementation — currently latent only, since no call site actually calls
   `SignEntry.equals()`/`hashCode()` (the sign cache is keyed by `SignEntryKey`, not `SignEntry`).
-- **`ParsingContext`** (`core/signs/ParsingContext.java`) — zero dedicated tests (only indirectly exercised through
-  `SignLinesParserTest`). Needed: `buildResult()` with no marker group set returns the `(null, "", "")` sentinel;
-  `appendDetail`'s newline-joining/trim behavior tested directly, independent of the parser.
+- **`ParsingContext`** (`core/signs/ParsingContext.java`) — DONE. `ParsingContextTest` (5 cases, no production
+  changes needed — already plain Java) covers: `buildResult()` returns the `(null, "", "")` sentinel when no marker
+  group is set; with a group set, `buildResult()` uses its `prefix()` and the current label; detail is `""` when
+  `appendDetail` was never called; multiple `appendDetail` calls join with `\n`; and the overall `trim()` on the
+  built detail only strips the outermost whitespace of the joined text, not per-line padding — demonstrated with
+  `" line1 "`/`" line2 "` producing `"line1 \n line2"` (inner padding around the newline survives, only the very
+  first and very last characters are stripped).
 
 ## Priority 3 — loader edge cases with existing partial coverage
 
