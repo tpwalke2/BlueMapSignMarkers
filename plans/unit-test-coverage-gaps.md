@@ -11,11 +11,27 @@ partial coverage, plus a few items that look like test gaps but aren't.
 
 ## Priority 1 — in the concurrency-hardening blast radius (test before touching)
 
-- **`ReactiveQueue`** (`core/reactive/ReactiveQueue.java`) — zero tests today. Needed: enqueue → processor callback
-  delivery; `shouldRun` gating (queued but not processed while false, resumes once true); the error callback fires on
-  a processor exception without killing the drain loop; `shutdown()`/`isShutdown()` semantics. Also worth a
-  concurrency characterization test that counts concurrent invocations for a burst of enqueues, to document today's
-  redundant one-loop-per-enqueue fan-out as a "before" baseline for the hardening pass.
+- **`ReactiveQueue`** (`core/reactive/ReactiveQueue.java`) — DONE. `ReactiveQueueTest` (12 cases) covers: enqueue →
+  processor callback delivery (single and multiple messages); `shouldRun` gating (queued but not processed while
+  false, resumes once true, and a mid-drain false leaves the rest of the backlog queued until resumed);
+  `shutdown()`/`isShutdown()` semantics, including that `shutdown()` doesn't durably stick (`getExecutor()` silently
+  creates a fresh executor the next time work is scheduled); and the concurrency characterization test (a burst of
+  20 concurrent enqueues delivers every message exactly once but submits more executor tasks than messages,
+  documenting today's redundant one-loop-per-enqueue fan-out as a "before" baseline).
+
+  One finding changed the "needed" list while writing the tests: the error callback does **not** fire on a
+  processor-callback exception as the plan originally assumed. `messageProcessorCallback.processMessage(message)`
+  runs inside a task handed to `ExecutorService.submit()`; nothing ever calls `.get()` on the returned `Future`, so
+  an exception it throws is captured on that `Future` and silently dropped — it never reaches the `try/catch` in
+  `processMessages()`. That `try/catch` is only reachable via a submission-time failure (e.g. the executor itself
+  rejecting the task), not a processing exception. Both behaviors are now locked in as tests:
+  `exceptionThrownByProcessorCallbackIsNotSurfacedToTheErrorCallback` documents the swallowed-exception gap, and
+  `submissionFailureForOneMessageInvokesErrorCallbackAndLeavesLaterMessagesUnaffected` exercises the real
+  submission-failure path the `try/catch` actually guards, using a fake executor to simulate the failure.
+
+  Testability required one small, additive seam: a package-private constructor overload on `ReactiveQueue` that
+  accepts an `ExecutorService`, so tests can inject a synchronous (same-thread) executor or a counting/failing fake
+  instead of the lazily-created fixed thread pool. No other production behavior changed.
 - **`MarkerSetIdentifierCollection`** (`core/markers/MarkerSetIdentifierCollection.java`) — zero tests. Needed:
   `getIdentifier` returns the same instance for a repeated `(mapId, markerGroup)` pair; distinct pairs get distinct
   identifiers; `mapId` matching is case-insensitive (backed by `TreeMap(String.CASE_INSENSITIVE_ORDER)`). Also a
