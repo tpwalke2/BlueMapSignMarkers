@@ -139,15 +139,19 @@ partial coverage, plus a few items that look like test gaps but aren't.
   `Version3Converter`, then backs up the original file to `<path>.v2.bak` before returning the converted entries);
   and the catch-all fallback returning `null` rather than throwing, for both a JSON syntax error and empty content
   (which parses to `null` and then NPEs on `versionedSignFile.version()` — caught by the same generic `catch`).
-- **`Version1SignEntryLoader`** (`core/signs/persistence/loaders/Version1SignEntryLoader.java`) — only the
-  already-namespaced dimension string path is exercised today. The actual legacy-shorthand normalization branch
-  (`"nether"`/`"end"`/`"overworld"` → canonical identifier — the Low-severity finding about incomplete literal
-  matching) is explicitly *not* tested, per the comment in `LegacySignFileMigratorTest`, because it reaches into
-  `net.minecraft.world.level.Level`'s static constants, which need a Minecraft bootstrap. Recommend a small
-  testability seam first — replace `Level.NETHER.identifier().toString()` etc. with the equivalent literal strings
-  (`"minecraft:the_nether"`, `"minecraft:the_end"`, `"minecraft:overworld"`) so this branch no longer needs a
-  bootstrap to test — then add cases for the three recognized literals, an unrecognized legacy string falling through
-  unchanged (the actual bug), and case-insensitivity.
+- **`Version1SignEntryLoader`** (`core/signs/persistence/loaders/Version1SignEntryLoader.java`) — DONE. Required the
+  planned testability seam: replaced `Level.NETHER.identifier().toString()` / `Level.END...` / `Level.OVERWORLD...`
+  with the equivalent literal strings (`"minecraft:the_nether"`, `"minecraft:the_end"`, `"minecraft:overworld"`),
+  removing the class's only Minecraft-type dependency (`net.minecraft.world.level.Level`) so it no longer needs a
+  game bootstrap to test. `Version1SignEntryLoaderTest` (6 cases) covers: the three recognized legacy shorthand
+  strings (`"nether"`/`"end"`/`"overworld"`) normalizing to their canonical identifiers; case-insensitivity of that
+  normalization; an already-namespaced dimension string (e.g. `"minecraft:overworld"`) passing through unchanged;
+  and `loadSignEntries` backing up the original file to `<path>.v1.bak`.
+
+  Also documents the Low-severity finding: an unrecognized legacy dimension string doesn't fall through truly
+  unchanged — `getNormalizedMapId` unconditionally lowercases its input before the `switch`, even on the `default`
+  branch, so e.g. `"My_Custom_Dimension"` survives as `"my_custom_dimension"` rather than being preserved as-is or
+  flagged as unrecognized.
 
 ## Not test gaps — flagged for a different disposition
 
