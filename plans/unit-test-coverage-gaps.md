@@ -103,10 +103,17 @@ partial coverage, plus a few items that look like test gaps but aren't.
   traversed as a directory component on any OS, so `Files.copy` reliably throws there without needing OS-specific
   permission hacks) and asserts `createBackup` returns normally, with no backup created — `copyFile` catches the
   `IOException` and only logs a warning, never signaling the failure back to the caller.
-- **`SignEntry`** (`core/signs/SignEntry.java`) — zero tests. Hand-rolled `equals`/`hashCode`/`toString` with no null
-  guards on `key`/`playerId`/`frontText`/`backText` (flagged as latent risk in the review). Needed: standard
-  equals/hashCode contract tests (reflexive, distinct-field inequality) to lock in current behavior before anyone
-  touches this class.
+- **`SignEntry`** (`core/signs/SignEntry.java`) — DONE. `SignEntryTest` (12 cases, no production changes needed —
+  already a plain record) covers the standard equals/hashCode contract: reflexive; two independently-constructed
+  entries with the same field values are equal and share a hash code; symmetric; not equal to `null` or to a
+  different type; distinct inequality for each of `key`/`playerId`/`frontText`/`backText` individually; and
+  `withKey` returns a new instance with only the key changed, leaving the original untouched.
+
+  Also locks in the latent risk the review flagged: `equalsAndHashCodeThrowNpeWhenThisEntrysKeyIsNull` documents that
+  the hand-written `equals`/`hashCode` call straight into `key.equals(...)`/`key.hashCode()` with no null guard, so
+  an entry whose own `key` (or, by the same unguarded pattern, `playerId`/`frontText`/`backText`) is null throws NPE
+  rather than behaving like a normal implementation — currently latent only, since no call site actually calls
+  `SignEntry.equals()`/`hashCode()` (the sign cache is keyed by `SignEntryKey`, not `SignEntry`).
 - **`ParsingContext`** (`core/signs/ParsingContext.java`) — zero dedicated tests (only indirectly exercised through
   `SignLinesParserTest`). Needed: `buildResult()` with no marker group set returns the `(null, "", "")` sentinel;
   `appendDetail`'s newline-joining/trim behavior tested directly, independent of the parser.
