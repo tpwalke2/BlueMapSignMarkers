@@ -133,10 +133,12 @@ partial coverage, plus a few items that look like test gaps but aren't.
   silently reassigning every entry to that group regardless of which group the sign originally matched; and with
   zero POI-type groups configured, `.orElseThrow()` on the empty stream throws `NoSuchElementException`, crashing
   the whole migration rather than failing gracefully — documented as current (undesirable) behavior, not fixed.
-- **`VersionedFileSignEntryLoader`** (`core/signs/persistence/loaders/VersionedFileSignEntryLoader.java`) — only the
-  V3-passthrough branch is exercised (via `LegacySignFileMigratorTest`). Missing: the V2 branch (`SignFileVersions.V2`,
-  converts through `Version3Converter`, writes a `.v2.bak` backup) and the catch-all fallback (malformed/incomplete
-  JSON returns `null` rather than throwing).
+- **`VersionedFileSignEntryLoader`** (`core/signs/persistence/loaders/VersionedFileSignEntryLoader.java`) — DONE.
+  `VersionedFileSignEntryLoaderTest` (4 cases, no production changes needed — already plain Java) covers: the
+  V3-passthrough branch (parses `SignEntry[]` directly, no backup written); the V2 branch (converts through
+  `Version3Converter`, then backs up the original file to `<path>.v2.bak` before returning the converted entries);
+  and the catch-all fallback returning `null` rather than throwing, for both a JSON syntax error and empty content
+  (which parses to `null` and then NPEs on `versionedSignFile.version()` — caught by the same generic `catch`).
 - **`Version1SignEntryLoader`** (`core/signs/persistence/loaders/Version1SignEntryLoader.java`) — only the
   already-namespaced dimension string path is exercised today. The actual legacy-shorthand normalization branch
   (`"nether"`/`"end"`/`"overworld"` → canonical identifier — the Low-severity finding about incomplete literal
