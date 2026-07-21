@@ -51,9 +51,12 @@ partial coverage, plus a few items that look like test gaps but aren't.
   #16), so concurrent first-time callers can each construct and return their own instance instead of converging on
   one. Left `@Disabled` with a reason pointing at finding #16 so `./gradlew test` stays green; re-enable once the
   concurrency-hardening pass makes that check-then-act sequence atomic.
-- **`ActionFactory`** (`core/bluemap/actions/ActionFactory.java`) — zero tests. Needed: each
-  `create{Add,Remove,Update}POIAction` builds the right `MarkerIdentifier`/action fields, and repeated calls for the
-  same map/group reuse the same `MarkerSetIdentifier` (its delegation contract with `MarkerSetIdentifierCollection`).
+- **`ActionFactory`** (`core/bluemap/actions/ActionFactory.java`) — DONE. `ActionFactoryTest` (5 cases, no production
+  changes needed — already plain Java) covers: `createAddPOIAction`/`createRemovePOIAction`/`createUpdatePOIAction`
+  each build the right `MarkerIdentifier` (x/y/z, `parentSet` carrying the given mapId/markerGroup) and action-specific
+  fields (label/detail, newLabel/newDetail); and repeated calls for the same map/group — both from the same factory
+  method and across different action types — reuse the exact same `MarkerSetIdentifier` instance, confirming the
+  delegation contract with `MarkerSetIdentifierCollection`.
 
 ## Priority 2 — testable per AGENTS.md, currently zero coverage
 
