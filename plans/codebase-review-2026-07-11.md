@@ -50,6 +50,8 @@ guard (`BlueMapAPIConnector.java:161`) sees `false` on the next enable, so `rese
 intended "replay all signs" recovery path — gets skipped even though the connector went through a disable/enable
 cycle.
 
+Github issue #134
+
 ## High
 
 ### 3. `SignEntryHelper.isMarkerType` NPEs when a persisted sign's prefix isn't in the current config
@@ -64,6 +66,8 @@ was saved. Renaming or removing a marker-group prefix between server restarts �
 throws NPE. Confirmed by direct read. This is the first line evaluated in `SignManager.addOrUpdateSign`, so it
 fires both during `SignProvider.loadSigns`'s startup loop and again live whenever that chunk loads or the sign is
 next edited.
+
+Github issue #135
 
 ### 4. `SignProvider.loadSigns`'s load loop has no per-entry exception handling — one bad entry drops the whole file
 **`src/main/java/com/tpwalke2/bluemapsignmarkers/core/signs/persistence/SignProvider.java:59-61`**
@@ -97,6 +101,8 @@ positions on the same map + marker group resolve to the same cached `MarkerSet` 
 `put`/`remove`/iteration on that map risks lost updates or corruption during a resize. `getMarkerSets`'s
 `synchronized` only protects lookup/creation of the list reference, not what happens to its contents afterward.
 
+Github issue #137
+
 ### 6. `Version3Converter` fabricates a prefix for every migrated V2 entry, even non-matching sides
 **`src/main/java/com/tpwalke2/bluemapsignmarkers/core/signs/persistence/loaders/Version3Converter.java:26`**
 ```java
@@ -115,6 +121,8 @@ propagates uncaught through the fallback path all the way to `SignProvider`'s ou
 persisted signs for the session. (b) alone is already flagged as a known limitation in `agent-context/context/
 config-and-persistence.md`; (a) is a separate, unacknowledged defect found during this review.
 
+Github issue #138
+
 ### 7. `BlueMapAPIConnector.shutdown()`'s `unregisterListener` calls likely no-op
 **`src/main/java/com/tpwalke2/bluemapsignmarkers/core/bluemap/BlueMapAPIConnector.java:41-44`**
 ```java
@@ -130,6 +138,8 @@ detach the connector from BlueMap's callbacks — a "shut down" connector keeps 
 events. Caveat: confirming this needs the BlueMap API's own listener-registration source, which wasn't in the
 review's file set — flagged High rather than Critical for that reason.
 
+Github issue #140
+
 ### 8. Malformed `REGEX` marker-group prefix throws uncaught, blocking sign processing broadly
 **`src/main/java/com/tpwalke2/bluemapsignmarkers/core/signs/SignLinesParser.java:80-90`**
 `line.matches(markerGroup.prefix())` / `line.replaceAll(markerGroup.prefix(), "")` use the raw config string as a
@@ -138,6 +148,8 @@ throws `PatternSyntaxException` the first time matching reaches that group, and 
 configured order until one matches, a bad regex placed early can throw for essentially every sign the server
 processes, not just ones meant for that group. Propagates uncaught out of `SignBlockEntityInject`'s `@Inject`
 callback and `BlueMapSignMarkersMod.onBlockEntityLoad`.
+
+Github issue #139
 
 ## Medium
 
