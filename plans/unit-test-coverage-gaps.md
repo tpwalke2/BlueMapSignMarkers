@@ -75,8 +75,23 @@ partial coverage, plus a few items that look like test gaps but aren't.
   bodies parameterized on the path instead of always calling `getConfigPath()`; the public no-arg methods now just
   delegate to these with `getConfigPath()`, and the V1-migration branch's internal `saveConfig(...)` call was updated
   to pass the same path through instead of implicitly re-resolving `getConfigPath()`. No other behavior changed.
-- **`ConfigManager`** (`config/ConfigManager.java`) — zero tests. Needed: `get()` falls back to `new BMSMConfigV2()`
-  defaults when `ConfigProvider.loadConfig()` returns null; `reload()` swaps in a freshly loaded config.
+- **`ConfigManager`** (`config/ConfigManager.java`) — DONE. `ConfigManagerTest` (3 cases) covers: `get()` returns the
+  config loaded by the most recent `reload`; `get()` falls back to `new BMSMConfigV2()` defaults when the configured
+  path fails to load (malformed JSON); and `reload()` swaps in a freshly loaded config (reloading from a second path
+  replaces what an earlier `reload` had cached, rather than merging or ignoring it).
+
+  Testability required two changes. First, the same path-parameter seam as `ConfigProvider`: added a package-private
+  `reload(Path)` overload (real `reload()` and `get()`'s first-touch load both go through it, passing
+  `ConfigProvider.loadConfig()`'s real hardcoded path) so tests can point at a temp directory. Second, and less
+  trivial: `coreConfig` was previously populated by an *eager* static field initializer (`= loadCoreConfig()`), which
+  runs the instant the class is first referenced by anything — including, in a test run, merely loading
+  `ConfigManagerTest` itself, before any test method executes. Since the Gradle `test` task's working directory is
+  the project root (confirmed empirically), that eager load would have called the real `ConfigProvider.loadConfig()`
+  and written a real `config/bluemapsignmarkers/BMSM-Core.json` into the project directory as a side effect of
+  running the test suite. Changed `coreConfig` to lazy-initialize to `null`, with `get()` now calling `reload()` on
+  first access if still unset. Observable behavior is unchanged for real usage (config is still loaded exactly once
+  and cached until an explicit `reload()`), and it removes the untested-but-latent "referencing this class touches
+  disk" side effect entirely.
 - **`FileUtils`** (`common/FileUtils.java`) — zero tests. Needed: `createBackup` copies when no backup exists yet and
   no-ops when one already does; `moveToBackup` moves when the source exists and no backup exists, no-ops otherwise;
   and a test documenting review finding #13 — copying into a destination that can't be written logs a warning but
