@@ -124,12 +124,15 @@ partial coverage, plus a few items that look like test gaps but aren't.
 
 ## Priority 3 — loader edge cases with existing partial coverage
 
-- **`Version3Converter`** (`core/signs/persistence/loaders/Version3Converter.java`) — only indirectly exercised via
-  `LegacySignFileMigratorTest`, and only for "exactly one POI group configured, front side matches." Missing, all
-  tied to review finding #6: zero POI-type groups configured (currently throws `NoSuchElementException` via
-  `.orElseThrow()` — document this crash as current behavior); more than one POI-type group configured (currently
-  always picks the first in array order, silently reassigning prefix); a non-matching side (e.g. `backText` that
-  never matched any group originally) still getting fabricated a prefix it never had.
+- **`Version3Converter`** (`core/signs/persistence/loaders/Version3Converter.java`) — DONE. `Version3ConverterTest`
+  (4 cases, no production changes needed — already plain Java) covers: the basic conversion (key/playerId pass
+  through unchanged, front/back each get the configured POI group's prefix, label/detail preserved) plus the three
+  gaps from review finding #6 — a non-matching side (`markerType` `null`, i.e. never matched any group under V2)
+  still gets fabricated the POI group's prefix, since `convertToV3` never actually looks at `markerType`; with more
+  than one POI-type group configured, the first one in array order always wins (`Arrays.stream(...).findFirst()`),
+  silently reassigning every entry to that group regardless of which group the sign originally matched; and with
+  zero POI-type groups configured, `.orElseThrow()` on the empty stream throws `NoSuchElementException`, crashing
+  the whole migration rather than failing gracefully — documented as current (undesirable) behavior, not fixed.
 - **`VersionedFileSignEntryLoader`** (`core/signs/persistence/loaders/VersionedFileSignEntryLoader.java`) — only the
   V3-passthrough branch is exercised (via `LegacySignFileMigratorTest`). Missing: the V2 branch (`SignFileVersions.V2`,
   converts through `Version3Converter`, writes a `.v2.bak` backup) and the catch-all fallback (malformed/incomplete
