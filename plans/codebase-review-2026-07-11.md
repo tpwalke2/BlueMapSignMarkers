@@ -69,6 +69,10 @@ next edited.
 
 Github issue #135
 
+**Resolved (`320fb47`, "#121 allow hot reloads on config").** `isMarkerType` now null-checks the
+`prefixGroupMap.get(prefix)` lookup before calling `.type()`, returning `false` instead of throwing when a
+persisted sign's prefix isn't in the current config.
+
 ### 4. `SignProvider.loadSigns`'s load loop has no per-entry exception handling — one bad entry drops the whole file
 **`src/main/java/com/tpwalke2/bluemapsignmarkers/core/signs/persistence/SignProvider.java:59-61`**
 ```java
@@ -236,11 +240,14 @@ a stale replayed value, or a sign removed during the race can be silently re-add
   (`BlueMapSignMarkersMod.java:42`, `SignManager.java:136`). Two independently-hardcoded literals that only happen
   to match today; editing one without the other silently breaks playerId-preservation logic on chunk load vs.
   player edit.
-- **`ServerPathProvider.java` is dead code** — no callers anywhere in `src/`, and it's referenced elsewhere as
-  in-progress/unwired. Should be wired up or removed.
-- **Charset mismatch between save and load**, both in `ConfigProvider.java` (`saveConfig` uses platform-default
-  `FileWriter`, `loadConfig` reads explicit UTF-8) and `SignProvider.java` (same pattern). Non-ASCII marker-group
-  names or sign text is at risk of encoding mismatch across a restart if the JVM default charset isn't UTF-8.
+- ~~**`ServerPathProvider.java` is dead code**~~ — **Resolved.** `BlueMapSignMarkersMod` now `implements ...
+  ServerPathProvider`; no longer unwired.
+- **Charset mismatch between save and load** in `ConfigProvider.java` (`saveConfig` uses platform-default
+  `FileWriter`, `loadConfig` reads explicit UTF-8) — still open. Non-ASCII marker-group names are at risk of
+  encoding mismatch across a restart if the JVM default charset isn't UTF-8. The sign-file half of this finding
+  (originally also flagged in `SignProvider.java`) is **resolved**: that class was replaced by the region-sharded
+  storage classes (`RegionShardedSignEntryWriter`/`Loader`, `LegacySignFileMigrator`, `#109`), which consistently
+  use `Files.writeString`/`readString` with explicit UTF-8 on both sides.
 - **No fail-fast config validation** — nothing checks marker-group prefixes are non-empty, that REGEX prefixes
   compile, or that prefixes are unique across groups at load time; bad data is only caught later, silently or by
   crashing (see finding #8).
@@ -257,9 +264,13 @@ a stale replayed value, or a sign removed during the race can be silently re-add
 - **`logProcessingMessage` logs full raw sign text at INFO unconditionally**, sanitizing only `\n`
   (`BlueMapAPIConnector.java:97-102`) — other control characters (`\r`, ANSI escapes) aren't sanitized, a minor
   log-injection/log-noise vector.
-- **Cache-key growth risk**: `MarkerSetIdentifier`/`markerSetsCache` keys are value-equality on the *entire*
-  `MarkerGroup` record, so any config field change (icon, offsets, distances) between reloads produces a new,
-  never-evicted cache entry. Speculative — depends on a config-reload path not covered in this review.
+- **Cache-key growth risk, now confirmed rather than speculative**: `MarkerSetIdentifier`/`markerSetsCache` keys
+  are value-equality on the *entire* `MarkerGroup` record, so any config field change (icon, offsets, distances)
+  between reloads produces a new, never-evicted cache entry. Originally speculative, pending a config-reload path
+  not covered in this review — that path now exists (`SignManager.reloadConfig()`, added by `#121` hot-reload
+  work) and confirms the risk: it rebuilds the prefix map but never calls `blueMapAPIConnector.resetQueue()`, so
+  `markerSetsCache` is never cleared on a live config reload. Worth reconsidering as Medium severity rather than
+  Low.
 - **`SignManager`: dual-sided signs with different prefixes mix marker-group semantics** — the marker's group
   (icon/type/visibility) comes from whichever side `getPrefix` picks (front preferred), but `getDetail` merges
   *both* sides' text regardless of whether they matched different groups.
@@ -271,8 +282,10 @@ a stale replayed value, or a sign removed during the race can be silently re-add
 
 ## Nitpick
 
-- `ConfigManager.loadCoreConfig()` is `synchronized` despite being called exactly once from a `static final` field
-  initializer, which the JLS already makes thread-safe — the modifier is misleading, not harmful.
+- ~~`ConfigManager.loadCoreConfig()` is `synchronized` despite being called exactly once from a `static final`
+  field initializer~~ — **stale**: the premise no longer holds. Config hot-reload work (`#121`) restructured
+  `ConfigManager`: `coreConfig` is now `volatile` and lazily loaded, and `reload()`/`reload(Path)` are
+  `synchronized` to guard concurrent hot-reloads for real, not a redundant guard on a one-time static initializer.
 - The default single-`[poi]`-group literal is duplicated verbatim across `BMSMConfigV2` and `LoadingBMSMConfigV2`
   with no shared constant.
 - `SignManager.isMarkerType` re-derives `getPrefix(signEntry)` that's already computed a few lines later —
