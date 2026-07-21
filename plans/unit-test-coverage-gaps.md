@@ -32,13 +32,25 @@ partial coverage, plus a few items that look like test gaps but aren't.
   Testability required one small, additive seam: a package-private constructor overload on `ReactiveQueue` that
   accepts an `ExecutorService`, so tests can inject a synchronous (same-thread) executor or a counting/failing fake
   instead of the lazily-created fixed thread pool. No other production behavior changed.
-- **`MarkerSetIdentifierCollection`** (`core/markers/MarkerSetIdentifierCollection.java`) — zero tests. Needed:
-  `getIdentifier` returns the same instance for a repeated `(mapId, markerGroup)` pair; distinct pairs get distinct
-  identifiers; `mapId` matching is case-insensitive (backed by `TreeMap(String.CASE_INSENSITIVE_ORDER)`). Also a
-  concurrent-access stress test in the style of `SignChunkIndexTest.concurrentAddDuringRemovalOfTheLastKeyIsNeverLost`
-  — many threads calling `getIdentifier` for a small set of map/group combos, asserting every caller converges on one
-  consistent identifier. This test may fail against the current implementation — that's expected, and is the
-  documented "before" state the hardening pass is meant to fix.
+- **`MarkerSetIdentifierCollection`** (`core/markers/MarkerSetIdentifierCollection.java`) — DONE.
+  `MarkerSetIdentifierCollectionTest` (5 cases, no production changes needed — the class was already plain Java with
+  a public no-arg constructor) covers: `getIdentifier` returns the same instance for a repeated `(mapId, markerGroup)`
+  pair; distinct `mapId`s and distinct `markerGroup`s each get distinct identifiers; and `mapId` matching is
+  case-insensitive (a lookup with different casing returns the same cached instance).
+
+  Also includes the concurrent-access stress test the plan called for, in the style of
+  `SignChunkIndexTest.concurrentAddDuringRemovalOfTheLastKeyIsNeverLost`:
+  `concurrentFirstTimeCallersForTheSameComboConvergeOnOneIdentifierInstance` gates many threads on a latch and has
+  them all call `getIdentifier` for the same brand-new `(mapId, markerGroup)` combo at once, then asserts (via
+  `IdentityHashMap`-backed identity comparison, not `.equals()` — `MarkerSetIdentifier` is a record, so two
+  independently-`new`'d instances with the same field values are already `.equals()` regardless of any race) that
+  every caller got back the exact same instance. Confirmed by temporarily removing `@Disabled` and running it: it
+  reliably fails against the current implementation (500 iterations x 8 threads reproduces >1 distinct instance for
+  the same combo well within the first few iterations) — `getIdentifier`'s "is this combo cached?" check and its
+  cache write are two separate, unsynchronized steps over plain `TreeMap`/`HashMap`/`HashSet` fields (review finding
+  #16), so concurrent first-time callers can each construct and return their own instance instead of converging on
+  one. Left `@Disabled` with a reason pointing at finding #16 so `./gradlew test` stays green; re-enable once the
+  concurrency-hardening pass makes that check-then-act sequence atomic.
 - **`ActionFactory`** (`core/bluemap/actions/ActionFactory.java`) — zero tests. Needed: each
   `create{Add,Remove,Update}POIAction` builds the right `MarkerIdentifier`/action fields, and repeated calls for the
   same map/group reuse the same `MarkerSetIdentifier` (its delegation contract with `MarkerSetIdentifierCollection`).
