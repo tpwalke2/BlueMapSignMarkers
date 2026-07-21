@@ -92,10 +92,17 @@ partial coverage, plus a few items that look like test gaps but aren't.
   first access if still unset. Observable behavior is unchanged for real usage (config is still loaded exactly once
   and cached until an explicit `reload()`), and it removes the untested-but-latent "referencing this class touches
   disk" side effect entirely.
-- **`FileUtils`** (`common/FileUtils.java`) — zero tests. Needed: `createBackup` copies when no backup exists yet and
-  no-ops when one already does; `moveToBackup` moves when the source exists and no backup exists, no-ops otherwise;
-  and a test documenting review finding #13 — copying into a destination that can't be written logs a warning but
-  doesn't throw or signal failure to the caller.
+- **`FileUtils`** (`common/FileUtils.java`) — DONE. `FileUtilsTest` (6 cases, no production changes needed — already
+  plain Java operating on `String` paths, so `@TempDir` works directly) covers: `createBackup` copies the original
+  when no backup exists yet, and leaves an existing backup untouched rather than overwriting it; `moveToBackup` moves
+  the original into the backup path when the source exists and no backup exists yet, no-ops when the source is
+  missing, and no-ops (leaving the original in place) when a backup already exists.
+
+  Also covers review finding #13 as a documented "current behavior" test: `createBackupSwallowsACopyFailure...`
+  routes the backup destination through the original file itself as a fake parent directory (a regular file can't be
+  traversed as a directory component on any OS, so `Files.copy` reliably throws there without needing OS-specific
+  permission hacks) and asserts `createBackup` returns normally, with no backup created — `copyFile` catches the
+  `IOException` and only logs a warning, never signaling the failure back to the caller.
 - **`SignEntry`** (`core/signs/SignEntry.java`) — zero tests. Hand-rolled `equals`/`hashCode`/`toString` with no null
   guards on `key`/`playerId`/`frontText`/`backText` (flagged as latent risk in the review). Needed: standard
   equals/hashCode contract tests (reflexive, distinct-field inequality) to lock in current behavior before anyone
