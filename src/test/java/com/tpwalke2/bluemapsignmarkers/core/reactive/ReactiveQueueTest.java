@@ -94,14 +94,15 @@ class ReactiveQueueTest {
     // queue. getExecutor() no longer resurrects a fresh executor just because the old one was shut down,
     // so a later enqueue is left queued but never drained by this instance.
     @Test
-    void shutdownPermanentlyStopsTheQueueFromProcessingLaterEnqueues() throws Exception {
-        var delivered = new CountDownLatch(1);
-        var queue = new ReactiveQueue<String>(() -> true, message -> delivered.countDown(), error -> { });
+    void shutdownPermanentlyStopsTheQueueFromProcessingLaterEnqueues() {
+        var executor = new SynchronousExecutorService();
+        var received = new ArrayList<String>();
+        var queue = new ReactiveQueue<String>(() -> true, received::add, error -> { }, executor);
         queue.shutdown();
 
         queue.enqueue("hello");
 
-        assertFalse(delivered.await(200, TimeUnit.MILLISECONDS),
+        assertTrue(received.isEmpty(),
                 "shutdown queue should not self-heal a new executor and process later enqueues");
         assertTrue(queue.isShutdown());
     }

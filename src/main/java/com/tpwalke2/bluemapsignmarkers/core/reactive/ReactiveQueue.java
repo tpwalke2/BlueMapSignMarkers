@@ -68,6 +68,10 @@ public class ReactiveQueue<T> {
 
             try {
                 currentExecutor.submit(() -> messageProcessorCallback.processMessage(message));
+            } catch (RejectedExecutionException e) {
+                // Shut down concurrently between poll() and this submission; expected during a normal
+                // shutdown race, not a processing failure worth reporting to the error callback.
+                return;
             } catch (Exception e) {
                 messageProcessorErrorCallback.onError(e);
             }
