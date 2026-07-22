@@ -13,6 +13,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -89,19 +90,51 @@ class ReactiveQueueTest {
         assertTrue(queue.isShutdown());
     }
 
-    // Documents current behavior: shutdown() only shuts down whatever executor happens to exist at that
-    // moment. getExecutor() silently creates a fresh one the next time any work is scheduled, so shutdown()
-    // does not durably stop the queue from processing future enqueues. Known gap for the concurrency-hardening
-    // pass, not a guarantee callers can rely on today.
+    // Fixed for finding #2 (plans/codebase-review-2026-07-11.md): shutdown() permanently retires the
+    // queue. getExecutor() no longer resurrects a fresh executor just because the old one was shut down,
+    // so a later enqueue is left queued but never drained by this instance.
     @Test
-    void shutdownDoesNotPreventLaterEnqueuesFromBeingProcessed() throws Exception {
+    void shutdownPermanentlyStopsTheQueueFromProcessingLaterEnqueues() throws Exception {
         var delivered = new CountDownLatch(1);
         var queue = new ReactiveQueue<String>(() -> true, message -> delivered.countDown(), error -> { });
         queue.shutdown();
 
         queue.enqueue("hello");
 
-        assertTrue(delivered.await(5, TimeUnit.SECONDS), "shutdown unexpectedly blocked a later enqueue");
+        assertFalse(delivered.await(200, TimeUnit.MILLISECONDS),
+                "shutdown queue should not self-heal a new executor and process later enqueues");
+        assertTrue(queue.isShutdown());
+    }
+
+    // Regression test for finding #2: previously, a shutdown() call racing with a still-draining
+    // processMessages() loop caused the loop's next iteration to observe the now-shut-down executor and
+    // silently spin up a brand-new one, un-retiring the queue and leaking non-daemon threads. shutdown()
+    // and getExecutor() now share the same monitor, so once shutdownRequested flips, nothing on this
+    // instance can create a replacement executor.
+    @Test
+    void shutdownRacingMidDrainStopsTheLoopWithoutSpawningAReplacementExecutor() {
+        var executor = new SynchronousExecutorService();
+        var received = new ArrayList<String>();
+        var queueRef = new AtomicReference<ReactiveQueue<String>>();
+        var queue = new ReactiveQueue<String>(
+                () -> true,
+                message -> {
+                    received.add(message);
+                    if (message.equals("first")) {
+                        queueRef.get().shutdown();
+                    }
+                },
+                error -> { },
+                executor);
+        queueRef.set(queue);
+
+        queue.enqueue("first");
+        queue.enqueue("second");
+
+        assertEquals(List.of("first"), received,
+                "queue should stop draining as soon as it's shut down mid-loop, not self-heal and process more");
+        assertTrue(queue.isShutdown(),
+                "queue should remain shut down rather than silently spinning up a fresh executor");
     }
 
     @Test
