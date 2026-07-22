@@ -14,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -88,6 +89,48 @@ class ReactiveQueueTest {
         queue.shutdown();
 
         assertTrue(queue.isShutdown());
+    }
+
+    // Regression test for finding #10 (plans/codebase-review-2026-07-11.md): shutdown() previously
+    // returned as soon as executor.shutdown() was requested, without waiting for a task already in
+    // flight to actually finish. A caller (BlueMapAPIConnector.onDisable()) that assumed "shutdown()
+    // returned" meant "safe to resetQueue()/fireReset() a replay" could then race a straggler task
+    // against that replay. shutdown() now blocks until the in-flight task completes.
+    @Test
+    void shutdownBlocksUntilAnInFlightTaskFinishesBeforeReturning() throws Exception {
+        var taskStarted = new CountDownLatch(1);
+        var releaseTask = new CountDownLatch(1);
+        var taskFinished = new AtomicBoolean(false);
+        var delegate = Executors.newFixedThreadPool(2);
+        var queue = new ReactiveQueue<String>(
+                () -> true,
+                message -> {
+                    taskStarted.countDown();
+                    awaitUninterruptibly(releaseTask);
+                    taskFinished.set(true);
+                },
+                error -> { },
+                delegate);
+        try {
+            queue.enqueue("hello");
+            assertTrue(taskStarted.await(5, TimeUnit.SECONDS), "processor task never started");
+
+            var shutdownThread = new Thread(queue::shutdown);
+            shutdownThread.start();
+            // Wait for shutdown() to have actually called executor.shutdown() (rather than guessing with
+            // a fixed sleep) before asserting the task hasn't finished yet, so a slow/contended runner
+            // can't produce a false pass by having the sleep elapse before shutdown() even starts.
+            assertTrue(awaitTrue(delegate::isShutdown, 5000), "shutdown() never called executor.shutdown()");
+            assertFalse(taskFinished.get(), "sanity check: task should still be blocked at this point");
+
+            releaseTask.countDown();
+            shutdownThread.join(5000);
+
+            assertFalse(shutdownThread.isAlive(), "shutdown() should have returned by now");
+            assertTrue(taskFinished.get(), "shutdown() should not return until the in-flight task finished");
+        } finally {
+            delegate.shutdownNow();
+        }
     }
 
     // Fixed for finding #2 (plans/codebase-review-2026-07-11.md): shutdown() permanently retires the
@@ -304,6 +347,16 @@ class ReactiveQueueTest {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    /** Polls condition until it's true or timeoutMillis elapses; returns whether it became true. */
+    private static boolean awaitTrue(BooleanSupplier condition, long timeoutMillis) throws InterruptedException {
+        var deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        while (System.nanoTime() < deadline) {
+            if (condition.getAsBoolean()) return true;
+            Thread.sleep(5);
+        }
+        return condition.getAsBoolean();
     }
 
     /**

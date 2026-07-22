@@ -4,8 +4,11 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 
 public class ReactiveQueue<T> {
+    private static final long SHUTDOWN_AWAIT_SECONDS = 5;
+
     private final ConcurrentLinkedQueue<T> queue;
     private ExecutorService executor;
     private volatile boolean shutdownRequested;
@@ -82,14 +85,42 @@ public class ReactiveQueue<T> {
         return shutdownRequested || executor == null || executor.isShutdown();
     }
 
-    // synchronized with getExecutor() so a shutdown() racing a lazy executor creation can't leave a
-    // freshly-created executor un-shut-down: either shutdownRequested is visible before the new
-    // executor is assigned (so it's never created), or the new executor is assigned first and this
-    // call observes and shuts it down.
-    public synchronized void shutdown() {
-        shutdownRequested = true;
-        if (executor != null) {
-            executor.shutdown();
+    // Blocks (up to SHUTDOWN_AWAIT_SECONDS) until every task already submitted to this generation's
+    // executor has finished, so a caller that awaits shutdown() returning can rely on there being no
+    // straggler still able to touch shared state afterward — otherwise such a straggler could run after
+    // a subsequent resetQueue()/fireReset() replay and clobber the state that replay just established
+    // (finding #10, plans/codebase-review-2026-07-11.md). Falls back to shutdownNow() if the timeout
+    // elapses, rather than blocking indefinitely on a stuck task.
+    //
+    // The flag flip + executor.shutdown() call is synchronized with getExecutor() (same reasoning as
+    // before: a shutdown() racing a lazy executor creation can't leave a freshly-created executor
+    // un-shut-down), but the lock is released before awaitTermination() blocks — held across the wait,
+    // it would deadlock against an in-flight task's own getExecutor() call needing the same monitor.
+    public void shutdown() {
+        ExecutorService toAwait;
+        synchronized (this) {
+            shutdownRequested = true;
+            toAwait = executor;
+            if (toAwait != null) {
+                toAwait.shutdown();
+            }
+        }
+
+        if (toAwait == null) {
+            return;
+        }
+
+        try {
+            if (!toAwait.awaitTermination(SHUTDOWN_AWAIT_SECONDS, TimeUnit.SECONDS)) {
+                toAwait.shutdownNow();
+                // Give the forced cancellation a real chance to converge — returning immediately after
+                // shutdownNow() would still let a task caught mid-run touch shared state after this
+                // method returns, the exact guarantee this method exists to provide.
+                toAwait.awaitTermination(SHUTDOWN_AWAIT_SECONDS, TimeUnit.SECONDS);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            toAwait.shutdownNow();
         }
     }
 
