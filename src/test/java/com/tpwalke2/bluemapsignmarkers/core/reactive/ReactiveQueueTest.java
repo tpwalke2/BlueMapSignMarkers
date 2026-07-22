@@ -14,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -116,10 +117,10 @@ class ReactiveQueueTest {
 
             var shutdownThread = new Thread(queue::shutdown);
             shutdownThread.start();
-            // Give shutdown() a moment to reach awaitTermination before releasing the task, so this test
-            // would fail (taskFinished still false once shutdown() returns) if shutdown() didn't actually
-            // wait for it.
-            Thread.sleep(100);
+            // Wait for shutdown() to have actually called executor.shutdown() (rather than guessing with
+            // a fixed sleep) before asserting the task hasn't finished yet, so a slow/contended runner
+            // can't produce a false pass by having the sleep elapse before shutdown() even starts.
+            assertTrue(awaitTrue(delegate::isShutdown, 5000), "shutdown() never called executor.shutdown()");
             assertFalse(taskFinished.get(), "sanity check: task should still be blocked at this point");
 
             releaseTask.countDown();
@@ -346,6 +347,16 @@ class ReactiveQueueTest {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    /** Polls condition until it's true or timeoutMillis elapses; returns whether it became true. */
+    private static boolean awaitTrue(BooleanSupplier condition, long timeoutMillis) throws InterruptedException {
+        var deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        while (System.nanoTime() < deadline) {
+            if (condition.getAsBoolean()) return true;
+            Thread.sleep(5);
+        }
+        return condition.getAsBoolean();
     }
 
     /**

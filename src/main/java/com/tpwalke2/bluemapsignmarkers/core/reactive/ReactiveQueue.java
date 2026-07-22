@@ -113,6 +113,10 @@ public class ReactiveQueue<T> {
         try {
             if (!toAwait.awaitTermination(SHUTDOWN_AWAIT_SECONDS, TimeUnit.SECONDS)) {
                 toAwait.shutdownNow();
+                // Give the forced cancellation a real chance to converge — returning immediately after
+                // shutdownNow() would still let a task caught mid-run touch shared state after this
+                // method returns, the exact guarantee this method exists to provide.
+                toAwait.awaitTermination(SHUTDOWN_AWAIT_SECONDS, TimeUnit.SECONDS);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
