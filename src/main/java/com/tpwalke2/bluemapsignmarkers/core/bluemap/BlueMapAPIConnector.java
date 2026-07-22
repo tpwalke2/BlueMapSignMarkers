@@ -72,6 +72,15 @@ public class BlueMapAPIConnector {
     // whose thread-safety is controlled by BlueMap's API, not this mod (findings #5 and the bulk-load
     // fanout item, plans/codebase-review-2026-07-11.md).
     private synchronized void processMarkerAction(MarkerAction markerAction) {
+        // ReactiveQueue.shutdown() only stops new submissions — already-submitted tasks still run, and
+        // now that this method is synchronized, several can be queued behind the monitor for a while.
+        // Re-check the same condition ReactiveQueue's shouldRunCallback gates on so one of those tasks
+        // can't mutate a MarkerSet after BlueMap has actually disabled in the meantime.
+        if (BlueMapAPI.getInstance().isEmpty()) {
+            LOGGER.debug("BlueMap API not present; skipping already-queued marker action.");
+            return;
+        }
+
         logProcessingMessage(markerAction);
 
         var markerSets = getMarkerSets(markerAction.getMarkerIdentifier().parentSet());
