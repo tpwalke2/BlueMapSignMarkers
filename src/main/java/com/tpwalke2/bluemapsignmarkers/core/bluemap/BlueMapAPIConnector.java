@@ -65,7 +65,13 @@ public class BlueMapAPIConnector {
         markerSetsCache = new ConcurrentHashMap<>();
     }
 
-    private void processMarkerAction(MarkerAction markerAction) {
+    // synchronized so addMarker/updateMarker/removeMarker's mutation of a MarkerSet's marker Map can
+    // never run concurrently with another dispatched action against the same (or a different) MarkerSet.
+    // ReactiveQueue's executor is sized to availableProcessors(), so without this, two actions dispatched
+    // close together — e.g. many signs loading at server startup — can race on the same underlying Map,
+    // whose thread-safety is controlled by BlueMap's API, not this mod (findings #5 and the bulk-load
+    // fanout item, plans/codebase-review-2026-07-11.md).
+    private synchronized void processMarkerAction(MarkerAction markerAction) {
         logProcessingMessage(markerAction);
 
         var markerSets = getMarkerSets(markerAction.getMarkerIdentifier().parentSet());
