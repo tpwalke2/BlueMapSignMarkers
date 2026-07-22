@@ -90,6 +90,48 @@ class ReactiveQueueTest {
         assertTrue(queue.isShutdown());
     }
 
+    // Regression test for finding #10 (plans/codebase-review-2026-07-11.md): shutdown() previously
+    // returned as soon as executor.shutdown() was requested, without waiting for a task already in
+    // flight to actually finish. A caller (BlueMapAPIConnector.onDisable()) that assumed "shutdown()
+    // returned" meant "safe to resetQueue()/fireReset() a replay" could then race a straggler task
+    // against that replay. shutdown() now blocks until the in-flight task completes.
+    @Test
+    void shutdownBlocksUntilAnInFlightTaskFinishesBeforeReturning() throws Exception {
+        var taskStarted = new CountDownLatch(1);
+        var releaseTask = new CountDownLatch(1);
+        var taskFinished = new AtomicBoolean(false);
+        var delegate = Executors.newFixedThreadPool(2);
+        var queue = new ReactiveQueue<String>(
+                () -> true,
+                message -> {
+                    taskStarted.countDown();
+                    awaitUninterruptibly(releaseTask);
+                    taskFinished.set(true);
+                },
+                error -> { },
+                delegate);
+        try {
+            queue.enqueue("hello");
+            assertTrue(taskStarted.await(5, TimeUnit.SECONDS), "processor task never started");
+
+            var shutdownThread = new Thread(queue::shutdown);
+            shutdownThread.start();
+            // Give shutdown() a moment to reach awaitTermination before releasing the task, so this test
+            // would fail (taskFinished still false once shutdown() returns) if shutdown() didn't actually
+            // wait for it.
+            Thread.sleep(100);
+            assertFalse(taskFinished.get(), "sanity check: task should still be blocked at this point");
+
+            releaseTask.countDown();
+            shutdownThread.join(5000);
+
+            assertFalse(shutdownThread.isAlive(), "shutdown() should have returned by now");
+            assertTrue(taskFinished.get(), "shutdown() should not return until the in-flight task finished");
+        } finally {
+            delegate.shutdownNow();
+        }
+    }
+
     // Fixed for finding #2 (plans/codebase-review-2026-07-11.md): shutdown() permanently retires the
     // queue. getExecutor() no longer resurrects a fresh executor just because the old one was shut down,
     // so a later enqueue is left queued but never drained by this instance.

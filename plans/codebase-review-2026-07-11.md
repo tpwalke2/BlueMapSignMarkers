@@ -206,6 +206,21 @@ previous executor generation is still running `processMarkerAction` against the 
 can interleave with `fireReset()`'s full sign-cache replay, causing duplicate adds or a stale remove/add applied
 after the replay already established "correct" state.
 
+**Resolved 2026-07-22.** `ReactiveQueue.shutdown()` now calls `executor.awaitTermination(5, SECONDS)`
+after requesting graceful shutdown, falling back to `shutdownNow()` if that times out, so it doesn't
+return until every task already submitted to that generation's executor has actually finished (or been
+force-cancelled). The flag flip + `executor.shutdown()` call stays synchronized with `getExecutor()` (same
+reasoning as the finding #2 fix), but the lock is released before the blocking `awaitTermination()` call —
+holding it across the wait would deadlock against an in-flight task's own `getExecutor()` call needing the
+same monitor. Since `BlueMapAPIConnector.onDisable()` calls `shutdown()` synchronously and `onEnable()`
+only fires afterward (sequential BlueMap lifecycle callbacks, not concurrent for the same connector
+instance), this closes the interleaving window without needing changes in `BlueMapAPIConnector` itself.
+Regression test added: `ReactiveQueueTest.shutdownBlocksUntilAnInFlightTaskFinishesBeforeReturning`.
+
+Follow-up (out of scope for this pass): `SHUTDOWN_AWAIT_SECONDS` is a hardcoded constant; move it to
+configuration once there's a settings surface for tuning this, rather than as part of concurrency
+hardening.
+
 ### 11. `resetQueue()`/`onEnable()` mutate fields without the lock `getMarkerSets()` synchronizes on
 **`BlueMapAPIConnector.java`** — `resetQueue()` (58-66), `onEnable()` (160-169), vs. `getMarkerSets()` (175,
 `synchronized`)
