@@ -119,6 +119,22 @@ positions on the same map + marker group resolve to the same cached `MarkerSet` 
 
 Github issue #137
 
+**Resolved 2026-07-22.** `processMarkerAction` is now `synchronized`, so `addMarker`/`updateMarker`/
+`removeMarker`'s mutation of a `MarkerSet`'s marker `Map` can never run concurrently with another
+dispatched action, whichever `MarkerSet`(s) it targets. This also resolves a related, previously
+untracked concurrency-pass item (not in this doc, surfaced in a prior session): `SignProvider.loadSigns`
+dispatches one `MarkerAction` per persisted sign at server startup, fanning out across
+`ReactiveQueue`'s `availableProcessors()` worker threads — a startup-time amplification of this same race,
+reliably triggered by any boot with a nontrivial sign count. Both are closed by the same fix since they
+share the same unsynchronized-map root cause. `processMarkerAction` also gained a fast guard —
+`BlueMapAPI.getInstance().isEmpty()` → no-op — at its start: `ReactiveQueue.shutdown()` only stops new
+submissions, so already-submitted tasks still run, and serializing via the new monitor means several can
+sit queued behind it for a while; without the guard, one of those could still mutate a `MarkerSet` after
+BlueMap had actually disabled in the meantime, violating the same `shouldRun` contract `ReactiveQueue`
+itself is built around. `BlueMapAPIConnector` has no automated test coverage (it references live BlueMap
+API types — see AGENTS.md's testable-vs-game-coupled split); this change is verified by a clean compile
+and full test-suite pass, not by `runServer`.
+
 ### 6. `Version3Converter` fabricates a prefix for every migrated V2 entry, even non-matching sides
 **`src/main/java/com/tpwalke2/bluemapsignmarkers/core/signs/persistence/loaders/Version3Converter.java:26`**
 ```java
