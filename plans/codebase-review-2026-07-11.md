@@ -52,6 +52,18 @@ cycle.
 
 Github issue #134
 
+**Resolved 2026-07-22.** `shutdown()` now sets a `volatile shutdownRequested` flag under the same monitor
+as `getExecutor()`. Once set, `getExecutor()` never creates a replacement executor, `process()`/
+`processMessages()` bail out instead of resubmitting, and `isShutdown()` short-circuits on the volatile
+read so it reports correctly regardless of `executor`'s own visibility — closing both the thread-leak and
+the `onEnable()`-skips-`resetQueue()`/`fireReset()` side effect. `processMessages()`'s inner submit also
+catches `RejectedExecutionException` separately from other exceptions, treating a submission rejected by a
+concurrent shutdown as expected (stop draining) rather than routing it to `messageProcessorErrorCallback`
+as noise. Regression tests: `ReactiveQueueTest.shutdownRacingMidDrainStopsTheLoopWithoutSpawningAReplacementExecutor`
+(reproduces the mid-drain shutdown race via the existing `SynchronousExecutorService` test double) and
+`shutdownPermanentlyStopsTheQueueFromProcessingLaterEnqueues` (rewritten to assert deterministically via
+that same double instead of a timing-based wait).
+
 ## High
 
 ### 3. `SignEntryHelper.isMarkerType` NPEs when a persisted sign's prefix isn't in the current config
