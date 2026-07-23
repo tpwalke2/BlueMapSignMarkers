@@ -234,12 +234,47 @@ Neither `resetQueue()` nor `onEnable()` synchronizes on `this`, so a worker thre
 `getMarkerSets()` can race with a plain-field reassignment of `markerSetsCache` on another thread — a data race on
 the field reference itself, independent of the map's own thread-safety. Same root cause class as #10.
 
+**Resolved (2026-07-22, revised same day after review):** First pass made `resetQueue()`/`onEnable()`
+`synchronized` on `this`, the same monitor `getMarkerSets()`/`processMarkerAction()` use, and gave `dispatch()`/
+`onDisable()` the same lock via a capture-under-lock pattern. Review caught the flaw: `processMarkerAction()`
+(finding #5) can do relatively heavy BlueMap API work while holding that monitor, so `dispatch()` — the hot path,
+called on every sign add/update/remove — could block behind it, defeating the point of an async queue.
+
+Replaced with the narrower fix `markerActionQueue`/`markerSetsCache`/`blueMapAPI` are now `volatile` instead of
+lock-guarded. This is sufficient because `resetQueue()`/`onEnable()` always replace each field with a
+brand-new object rather than mutating the existing one in place — so all correctness requires is that a
+reader sees the latest *reference*, which is exactly what `volatile` guarantees. It says nothing about the
+referenced objects, which are still freely mutated afterward through their own thread-safe methods
+(`ReactiveQueue.enqueue()`/`process()`, `ConcurrentHashMap.get()`/`putIfAbsent()`) — and nothing about how
+many places read the field; `markerActionQueue`, for instance, is read from `dispatch()`, `onDisable()`, and
+`onEnable()` alike. What does matter: no reader needs a joint snapshot of more than one of these fields at
+once, so plain per-field visibility (not mutual exclusion) is all the JMM requires here. The
+old-generation-straggler ordering concern (a stale task touching post-reset state) is a separate concern
+already closed by `ReactiveQueue.shutdown()`'s `awaitTermination` (finding #10), not something this lock was
+providing. `dispatch()` and `onDisable()` now read their field directly with no synchronization at all, so
+neither can contend with `processMarkerAction()`. `getMarkerSets()` keeps its own `synchronized` — that
+lock's job was always serializing marker-map mutations (finding #5), a separate concern from field
+visibility, and is now fully decoupled from the hot path.
+
+No dedicated unit test — `BlueMapAPIConnector` is game-coupled (no automated coverage per AGENTS.md); verified by
+clean compile + full suite pass, not `runServer`.
+
 ### 12. `blueMapAPI` / `executor` field visibility — no `volatile`, no happens-before edge
 **`BlueMapAPIConnector.java:167,210`** and **`ReactiveQueue.java:48-50,56-62`**
 `blueMapAPI` is written on the BlueMap callback thread (`onEnable`) and read on `ReactiveQueue` worker threads
 (`getMaps()`) with no synchronization. Same pattern in `ReactiveQueue`: `isShutdown()` reads `executor`
 unsynchronized while `getExecutor()` writes it under `synchronized`. Per JMM neither read is guaranteed to observe
 the latest write — a real (if hard to reproduce) visibility race in both cases.
+
+**Resolved (2026-07-22):** `ReactiveQueue.executor` is now `volatile`, so `isShutdown()` (called with no lock
+held) reliably observes `getExecutor()`'s synchronized write.
+
+`blueMapAPI` is now `volatile` too, as part of finding #11's revised fix (see that note) — its only writer
+(`onEnable()`) and only reader (`getMaps()`, called from `getMarkerSets()`) no longer share a lock, so visibility
+comes from the field itself rather than a monitor.
+
+No dedicated unit test for the `BlueMapAPIConnector` half (game-coupled, no automated coverage per AGENTS.md);
+the `ReactiveQueue.executor` fix is covered by the existing `ReactiveQueueTest` suite plus a clean full-suite pass.
 
 ### 13. `FileUtils.createBackup`/`copyFile` swallow backup failures, then the caller overwrites the original anyway
 **`src/main/java/com/tpwalke2/bluemapsignmarkers/common/FileUtils.java:17-32`**

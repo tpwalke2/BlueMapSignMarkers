@@ -26,13 +26,27 @@ public class BlueMapAPIConnector {
     public static final String WORLD_NOT_FOUND = "World not found: {}";
     public static final String WORLD_MAPS_EMPTY = "World maps empty: {}";
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
-    private ReactiveQueue<MarkerAction> markerActionQueue;
-    private Map<MarkerSetIdentifier, List<MarkerSet>> markerSetsCache;
-    private BlueMapAPI blueMapAPI;
+    // volatile: resetQueue()/onEnable() always replace these fields with a brand-new object rather than
+    // mutating the existing one, so all correctness requires is that a reader sees the latest *reference* —
+    // that's what volatile guarantees. It says nothing about the referenced objects themselves, which are
+    // freely mutated afterward through their own thread-safe methods (ReactiveQueue.enqueue()/process(),
+    // ConcurrentHashMap.get()/putIfAbsent()). No reader — dispatch()/onDisable()/onEnable() for
+    // markerActionQueue, getMarkerSets() for markerSetsCache, getMaps() for blueMapAPI — needs a joint
+    // snapshot of more than one of these fields at once, so per-field visibility is enough; a shared lock
+    // would additionally serialize dispatch() (hot path, every sign event) behind processMarkerAction()'s
+    // BlueMap API calls, an unrelated critical section (findings #11 and #12,
+    // plans/codebase-review-2026-07-11.md).
+    private volatile ReactiveQueue<MarkerAction> markerActionQueue;
+    private volatile Map<MarkerSetIdentifier, List<MarkerSet>> markerSetsCache;
+    private volatile BlueMapAPI blueMapAPI;
     private final List<IResetHandler> resetHandlers = new ArrayList<>();
 
     public BlueMapAPIConnector() {
         resetQueue();
+        // BlueMap may already be enabled by the time this connector is constructed (e.g. mod reload); don't
+        // rely solely on the onEnable callback below to set blueMapAPI, or a dispatch() landing before that
+        // callback runs would see BlueMapAPI.getInstance().isPresent() true but this.blueMapAPI still null.
+        blueMapAPI = BlueMapAPI.getInstance().orElse(null);
 
         BlueMapAPI.onEnable(this::onEnable);
         BlueMapAPI.onDisable(this::onDisable);

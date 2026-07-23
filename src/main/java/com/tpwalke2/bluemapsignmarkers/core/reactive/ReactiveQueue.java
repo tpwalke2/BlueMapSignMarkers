@@ -10,7 +10,10 @@ public class ReactiveQueue<T> {
     private static final long SHUTDOWN_AWAIT_SECONDS = 5;
 
     private final ConcurrentLinkedQueue<T> queue;
-    private ExecutorService executor;
+    // volatile so isShutdown() (called with no lock held, from any thread) sees getExecutor()'s
+    // synchronized write without needing its own synchronization (finding #12,
+    // plans/codebase-review-2026-07-11.md).
+    private volatile ExecutorService executor;
     private volatile boolean shutdownRequested;
     private final ShouldRunCallback shouldRunCallback;
     private final MessageProcessorCallback<T> messageProcessorCallback;
