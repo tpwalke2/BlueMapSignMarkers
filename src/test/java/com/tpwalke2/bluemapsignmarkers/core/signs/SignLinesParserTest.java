@@ -120,6 +120,7 @@ class SignLinesParserTest {
 
         assertEquals("[poi]", result.prefix());
         assertEquals("Town Hall", result.label());
+        assertEquals("Town Hall", result.detail());
     }
 
     @Test

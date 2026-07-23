@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 public class SignLinesParser {
@@ -21,7 +22,25 @@ public class SignLinesParser {
     private final List<MarkerGroup> markerGroups;
 
     public SignLinesParser(List<MarkerGroup> markerGroups) {
-        this.markerGroups = markerGroups;
+        this.markerGroups = markerGroups.stream()
+                .filter(SignLinesParser::hasValidPrefix)
+                .toList();
+    }
+
+    private static boolean hasValidPrefix(MarkerGroup markerGroup) {
+        if (markerGroup.matchType() != MarkerGroupMatchType.REGEX) {
+            return true;
+        }
+
+        try {
+            Pattern.compile(markerGroup.prefix());
+            return true;
+        } catch (PatternSyntaxException e) {
+            LOGGER.warn(
+                    "Marker group '{}' has an invalid REGEX prefix '{}', it will be ignored: {}",
+                    markerGroup.name(), markerGroup.prefix(), e.getMessage());
+            return false;
+        }
     }
 
     public SignLinesParseResult parse(String[] lines) {
@@ -84,14 +103,7 @@ public class SignLinesParser {
 
     private static boolean lineMatchesMarkerGroup(String line, MarkerGroup markerGroup) {
         if (markerGroup.matchType() == MarkerGroupMatchType.REGEX) {
-            try {
-                return line.matches(markerGroup.prefix());
-            } catch (PatternSyntaxException e) {
-                LOGGER.warn(
-                        "Marker group '{}' has an invalid REGEX prefix '{}', skipping it for this sign: {}",
-                        markerGroup.name(), markerGroup.prefix(), e.getMessage());
-                return false;
-            }
+            return line.matches(markerGroup.prefix());
         }
 
         // Default match type -> STARTS_WITH
