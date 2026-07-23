@@ -29,7 +29,7 @@ public class Version3Converter {
 
     private static SignLinesParseResult convertToV3(SignLinesParseResultV2 result, MarkerGroup[] markerGroups) {
         // A null markerType means this side never matched any group under V1/V2 - keep it non-matching
-        // rather than fabricating a prefix for it (Github issue #138).
+        // rather than fabricating a prefix for it (GitHub issue #138).
         if (result.markerType() == null) {
             return new SignLinesParseResult(null, result.label(), result.detail());
         }

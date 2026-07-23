@@ -43,7 +43,7 @@ class Version3ConverterTest {
         assertEquals("back detail", converted.backText().detail());
     }
 
-    // Github issue #138 (review finding #6, part a): a side whose V2 markerType was null never matched any
+    // GitHub issue #138 (review finding #6, part a): a side whose V2 markerType was null never matched any
     // group originally, so migration must keep it non-matching rather than fabricating the POI group's prefix.
     @Test
     void aNonMatchingSideStaysNonMatching() {
