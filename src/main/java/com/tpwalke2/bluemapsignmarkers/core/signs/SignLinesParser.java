@@ -1,11 +1,18 @@
 package com.tpwalke2.bluemapsignmarkers.core.signs;
 
+import com.tpwalke2.bluemapsignmarkers.Constants;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupMatchType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 public class SignLinesParser {
+    private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
+
     private enum ParseStates {
         START,
         HAS_MARKER_TYPE,
@@ -15,7 +22,30 @@ public class SignLinesParser {
     private final List<MarkerGroup> markerGroups;
 
     public SignLinesParser(List<MarkerGroup> markerGroups) {
-        this.markerGroups = markerGroups;
+        this.markerGroups = markerGroups.stream()
+                .filter(SignLinesParser::hasValidPrefix)
+                .toList();
+    }
+
+    private static boolean hasValidPrefix(MarkerGroup markerGroup) {
+        if (markerGroup.prefix() == null) {
+            LOGGER.warn("Marker group '{}' has no prefix configured, it will be ignored.", markerGroup.name());
+            return false;
+        }
+
+        if (markerGroup.matchType() != MarkerGroupMatchType.REGEX) {
+            return true;
+        }
+
+        try {
+            Pattern.compile(markerGroup.prefix());
+            return true;
+        } catch (PatternSyntaxException e) {
+            LOGGER.warn(
+                    "Marker group '{}' has an invalid REGEX prefix '{}', it will be ignored: {}",
+                    markerGroup.name(), markerGroup.prefix(), e.getMessage());
+            return false;
+        }
     }
 
     public SignLinesParseResult parse(String[] lines) {

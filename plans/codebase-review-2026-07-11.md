@@ -191,6 +191,13 @@ configured order until one matches, a bad regex placed early can throw for essen
 processes, not just ones meant for that group. Propagates uncaught out of `SignBlockEntityInject`'s `@Inject`
 callback and `BlueMapSignMarkersMod.onBlockEntityLoad`.
 
+**Resolved 2026-07-23.** `SignLinesParser`'s constructor now validates every group's prefix once, up front, logging
+one warning per invalid group and dropping it from the list used for matching — instead of failing on every sign
+parsed. A `null` prefix (e.g. a missing JSON field on config load) is rejected regardless of match type, and a
+`REGEX` group's prefix is also test-compiled with `Pattern.compile(...)`, catching `PatternSyntaxException`. A bad
+group on one line no longer blocks matching against the groups after it or crashes sign processing, and the log
+only gets one line per bad group instead of one per sign.
+
 Github issue #139
 
 ## Medium
