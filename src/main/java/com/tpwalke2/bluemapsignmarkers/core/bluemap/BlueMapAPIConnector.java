@@ -43,6 +43,10 @@ public class BlueMapAPIConnector {
 
     public BlueMapAPIConnector() {
         resetQueue();
+        // BlueMap may already be enabled by the time this connector is constructed (e.g. mod reload); don't
+        // rely solely on the onEnable callback below to set blueMapAPI, or a dispatch() landing before that
+        // callback runs would see BlueMapAPI.getInstance().isPresent() true but this.blueMapAPI still null.
+        blueMapAPI = BlueMapAPI.getInstance().orElse(null);
 
         BlueMapAPI.onEnable(this::onEnable);
         BlueMapAPI.onDisable(this::onDisable);
