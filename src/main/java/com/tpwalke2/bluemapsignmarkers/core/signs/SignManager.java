@@ -97,7 +97,15 @@ public class SignManager implements IResetHandler {
         blueMapAPIConnector.shutdown();
     }
 
-    private void reloadSigns() {
+    // synchronized (same monitor as addOrUpdateSign/removeByKey below) so the whole snapshot-clear-replay
+    // sequence is one atomic step relative to live sign edits/removals arriving from the mixins on the
+    // server thread. IResetHandler.reset() fires on whatever thread BlueMapAPI.onEnable runs on, not
+    // necessarily the server thread, so without this a live edit could land mid-replay and get clobbered
+    // by a stale replayed value, or a sign removed mid-replay could be silently re-added from the
+    // snapshot taken before the removal (finding #17, plans/codebase-review-2026-07-11.md). dispatch()
+    // only enqueues onto ReactiveQueue (no blocking BlueMap API work happens under this lock), so this
+    // doesn't introduce hot-path contention the way locking around processMarkerAction would.
+    private synchronized void reloadSigns() {
         LOGGER.info("Reloading all signs...");
         var existingSigns = getAllSigns();
         signCache.clear();
@@ -107,7 +115,7 @@ public class SignManager implements IResetHandler {
         }
     }
 
-    private void addOrUpdateSign(SignEntry signEntry) {
+    private synchronized void addOrUpdateSign(SignEntry signEntry) {
         var config = runtimeConfig;
         var prefixGroupMap = config.prefixGroupMap();
         var actionFactory = config.actionFactory();
@@ -240,7 +248,7 @@ public class SignManager implements IResetHandler {
         return existing == null && isPOIMarker;
     }
 
-    private void removeByKey(SignEntryKey key) {
+    private synchronized void removeByKey(SignEntryKey key) {
         var removed = signCache.remove(key);
 
         if (removed == null) {
