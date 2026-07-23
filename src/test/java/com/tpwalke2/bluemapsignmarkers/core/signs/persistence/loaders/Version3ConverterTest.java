@@ -9,10 +9,8 @@ import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV2
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignLinesParseResultV2;
 import org.junit.jupiter.api.Test;
 
-import java.util.NoSuchElementException;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class Version3ConverterTest {
 
@@ -28,7 +26,7 @@ class Version3ConverterTest {
     }
 
     @Test
-    void convertToV3FabricatesThePrefixFromThePoiGroupOnBothSides() {
+    void convertToV3UsesThePoiGroupPrefixWhenBothSidesMatched() {
         var entry = entryWith(
                 new SignLinesParseResultV2(MarkerTypeV2.POI, "Front Label", "front detail"),
                 new SignLinesParseResultV2(MarkerTypeV2.POI, "Back Label", "back detail"));
@@ -45,18 +43,17 @@ class Version3ConverterTest {
         assertEquals("back detail", converted.backText().detail());
     }
 
-    // Documents review finding #6: convertToV3 ignores each side's own markerType entirely and always fabricates
-    // the POI group's prefix, even for a side that never matched any group originally (markerType null). A back
-    // side that was blank/unmatched under V2 still comes out of migration labeled as if it matched the POI group.
+    // GitHub issue #138 (review finding #6, part a): a side whose V2 markerType was null never matched any
+    // group originally, so migration must keep it non-matching rather than fabricating the POI group's prefix.
     @Test
-    void aNonMatchingSideStillGetsFabricatedThePoiPrefix() {
+    void aNonMatchingSideStaysNonMatching() {
         var entry = entryWith(
                 new SignLinesParseResultV2(MarkerTypeV2.POI, "Front Label", "front detail"),
                 new SignLinesParseResultV2(null, "", ""));
 
         var converted = Version3Converter.convertToV3(entry, new MarkerGroup[]{poiGroup("[poi]")});
 
-        assertEquals("[poi]", converted.backText().prefix());
+        assertNull(converted.backText().prefix());
     }
 
     // Documents review finding #6: with more than one POI-type group configured, convertToV3 always picks
@@ -75,16 +72,18 @@ class Version3ConverterTest {
         assertEquals("[first]", converted.backText().prefix());
     }
 
-    // Documents review finding #6: with zero POI-type groups configured, the orElseThrow() on the empty stream
-    // crashes the whole migration with a NoSuchElementException instead of failing gracefully (e.g. falling back
-    // to no prefix, or skipping the entry) - current behavior, not a desired one.
+    // Github issue #138 (review finding #6, part c): with zero POI-type groups configured, convertToV3 must
+    // fail gracefully (non-matching prefix) instead of throwing NoSuchElementException and losing every
+    // persisted sign for the session via LegacySignFileMigrator's catch-and-discard.
     @Test
-    void throwsNoSuchElementExceptionWhenNoPoiGroupIsConfigured() {
+    void treatsAMatchedSideAsNonMatchingWhenNoPoiGroupIsConfigured() {
         var entry = entryWith(
                 new SignLinesParseResultV2(MarkerTypeV2.POI, "Label", "detail"),
                 new SignLinesParseResultV2(null, "", ""));
 
-        assertThrows(NoSuchElementException.class,
-                () -> Version3Converter.convertToV3(entry, new MarkerGroup[0]));
+        var converted = Version3Converter.convertToV3(entry, new MarkerGroup[0]);
+
+        assertNull(converted.frontText().prefix());
+        assertNull(converted.backText().prefix());
     }
 }

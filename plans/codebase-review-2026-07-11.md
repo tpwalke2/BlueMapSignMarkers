@@ -155,6 +155,16 @@ config-and-persistence.md`; (a) is a separate, unacknowledged defect found durin
 
 Github issue #138
 
+**Resolved 2026-07-23.** `Version3Converter.convertToV3` now checks each side's `SignLinesParseResultV2.markerType()`
+before looking up a POI group: `null` (never matched anything under V1/V2) converts to a non-matching
+`SignLinesParseResult(null, ...)` instead of fabricating the first POI group's prefix, fixing (a). The POI-group
+lookup also no longer `.orElseThrow()`s — an empty result (zero POI-type groups configured) logs a warning and
+likewise converts to non-matching instead of throwing `NoSuchElementException` into `LegacySignFileMigrator`'s
+catch-and-discard, fixing the total-data-loss crash. (b) — multiple POI groups configured, migrated signs all
+getting the first one's prefix — is unchanged; still a known, accepted limitation (`agent-context/context/
+config-and-persistence.md`), not addressed by this fix since V2 data never recorded which specific group actually
+matched. Verified by updated unit tests in `Version3ConverterTest`.
+
 ### 7. `BlueMapAPIConnector.shutdown()`'s `unregisterListener` calls likely no-op
 **`src/main/java/com/tpwalke2/bluemapsignmarkers/core/bluemap/BlueMapAPIConnector.java:41-44`**
 ```java
