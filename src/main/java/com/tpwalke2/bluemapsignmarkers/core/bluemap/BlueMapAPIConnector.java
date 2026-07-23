@@ -26,12 +26,16 @@ public class BlueMapAPIConnector {
     public static final String WORLD_NOT_FOUND = "World not found: {}";
     public static final String WORLD_MAPS_EMPTY = "World maps empty: {}";
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
-    // volatile: each field is reassigned wholesale by resetQueue()/onEnable() (never mutated in place) and
-    // read independently by exactly one caller path (dispatch()/onDisable() for markerActionQueue,
-    // getMarkerSets() for markerSetsCache, getMaps() for blueMapAPI) — no caller needs a joint snapshot of
-    // more than one, so a plain visibility guarantee is enough; a shared lock would additionally serialize
-    // dispatch() (hot path, every sign event) behind processMarkerAction()'s BlueMap API calls, which is a
-    // separate and unrelated critical section (findings #11 and #12, plans/codebase-review-2026-07-11.md).
+    // volatile: resetQueue()/onEnable() always replace these fields with a brand-new object rather than
+    // mutating the existing one, so all correctness requires is that a reader sees the latest *reference* —
+    // that's what volatile guarantees. It says nothing about the referenced objects themselves, which are
+    // freely mutated afterward through their own thread-safe methods (ReactiveQueue.enqueue()/process(),
+    // ConcurrentHashMap.get()/putIfAbsent()). No reader — dispatch()/onDisable()/onEnable() for
+    // markerActionQueue, getMarkerSets() for markerSetsCache, getMaps() for blueMapAPI — needs a joint
+    // snapshot of more than one of these fields at once, so per-field visibility is enough; a shared lock
+    // would additionally serialize dispatch() (hot path, every sign event) behind processMarkerAction()'s
+    // BlueMap API calls, an unrelated critical section (findings #11 and #12,
+    // plans/codebase-review-2026-07-11.md).
     private volatile ReactiveQueue<MarkerAction> markerActionQueue;
     private volatile Map<MarkerSetIdentifier, List<MarkerSet>> markerSetsCache;
     private volatile BlueMapAPI blueMapAPI;

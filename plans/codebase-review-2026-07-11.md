@@ -241,14 +241,20 @@ the field reference itself, independent of the map's own thread-safety. Same roo
 called on every sign add/update/remove — could block behind it, defeating the point of an async queue.
 
 Replaced with the narrower fix `markerActionQueue`/`markerSetsCache`/`blueMapAPI` are now `volatile` instead of
-lock-guarded. This is sufficient because each field is reassigned wholesale (never mutated in place) and read
-independently by exactly one caller path — no caller needs a joint snapshot of more than one field, so plain
-visibility (not mutual exclusion) is all the JMM requires here. The old-generation-straggler ordering concern
-(a stale task touching post-reset state) is a separate concern already closed by `ReactiveQueue.shutdown()`'s
-`awaitTermination` (finding #10), not something this lock was providing. `dispatch()` and `onDisable()` now read
-their field directly with no synchronization at all, so neither can contend with `processMarkerAction()`.
-`getMarkerSets()` keeps its own `synchronized` — that lock's job was always serializing marker-map mutations
-(finding #5), a separate concern from field visibility, and is now fully decoupled from the hot path.
+lock-guarded. This is sufficient because `resetQueue()`/`onEnable()` always replace each field with a
+brand-new object rather than mutating the existing one in place — so all correctness requires is that a
+reader sees the latest *reference*, which is exactly what `volatile` guarantees. It says nothing about the
+referenced objects, which are still freely mutated afterward through their own thread-safe methods
+(`ReactiveQueue.enqueue()`/`process()`, `ConcurrentHashMap.get()`/`putIfAbsent()`) — and nothing about how
+many places read the field; `markerActionQueue`, for instance, is read from `dispatch()`, `onDisable()`, and
+`onEnable()` alike. What does matter: no reader needs a joint snapshot of more than one of these fields at
+once, so plain per-field visibility (not mutual exclusion) is all the JMM requires here. The
+old-generation-straggler ordering concern (a stale task touching post-reset state) is a separate concern
+already closed by `ReactiveQueue.shutdown()`'s `awaitTermination` (finding #10), not something this lock was
+providing. `dispatch()` and `onDisable()` now read their field directly with no synchronization at all, so
+neither can contend with `processMarkerAction()`. `getMarkerSets()` keeps its own `synchronized` — that
+lock's job was always serializing marker-map mutations (finding #5), a separate concern from field
+visibility, and is now fully decoupled from the hot path.
 
 No dedicated unit test — `BlueMapAPIConnector` is game-coupled (no automated coverage per AGENTS.md); verified by
 clean compile + full suite pass, not `runServer`.
