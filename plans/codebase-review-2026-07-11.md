@@ -329,6 +329,16 @@ hot-path contention. Test: `MarkerSetIdentifierCollectionTest.concurrentFirstTim
 against concurrent server-thread mutations from the mixins. A real-time edit/removal mid-reload can be clobbered by
 a stale replayed value, or a sign removed during the race can be silently re-added by the replay.
 
+**Resolved (2026-07-23):** `reloadSigns()`, `addOrUpdateSign()`, and `removeByKey()` are now all `synchronized` on
+the same (implicit `this`) monitor, so the whole snapshot-clear-replay sequence and any individual live sign
+edit/removal from the mixins are mutually exclusive — one fully completes before the other starts, closing both
+failure modes: a live edit landing mid-replay can no longer be clobbered by a stale replayed value, and a sign
+removed mid-replay can no longer be silently re-added from the pre-removal snapshot. `dispatch()` (called from all
+three methods) only enqueues onto `ReactiveQueue` — no blocking BlueMap API work happens under this lock — so this
+doesn't introduce contention on a hot path, the same reasoning as finding #16's `getIdentifier()` fix (see
+[[feedback_lock_reuse_hot_path]]). `SignManager` is game-coupled (constructs a `BlueMapAPIConnector`), so per
+AGENTS.md it has no automated unit coverage; verified via clean compile and a full `./gradlew test` pass.
+
 ## Low
 
 - **`SignManager` singleton's double-checked locking is broken — `instance` isn't `volatile`**
