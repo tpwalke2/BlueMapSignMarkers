@@ -124,6 +124,19 @@ class SignLinesParserTest {
     }
 
     @Test
+    void nullPrefixIsSkippedInsteadOfThrowing() {
+        var parser = new SignLinesParser(List.of(
+                startsWithGroup(null, "Broken"),
+                startsWithGroup("[poi]", "Points of Interest")));
+
+        var result = parser.parse(new String[]{"[poi] Town Hall"});
+
+        assertEquals("[poi]", result.prefix());
+        assertEquals("Town Hall", result.label());
+        assertEquals("Town Hall", result.detail());
+    }
+
+    @Test
     void firstMatchingGroupWinsWhenMultipleConfigured() {
         var parser = new SignLinesParser(List.of(
                 startsWithGroup("[poi]", "Points of Interest"),

@@ -28,6 +28,11 @@ public class SignLinesParser {
     }
 
     private static boolean hasValidPrefix(MarkerGroup markerGroup) {
+        if (markerGroup.prefix() == null) {
+            LOGGER.warn("Marker group '{}' has no prefix configured, it will be ignored.", markerGroup.name());
+            return false;
+        }
+
         if (markerGroup.matchType() != MarkerGroupMatchType.REGEX) {
             return true;
         }
