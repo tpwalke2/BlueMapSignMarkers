@@ -1,11 +1,17 @@
 package com.tpwalke2.bluemapsignmarkers.core.signs;
 
+import com.tpwalke2.bluemapsignmarkers.Constants;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupMatchType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.regex.PatternSyntaxException;
 
 public class SignLinesParser {
+    private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
+
     private enum ParseStates {
         START,
         HAS_MARKER_TYPE,
@@ -78,7 +84,14 @@ public class SignLinesParser {
 
     private static boolean lineMatchesMarkerGroup(String line, MarkerGroup markerGroup) {
         if (markerGroup.matchType() == MarkerGroupMatchType.REGEX) {
-            return line.matches(markerGroup.prefix());
+            try {
+                return line.matches(markerGroup.prefix());
+            } catch (PatternSyntaxException e) {
+                LOGGER.warn(
+                        "Marker group '{}' has an invalid REGEX prefix '{}', skipping it for this sign: {}",
+                        markerGroup.name(), markerGroup.prefix(), e.getMessage());
+                return false;
+            }
         }
 
         // Default match type -> STARTS_WITH

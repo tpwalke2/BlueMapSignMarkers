@@ -111,6 +111,18 @@ class SignLinesParserTest {
     }
 
     @Test
+    void malformedRegexPrefixIsSkippedInsteadOfThrowing() {
+        var parser = new SignLinesParser(List.of(
+                regexGroup("[unclosed", "Broken"),
+                startsWithGroup("[poi]", "Points of Interest")));
+
+        var result = parser.parse(new String[]{"[poi] Town Hall"});
+
+        assertEquals("[poi]", result.prefix());
+        assertEquals("Town Hall", result.label());
+    }
+
+    @Test
     void firstMatchingGroupWinsWhenMultipleConfigured() {
         var parser = new SignLinesParser(List.of(
                 startsWithGroup("[poi]", "Points of Interest"),

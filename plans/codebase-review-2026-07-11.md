@@ -191,6 +191,13 @@ configured order until one matches, a bad regex placed early can throw for essen
 processes, not just ones meant for that group. Propagates uncaught out of `SignBlockEntityInject`'s `@Inject`
 callback and `BlueMapSignMarkersMod.onBlockEntityLoad`.
 
+**Resolved 2026-07-23.** `SignLinesParser.lineMatchesMarkerGroup` now catches `PatternSyntaxException` around
+`line.matches(...)`, logs a warning naming the offending marker group, and treats it as a non-match instead of
+letting the exception propagate — a malformed REGEX prefix on one group no longer blocks matching against the
+groups that come after it, or crashes sign processing for every sign that reaches it. `getLabel`'s `replaceAll`
+needs no equivalent guard: it only runs for a group whose pattern already compiled successfully in
+`lineMatchesMarkerGroup`.
+
 Github issue #139
 
 ## Medium
