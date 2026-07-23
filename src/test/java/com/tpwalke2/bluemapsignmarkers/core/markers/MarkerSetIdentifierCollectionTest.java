@@ -1,6 +1,5 @@
 package com.tpwalke2.bluemapsignmarkers.core.markers;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -62,13 +61,9 @@ class MarkerSetIdentifierCollectionTest {
     }
 
     // Documents review finding #16 (plans/codebase-review-2026-07-11.md): getIdentifier()'s cache check
-    // ("is there already an identifier for this combo?") and its cache write (addIdentifier) are two separate,
-    // unsynchronized steps over plain TreeMap/HashMap/HashSet fields. Many threads racing to look up the same
-    // brand-new (mapId, markerGroup) combo for the first time can all observe "not cached yet" and each construct
-    // and return their own MarkerSetIdentifier instance, instead of converging on one canonical instance. Disabled
-    // because it reliably fails against the current implementation; re-enable once the concurrency-hardening pass
-    // (see plans/unit-test-coverage-gaps.md) makes getIdentifier's check-then-act sequence atomic.
-    @Disabled("Documents review finding #16 - MarkerSetIdentifierCollection is not thread-safe; re-enable after the concurrency-hardening pass")
+    // ("is there already an identifier for this combo?") and its cache write (addIdentifier) are now one
+    // synchronized step, so many threads racing to look up the same brand-new (mapId, markerGroup) combo for
+    // the first time converge on one canonical instance instead of each constructing their own.
     @Test
     void concurrentFirstTimeCallersForTheSameComboConvergeOnOneIdentifierInstance() throws Exception {
         final int threadCount = 8;
