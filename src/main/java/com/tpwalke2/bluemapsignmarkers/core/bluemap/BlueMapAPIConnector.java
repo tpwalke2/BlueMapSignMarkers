@@ -26,9 +26,15 @@ public class BlueMapAPIConnector {
     public static final String WORLD_NOT_FOUND = "World not found: {}";
     public static final String WORLD_MAPS_EMPTY = "World maps empty: {}";
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
-    private ReactiveQueue<MarkerAction> markerActionQueue;
-    private Map<MarkerSetIdentifier, List<MarkerSet>> markerSetsCache;
-    private BlueMapAPI blueMapAPI;
+    // volatile: each field is reassigned wholesale by resetQueue()/onEnable() (never mutated in place) and
+    // read independently by exactly one caller path (dispatch()/onDisable() for markerActionQueue,
+    // getMarkerSets() for markerSetsCache, getMaps() for blueMapAPI) — no caller needs a joint snapshot of
+    // more than one, so a plain visibility guarantee is enough; a shared lock would additionally serialize
+    // dispatch() (hot path, every sign event) behind processMarkerAction()'s BlueMap API calls, which is a
+    // separate and unrelated critical section (findings #11 and #12, plans/codebase-review-2026-07-11.md).
+    private volatile ReactiveQueue<MarkerAction> markerActionQueue;
+    private volatile Map<MarkerSetIdentifier, List<MarkerSet>> markerSetsCache;
+    private volatile BlueMapAPI blueMapAPI;
     private final List<IResetHandler> resetHandlers = new ArrayList<>();
 
     public BlueMapAPIConnector() {
@@ -43,17 +49,8 @@ public class BlueMapAPIConnector {
         BlueMapAPI.unregisterListener(this::onDisable);
     }
 
-    // Captures the field under the same lock resetQueue()/getMarkerSets() use before calling enqueue()
-    // outside it — dispatch() is on the hot path (every sign add/update/remove), so the lock is held only
-    // long enough to read a consistent reference, not across enqueue()'s own work (finding #11,
-    // plans/codebase-review-2026-07-11.md).
     public void dispatch(MarkerAction action) {
-        ReactiveQueue<MarkerAction> queue;
-        synchronized (this) {
-            queue = markerActionQueue;
-        }
-
-        queue.enqueue(action);
+        markerActionQueue.enqueue(action);
     }
 
     public void addResetHandler(IResetHandler handler) {
@@ -64,13 +61,7 @@ public class BlueMapAPIConnector {
         resetHandlers.forEach(IResetHandler::reset);
     }
 
-    // synchronized so this can't interleave with getMarkerSets()/processMarkerAction() reading
-    // markerActionQueue/markerSetsCache mid-reassignment (finding #11). Safe to hold across resetQueue()'s
-    // and fireReset()'s work from onEnable(): neither blocks waiting on another thread — enqueue()/process()
-    // only submit to the executor, they don't await the submitted task, so a worker thread blocked trying to
-    // enter the synchronized processMarkerAction() just waits for this method to finish, it never needs this
-    // method to make further progress.
-    private synchronized void resetQueue() {
+    private void resetQueue() {
         markerActionQueue = new ReactiveQueue<>(
                 () -> BlueMapAPI.getInstance().isPresent(),
                 this::processMarkerAction,
@@ -187,9 +178,7 @@ public class BlueMapAPIConnector {
         LOGGER.error("Error processing marker action", throwable);
     }
 
-    // synchronized for the same reason as resetQueue() — this reassigns blueMapAPI and (via resetQueue())
-    // markerActionQueue/markerSetsCache, all fields getMarkerSets() reads under its own synchronized block.
-    private synchronized void onEnable(BlueMapAPI api) {
+    private void onEnable(BlueMapAPI api) {
         this.blueMapAPI = api;
 
         if (markerActionQueue.isShutdown()) {
@@ -201,18 +190,8 @@ public class BlueMapAPIConnector {
         markerActionQueue.process();
     }
 
-    // Not synchronized as a whole: ReactiveQueue.shutdown() blocks (awaitTermination) until in-flight
-    // processMarkerAction() tasks finish, and those tasks need this same monitor to run — holding it across
-    // that wait would deadlock (the in-flight task can never acquire the lock the waiting thread refuses to
-    // release, and shutdownNow()'s interrupt can't free a thread blocked entering a synchronized block).
-    // Instead, only the field read is synchronized (finding #11), and shutdown() itself runs lock-free.
     private void onDisable(BlueMapAPI api) {
-        ReactiveQueue<MarkerAction> queue;
-        synchronized (this) {
-            queue = markerActionQueue;
-        }
-
-        queue.shutdown();
+        markerActionQueue.shutdown();
     }
 
     private synchronized Optional<List<MarkerSet>> getMarkerSets(MarkerSetIdentifier markerSetIdentifier) {

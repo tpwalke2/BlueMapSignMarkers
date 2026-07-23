@@ -234,19 +234,21 @@ Neither `resetQueue()` nor `onEnable()` synchronizes on `this`, so a worker thre
 `getMarkerSets()` can race with a plain-field reassignment of `markerSetsCache` on another thread — a data race on
 the field reference itself, independent of the map's own thread-safety. Same root cause class as #10.
 
-**Resolved (2026-07-22):** `resetQueue()` and `onEnable()` are now `synchronized` on `this`, the same monitor
-`getMarkerSets()` (and now `processMarkerAction()`) already use — closing the race on `markerActionQueue`,
-`markerSetsCache`, and `blueMapAPI`. Neither method blocks waiting on another thread while holding the lock
-(`enqueue()`/`process()` only submit to the executor, they don't await the task), so a worker thread blocked
-entering `processMarkerAction()` during a reset just waits for `onEnable()` to finish — not a deadlock.
+**Resolved (2026-07-22, revised same day after review):** First pass made `resetQueue()`/`onEnable()`
+`synchronized` on `this`, the same monitor `getMarkerSets()`/`processMarkerAction()` use, and gave `dispatch()`/
+`onDisable()` the same lock via a capture-under-lock pattern. Review caught the flaw: `processMarkerAction()`
+(finding #5) can do relatively heavy BlueMap API work while holding that monitor, so `dispatch()` — the hot path,
+called on every sign add/update/remove — could block behind it, defeating the point of an async queue.
 
-Two more accessors of the same fields had the identical unsynchronized-read race and got the same fix:
-- `dispatch()` now captures `markerActionQueue` under the lock before calling `enqueue()` outside it, so callers
-  can't be handed a stale reference across a concurrent `resetQueue()`.
-- `onDisable()` now captures `markerActionQueue` under the lock before calling `shutdown()` outside it —
-  deliberately *not* wrapping the whole method, since `shutdown()` blocks (`awaitTermination`) on in-flight
-  `processMarkerAction()` tasks that themselves need this same monitor to run; holding the lock across that wait
-  would deadlock (`shutdownNow()`'s interrupt can't free a thread blocked entering a `synchronized` block).
+Replaced with the narrower fix `markerActionQueue`/`markerSetsCache`/`blueMapAPI` are now `volatile` instead of
+lock-guarded. This is sufficient because each field is reassigned wholesale (never mutated in place) and read
+independently by exactly one caller path — no caller needs a joint snapshot of more than one field, so plain
+visibility (not mutual exclusion) is all the JMM requires here. The old-generation-straggler ordering concern
+(a stale task touching post-reset state) is a separate concern already closed by `ReactiveQueue.shutdown()`'s
+`awaitTermination` (finding #10), not something this lock was providing. `dispatch()` and `onDisable()` now read
+their field directly with no synchronization at all, so neither can contend with `processMarkerAction()`.
+`getMarkerSets()` keeps its own `synchronized` — that lock's job was always serializing marker-map mutations
+(finding #5), a separate concern from field visibility, and is now fully decoupled from the hot path.
 
 No dedicated unit test — `BlueMapAPIConnector` is game-coupled (no automated coverage per AGENTS.md); verified by
 clean compile + full suite pass, not `runServer`.
@@ -261,14 +263,12 @@ the latest write — a real (if hard to reproduce) visibility race in both cases
 **Resolved (2026-07-22):** `ReactiveQueue.executor` is now `volatile`, so `isShutdown()` (called with no lock
 held) reliably observes `getExecutor()`'s synchronized write.
 
-`blueMapAPI` needed no separate fix: as of finding #11's resolution, `onEnable()` (the only writer) and
-`getMarkerSets()` (whose synchronized block is the only caller of `getMaps()`, the only reader) both
-synchronize on the same `BlueMapAPIConnector` monitor — that shared lock already establishes the
-happens-before edge the JMM requires, making a `volatile` field redundant here.
+`blueMapAPI` is now `volatile` too, as part of finding #11's revised fix (see that note) — its only writer
+(`onEnable()`) and only reader (`getMaps()`, called from `getMarkerSets()`) no longer share a lock, so visibility
+comes from the field itself rather than a monitor.
 
-No dedicated unit test for the `BlueMapAPIConnector` half (game-coupled, no automated coverage per
-AGENTS.md); the `ReactiveQueue.executor` fix is covered by the existing `ReactiveQueueTest` suite plus a
-clean full-suite pass.
+No dedicated unit test for the `BlueMapAPIConnector` half (game-coupled, no automated coverage per AGENTS.md);
+the `ReactiveQueue.executor` fix is covered by the existing `ReactiveQueueTest` suite plus a clean full-suite pass.
 
 ### 13. `FileUtils.createBackup`/`copyFile` swallow backup failures, then the caller overwrites the original anyway
 **`src/main/java/com/tpwalke2/bluemapsignmarkers/common/FileUtils.java:17-32`**
