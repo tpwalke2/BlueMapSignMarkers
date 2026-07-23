@@ -49,8 +49,9 @@ partial coverage, plus a few items that look like test gaps but aren't.
   the same combo well within the first few iterations) — `getIdentifier`'s "is this combo cached?" check and its
   cache write are two separate, unsynchronized steps over plain `TreeMap`/`HashMap`/`HashSet` fields (review finding
   #16), so concurrent first-time callers can each construct and return their own instance instead of converging on
-  one. Left `@Disabled` with a reason pointing at finding #16 so `./gradlew test` stays green; re-enable once the
-  concurrency-hardening pass makes that check-then-act sequence atomic.
+  one. Left `@Disabled` at the time, pointing at finding #16, so `./gradlew test` stayed green; re-enabled
+  2026-07-22 once the concurrency-hardening pass made `getIdentifier()` `synchronized`, making that check-then-act
+  sequence atomic — see finding #16's Resolved note in `plans/codebase-review-2026-07-11.md`.
 - **`ActionFactory`** (`core/bluemap/actions/ActionFactory.java`) — DONE. `ActionFactoryTest` (5 cases, no production
   changes needed — already plain Java) covers: `createAddPOIAction`/`createRemovePOIAction`/`createUpdatePOIAction`
   each build the right `MarkerIdentifier` (x/y/z, `parentSet` carrying the given mapId/markerGroup) and action-specific

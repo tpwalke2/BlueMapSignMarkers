@@ -307,6 +307,21 @@ Plain `TreeMap`/`HashMap`/`HashSet`, not concurrent collections. Likely only tou
 server thread based on the documented architecture, but that isn't verifiable from this class alone — flagged as an
 open question pending a look at all `ActionFactory` call sites.
 
+**Resolved (2026-07-22):** Confirmed this is a real cross-thread race, not just theoretical: `SignManager` reads
+its `ActionFactory` (and thus a specific `MarkerSetIdentifierCollection` instance) from a `volatile RuntimeConfig`
+snapshot, and calls `getIdentifier()` on it both from the server thread (live sign edits via the mixins) and from
+whatever thread fires `BlueMapAPI.onEnable`/`IResetHandler.reset()` (replaying every cached sign after a config
+reload, see finding #17) — the same instance, genuinely concurrently. `getIdentifier()`'s public method is now
+`synchronized`, making its check-then-act sequence (look up the cached identifier for a `(mapId, markerGroup)`
+combo; if absent, construct one and insert it into both backing maps) one atomic step. This closes both the
+data-race risk on the plain collections and a subtler correctness bug: without the lock, concurrent first-time
+callers for the same combo could each miss the cache and construct a distinct `MarkerSetIdentifier` instead of
+converging on one canonical instance. Unlike `BlueMapAPIConnector`'s `dispatch()`/`processMarkerAction()` split
+(findings #11/#12, see [[feedback_lock_reuse_hot_path]]-style reasoning), the work inside `getIdentifier()` is a
+handful of map operations with no BlueMap API calls or I/O, so synchronizing the whole method doesn't introduce
+hot-path contention. Test: `MarkerSetIdentifierCollectionTest.concurrentFirstTimeCallersForTheSameComboConvergeOnOneIdentifierInstance`
+(previously `@Disabled` documenting this exact failure) now passes and is re-enabled.
+
 ### 17. `SignManager.reloadSigns()` races with concurrent live sign edits
 **`src/main/java/com/tpwalke2/bluemapsignmarkers/core/signs/SignManager.java:87-94`**
 `IResetHandler.reset()` fires on `BlueMapAPI.onEnable`, not necessarily the server thread. `reloadSigns` does

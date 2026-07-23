@@ -11,7 +11,16 @@ public class MarkerSetIdentifierCollection {
         mapByMarkerSetId = new HashMap<>();
     }
 
-    public MarkerSetIdentifier getIdentifier(String mapId, MarkerGroup markerGroup) {
+    // synchronized so the "is this combo already cached?" check and the "cache it" write
+    // (addIdentifier) are one atomic step. SignManager reads this via a volatile RuntimeConfig
+    // snapshot, so it can be called both from the server thread (live sign edits, via the mixins)
+    // and from whatever thread fires BlueMapAPI.onEnable/IResetHandler.reset() (replaying every
+    // cached sign after a config reload) at the same time, against the same instance — without
+    // this, concurrent first-time lookups for the same (mapId, markerGroup) could each miss the
+    // cache and construct a distinct MarkerSetIdentifier, and the plain TreeMap/HashMap/HashSet
+    // fields could corrupt under concurrent mutation (finding #16,
+    // plans/codebase-review-2026-07-11.md).
+    public synchronized MarkerSetIdentifier getIdentifier(String mapId, MarkerGroup markerGroup) {
         var byMap = Optional.ofNullable(mapByMap.get(mapId));
         var byMarkerSetId = Optional.ofNullable(mapByMarkerSetId.get(markerGroup));
 
