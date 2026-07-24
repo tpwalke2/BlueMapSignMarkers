@@ -107,13 +107,25 @@ each entry's `key().parentMap()`/`x()`/`z()` — the shared grouping logic behin
 listing failure shouldn't be misread as a fresh install and cause the legacy file to be migrated again.
 
 `Version3Converter.convertToV3(SignEntryV2, MarkerGroup[])`: converts `SignEntryV2`/`SignLinesParseResultV2` (which
-carried a `MarkerTypeV2` enum, not a raw prefix string) to current `SignEntry`/`SignLinesParseResult` by looking up
-`Arrays.stream(markerGroups).filter(g -> g.type() == MarkerGroupType.POI).findFirst().orElseThrow()` and using
-*that* group's `prefix()` — i.e. **the first configured POI-type group's prefix is assumed for every migrated V2
-entry**, regardless of what `MarkerTypeV2` value was actually stored. This is safe historically because V2-era
-configs only ever had one POI group, but means migration would misattribute prefix if a server has multiple POI
-groups configured differently than at V2 time. Unaffected by region-sharding — this conversion still runs once,
-during `LegacySignFileMigrator`'s reuse of the V1/V2/V3 chain, before entries are ever partitioned by region.
+carried a `MarkerTypeV2` enum, not a raw prefix string) to current `SignEntry`/`SignLinesParseResult`, per side
+(front/back):
+- If that side's `SignLinesParseResultV2.markerType()` is `null` — it never matched any group under V1/V2 — the
+  converted side stays non-matching (`prefix = null`) rather than fabricating a prefix for it. Fixed for GitHub
+  issue #138 / review finding #6 (resolved 2026-07-23); previously every side got the first POI group's prefix
+  regardless of whether it had actually matched anything.
+- Otherwise it looks up
+  `Arrays.stream(markerGroups).filter(g -> g.type() == MarkerGroupType.POI).findFirst()` and uses *that* group's
+  `prefix()`. **The first configured POI-type group's prefix is still assumed for every matched side** — this part
+  of finding #6 remains open: with multiple POI-type groups configured, migration can't recover which one a V2
+  entry actually matched, since `MarkerTypeV2` only distinguished POI-vs-not, not which POI group. Safe historically
+  because V2-era configs only ever had one POI group.
+- If no POI-type group is configured at all, this now logs a warning and treats the side as non-matching
+  (`prefix = null`) instead of `.orElseThrow()`ing `NoSuchElementException` — also fixed for #138/#6, since the
+  prior behavior lost every persisted sign for the session via `LegacySignFileMigrator`'s catch-and-discard.
+
+Unaffected by region-sharding — this conversion still runs once, during `LegacySignFileMigrator`'s reuse of the
+V1/V2/V3 chain, before entries are ever partitioned by region. See `Version3ConverterTest` (`testing.md`) for the
+per-case coverage.
 
 `SignProvider.saveSigns(storageRoot)`: gets all cached entries from `SignManager.getAll()`, delegates to
 `RegionShardedSignEntryWriter.write(storageRoot, entries, gson)`, which partitions via `SignRegionPartitioner` and
@@ -131,5 +143,5 @@ in place. Old region files (or a not-yet-migrated legacy `signs.json`) on live s
 the version they were written with.
 
 ---
-*Last updated: 2026-07-21 | Verified against: 26.2-0.17.0 (72d4280)*
+*Last updated: 2026-07-23 | Verified against: 26.2-0.17.0 (3034be2)*
 

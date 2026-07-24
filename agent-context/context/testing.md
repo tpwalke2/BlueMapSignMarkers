@@ -35,13 +35,15 @@ region file to force a regen — then reloading that chunk), watching the BlueMa
 ## Current coverage
 
 As of `26.2-0.17.0`, `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
-- `core/signs/SignLinesParserTest.java` — 10 `@Test` methods covering `SignLinesParser`: label-on-prefix-line vs.
+- `core/signs/SignLinesParserTest.java` — 12 `@Test` methods covering `SignLinesParser`: label-on-prefix-line vs.
   label-on-following-line, multi-line detail joining/trimming, leading/interstitial blank-line handling, no-match
   and all-blank sign results, `REGEX` match type's whole-line-match requirement (contrasted with `STARTS_WITH`),
-  first-matching-group-wins ordering, and whitespace tolerance. Test helper pattern: private static factory methods
-  (`startsWithGroup(prefix, name)`, `regexGroup(pattern, name)`) building a `MarkerGroup` with the remaining fields
-  fixed at reasonable defaults — follow this pattern for new test classes over hand-building full `MarkerGroup`
-  records inline.
+  first-matching-group-wins ordering, whitespace tolerance, and the constructor's up-front prefix validation
+  (`malformedRegexPrefixIsSkippedInsteadOfThrowing`, `nullPrefixIsSkippedInsteadOfThrowing` — a broken group is
+  dropped/logged rather than throwing later out of `parse()`, GitHub issue #139/review finding #8). Test helper
+  pattern: private static factory methods (`startsWithGroup(prefix, name)`, `regexGroup(pattern, name)`) building a
+  `MarkerGroup` with the remaining fields fixed at reasonable defaults — follow this pattern for new test classes
+  over hand-building full `MarkerGroup` records inline.
 - `common/HtmlUtilsTest.java` — escaping of individual metacharacters and a full script payload, plain text left
   untouched, escape-before-`<br>`-substitution ordering (a sign literally containing `<br>` renders as escaped
   entities, not a live tag), newline-to-`<br>` conversion including consecutive newlines and no-newline input.
@@ -95,21 +97,31 @@ As of `26.2-0.17.0`, `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   `MarkerSetIdentifierCollection`.
 - `core/markers/MarkerSetIdentifierCollectionTest.java` — `getIdentifier` returns the same instance for a repeated
   `(mapId, markerGroup)` pair (case-insensitive on `mapId`), distinct pairs get distinct identifiers. Also includes
-  `@Disabled` concurrent-first-callers stress test documenting review finding #16 (unsynchronized check-then-act
-  over the backing `TreeMap`/`HashMap`/`HashSet` lets concurrent first-time callers each construct their own
-  instance instead of converging on one) — confirmed failing when temporarily un-`@Disabled`d; re-enable once the
-  planned concurrency-hardening pass makes that sequence atomic.
-- `core/reactive/ReactiveQueueTest.java` — enqueue → processor callback delivery; `shouldRun` gating (queued while
-  false, resumes once true, a mid-drain false leaves the rest queued); `shutdown()`/`isShutdown()`, including that
-  `getExecutor()` silently creates a fresh executor next time work is scheduled after a shutdown; a documented gap
-  where an exception thrown by the processor callback itself never reaches `messageProcessorErrorCallback` (it's
+  `concurrentFirstTimeCallersForTheSameComboConvergeOnOneIdentifierInstance`, an active (not `@Disabled`) regression
+  test for review finding #16 (resolved 2026-07-22): 8 threads x 500 iterations racing `getIdentifier` for the same
+  brand-new pair, asserting they always converge on one identity-equal instance — this used to fail before
+  `getIdentifier` became `synchronized` (see `core-pipeline.md` §5).
+- `core/reactive/ReactiveQueueTest.java` — enqueue → processor callback delivery (single and multiple messages,
+  each exactly once); `shouldRun` gating (queued while false, resumes once true, a mid-drain false leaves the rest
+  queued); a submission failure for one message reaching the error callback without affecting later messages.
+  Concurrency-hardening regression coverage (`plans/codebase-review-2026-07-11.md`, resolved 2026-07-22):
+  `shutdownBlocksUntilAnInFlightTaskFinishesBeforeReturning` (finding #10 — `shutdown()` now blocks on
+  `awaitTermination` rather than returning while a task is still mid-flight), `shutdownPermanentlyStopsTheQueueFromProcessingLaterEnqueues`
+  and `shutdownRacingMidDrainStopsTheLoopWithoutSpawningAReplacementExecutor` (finding #2 — a shut-down queue never
+  self-heals a replacement executor, including when `shutdown()` races a still-draining `processMessages()` loop),
+  and `concurrentEnqueueBurstDeliversEveryMessageExactlyOnceDespiteRedundantDrainLoopFanOut` (documents current
+  "before" behavior: a burst of concurrent enqueues spawns more drain-loop submissions than messages, but every
+  message still lands exactly once — not itself a bug, just characterizing the fan-out). A documented remaining
+  gap: an exception thrown by the processor callback itself never reaches `messageProcessorErrorCallback` (it's
   captured on an unawaited `Future` and dropped) versus a submission-time failure, which does reach it via a fake
   executor.
-- `core/signs/persistence/loaders/Version3ConverterTest.java` — basic V2→V3 conversion, plus three documented
-  "current behavior" gaps (review finding #6): a non-matching side (`markerType null`) still gets the POI group's
-  prefix fabricated onto it since `convertToV3` never reads `markerType`; with multiple POI-type groups configured,
-  the first one in array order always wins; with zero POI-type groups configured, `.orElseThrow()` throws
-  `NoSuchElementException` rather than failing gracefully.
+- `core/signs/persistence/loaders/Version3ConverterTest.java` — basic V2→V3 conversion (both sides matched, POI
+  group's prefix assumed for both); `aNonMatchingSideStaysNonMatching` and
+  `treatsAMatchedSideAsNonMatchingWhenNoPoiGroupIsConfigured` (GitHub issue #138/review finding #6, parts a and c,
+  resolved 2026-07-23 — a `markerType null` side stays non-matching, and a matched side is treated as non-matching
+  rather than throwing when zero POI-type groups are configured); `whenMultiplePoiGroupsAreConfiguredTheFirstInArrayOrderWins`
+  documents the still-open part of finding #6: with multiple POI-type groups configured, `convertToV3` can't
+  recover which one a V2 entry actually matched, so the first one in array order always wins.
 - `core/signs/persistence/loaders/VersionedFileSignEntryLoaderTest.java` — V3-passthrough (no backup written);
   V2 branch (converts via `Version3Converter`, backs up to `.v2.bak`); the catch-all fallback returning `null`
   rather than throwing, for both malformed JSON and empty content (which parses to `null` and NPEs on
@@ -133,5 +145,5 @@ JUnit reporter action** — those actions don't get `checks: write` permission o
 public repo, so the summary step was written to need no extra permissions.
 
 ---
-*Last updated: 2026-07-21 | Verified against: 26.2-0.17.0 (72d4280)*
+*Last updated: 2026-07-23 | Verified against: 26.2-0.17.0 (3034be2)*
 
