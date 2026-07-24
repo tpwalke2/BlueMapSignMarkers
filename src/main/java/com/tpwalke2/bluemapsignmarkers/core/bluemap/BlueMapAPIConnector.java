@@ -19,6 +19,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 public class BlueMapAPIConnector {
@@ -40,6 +41,12 @@ public class BlueMapAPIConnector {
     private volatile Map<MarkerSetIdentifier, List<MarkerSet>> markerSetsCache;
     private volatile BlueMapAPI blueMapAPI;
     private final List<IResetHandler> resetHandlers = new ArrayList<>();
+    // BlueMapAPI.unregisterListener(Consumer) removes by equals/hashCode, and a method reference has no
+    // custom equals - two `this::onEnable` expressions are distinct objects under default identity equality.
+    // Registering and unregistering the *same* Consumer instances (rather than re-evaluating the method
+    // reference at each call site) is what makes shutdown() actually detach these listeners.
+    private final Consumer<BlueMapAPI> onEnableListener = this::onEnable;
+    private final Consumer<BlueMapAPI> onDisableListener = this::onDisable;
 
     public BlueMapAPIConnector() {
         resetQueue();
@@ -48,13 +55,13 @@ public class BlueMapAPIConnector {
         // callback runs would see BlueMapAPI.getInstance().isPresent() true but this.blueMapAPI still null.
         blueMapAPI = BlueMapAPI.getInstance().orElse(null);
 
-        BlueMapAPI.onEnable(this::onEnable);
-        BlueMapAPI.onDisable(this::onDisable);
+        BlueMapAPI.onEnable(onEnableListener);
+        BlueMapAPI.onDisable(onDisableListener);
     }
 
     public void shutdown() {
-        BlueMapAPI.unregisterListener(this::onEnable);
-        BlueMapAPI.unregisterListener(this::onDisable);
+        BlueMapAPI.unregisterListener(onEnableListener);
+        BlueMapAPI.unregisterListener(onDisableListener);
     }
 
     public void dispatch(MarkerAction action) {
