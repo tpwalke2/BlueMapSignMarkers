@@ -180,6 +180,15 @@ detach the connector from BlueMap's callbacks — a "shut down" connector keeps 
 events. Caveat: confirming this needs the BlueMap API's own listener-registration source, which wasn't in the
 review's file set — flagged High rather than Critical for that reason.
 
+**Resolved 2026-07-23.** Confirmed against `bluemap-api` 2.8.0's source: `onEnable`/`onDisable` store `Consumer`s
+in `LinkedHashSet`s, and `unregisterListener` removes by `equals`/`hashCode`, which a freshly-evaluated method
+reference never matches. Fixed by storing the registered `Consumer<BlueMapAPI>` instances as fields
+(`onEnableListener`, `onDisableListener`) built once in the constructor, and reusing those same instances in both
+the `BlueMapAPI.onEnable`/`onDisable` registration calls and `shutdown()`'s `unregisterListener` calls, so identity
+matches and the listeners actually detach. `BlueMapAPIConnector` references BlueMap API types directly, so per
+`AGENTS.md`'s testable-core split it has no automated test coverage (verified manually); the full unit test suite
+still passes unchanged.
+
 Github issue #140
 
 ### 8. Malformed `REGEX` marker-group prefix throws uncaught, blocking sign processing broadly
