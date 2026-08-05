@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 public class SignManager implements IResetHandler {
-    private static SignManager instance;
+    private static volatile SignManager instance;
     private static final Object mutex = new Object();
 
     private static SignManager getInstance() {

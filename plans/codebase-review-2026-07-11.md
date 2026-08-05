@@ -371,6 +371,9 @@ AGENTS.md it has no automated unit coverage; verified via clean compile and a fu
   (`SignManager.java:22`). A thread on the fast path can observe a non-null but not-fully-constructed
   `SignManager` per allowed JMM reordering. Concrete trigger: `SERVER_STARTING`'s `loadSigns` racing a
   `BLOCK_ENTITY_LOAD` firing during world load, both hitting `SignManager` for the first time.
+
+  **Resolved 2026-08-05.** `instance` is now `volatile`, restoring the standard double-checked-locking
+  guarantee: the fast-path read always observes a fully-constructed `SignManager` or `null`.
 - **`BlueMapSignMarkersMod`: hardcoded `"unknown"` playerId sentinel duplicated, uncoupled from `WorldMap.UNKNOWN`**
   (`BlueMapSignMarkersMod.java:42`, `SignManager.java:136`). Two independently-hardcoded literals that only happen
   to match today; editing one without the other silently breaks playerId-preservation logic on chunk load vs.
