@@ -12,7 +12,15 @@ public class SignHelper {
     private SignHelper() {
     }
 
-    private static final SignLinesParser signLinesParser = new SignLinesParser(Arrays.asList(ConfigManager.get().getMarkerGroups()));
+    private static volatile SignLinesParser signLinesParser = buildParser();
+
+    private static SignLinesParser buildParser() {
+        return new SignLinesParser(Arrays.asList(ConfigManager.get().getMarkerGroups()));
+    }
+
+    public static void reloadParser() {
+        signLinesParser = buildParser();
+    }
 
     public static SignEntry createSignEntry(
             SignBlockEntity signBlockEntity,

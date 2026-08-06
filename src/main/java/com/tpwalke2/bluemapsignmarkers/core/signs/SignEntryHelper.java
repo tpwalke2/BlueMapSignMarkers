@@ -18,7 +18,9 @@ public class SignEntryHelper {
             Map<String, MarkerGroup> prefixGroupMap,
             MarkerGroupType markerGroupType) {
         var prefix = getPrefix(signEntry);
-        return prefix != null && prefixGroupMap.get(prefix).type() == markerGroupType;
+        if (prefix == null) return false;
+        var group = prefixGroupMap.get(prefix);
+        return group != null && group.type() == markerGroupType;
     }
 
     public static String getLabel(SignEntry signEntry) {

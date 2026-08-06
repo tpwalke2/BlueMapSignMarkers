@@ -1,6 +1,7 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap;
 
 import com.tpwalke2.bluemapsignmarkers.Constants;
+import com.tpwalke2.bluemapsignmarkers.common.HtmlUtils;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.AddMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.MarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMarkerAction;
@@ -18,6 +19,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 public class BlueMapAPIConnector {
@@ -25,21 +27,41 @@ public class BlueMapAPIConnector {
     public static final String WORLD_NOT_FOUND = "World not found: {}";
     public static final String WORLD_MAPS_EMPTY = "World maps empty: {}";
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
-    private ReactiveQueue<MarkerAction> markerActionQueue;
-    private Map<MarkerSetIdentifier, List<MarkerSet>> markerSetsCache;
-    private BlueMapAPI blueMapAPI;
+    // volatile: resetQueue()/onEnable() always replace these fields with a brand-new object rather than
+    // mutating the existing one, so all correctness requires is that a reader sees the latest *reference* —
+    // that's what volatile guarantees. It says nothing about the referenced objects themselves, which are
+    // freely mutated afterward through their own thread-safe methods (ReactiveQueue.enqueue()/process(),
+    // ConcurrentHashMap.get()/putIfAbsent()). No reader — dispatch()/onDisable()/onEnable() for
+    // markerActionQueue, getMarkerSets() for markerSetsCache, getMaps() for blueMapAPI — needs a joint
+    // snapshot of more than one of these fields at once, so per-field visibility is enough; a shared lock
+    // would additionally serialize dispatch() (hot path, every sign event) behind processMarkerAction()'s
+    // BlueMap API calls, an unrelated critical section (findings #11 and #12,
+    // plans/codebase-review-2026-07-11.md).
+    private volatile ReactiveQueue<MarkerAction> markerActionQueue;
+    private volatile Map<MarkerSetIdentifier, List<MarkerSet>> markerSetsCache;
+    private volatile BlueMapAPI blueMapAPI;
     private final List<IResetHandler> resetHandlers = new ArrayList<>();
+    // BlueMapAPI.unregisterListener(Consumer) removes by equals/hashCode, and a method reference has no
+    // custom equals - two `this::onEnable` expressions are distinct objects under default identity equality.
+    // Registering and unregistering the *same* Consumer instances (rather than re-evaluating the method
+    // reference at each call site) is what makes shutdown() actually detach these listeners.
+    private final Consumer<BlueMapAPI> onEnableListener = this::onEnable;
+    private final Consumer<BlueMapAPI> onDisableListener = this::onDisable;
 
     public BlueMapAPIConnector() {
         resetQueue();
+        // BlueMap may already be enabled by the time this connector is constructed (e.g. mod reload); don't
+        // rely solely on the onEnable callback below to set blueMapAPI, or a dispatch() landing before that
+        // callback runs would see BlueMapAPI.getInstance().isPresent() true but this.blueMapAPI still null.
+        blueMapAPI = BlueMapAPI.getInstance().orElse(null);
 
-        BlueMapAPI.onEnable(this::onEnable);
-        BlueMapAPI.onDisable(this::onDisable);
+        BlueMapAPI.onEnable(onEnableListener);
+        BlueMapAPI.onDisable(onDisableListener);
     }
 
     public void shutdown() {
-        BlueMapAPI.unregisterListener(this::onEnable);
-        BlueMapAPI.unregisterListener(this::onDisable);
+        BlueMapAPI.unregisterListener(onEnableListener);
+        BlueMapAPI.unregisterListener(onDisableListener);
     }
 
     public void dispatch(MarkerAction action) {
@@ -64,7 +86,22 @@ public class BlueMapAPIConnector {
         markerSetsCache = new ConcurrentHashMap<>();
     }
 
-    private void processMarkerAction(MarkerAction markerAction) {
+    // synchronized so addMarker/updateMarker/removeMarker's mutation of a MarkerSet's marker Map can
+    // never run concurrently with another dispatched action against the same (or a different) MarkerSet.
+    // ReactiveQueue's executor is sized to availableProcessors(), so without this, two actions dispatched
+    // close together — e.g. many signs loading at server startup — can race on the same underlying Map,
+    // whose thread-safety is controlled by BlueMap's API, not this mod (findings #5 and the bulk-load
+    // fanout item, plans/codebase-review-2026-07-11.md).
+    private synchronized void processMarkerAction(MarkerAction markerAction) {
+        // ReactiveQueue.shutdown() only stops new submissions — already-submitted tasks still run, and
+        // now that this method is synchronized, several can be queued behind the monitor for a while.
+        // Re-check the same condition ReactiveQueue's shouldRunCallback gates on so one of those tasks
+        // can't mutate a MarkerSet after BlueMap has actually disabled in the meantime.
+        if (BlueMapAPI.getInstance().isEmpty()) {
+            LOGGER.debug("BlueMap API not present; skipping already-queued marker action.");
+            return;
+        }
+
         logProcessingMessage(markerAction);
 
         var markerSets = getMarkerSets(markerAction.getMarkerIdentifier().parentSet());
@@ -118,7 +155,7 @@ public class BlueMapAPIConnector {
             if (marker.isEmpty()) return;
             marker.get().setLabel(updateAction.getNewLabel());
             if (marker.get() instanceof POIMarker poiMarker) {
-                poiMarker.setDetail(updateAction.getNewDetails());
+                poiMarker.setDetail(HtmlUtils.toHtmlDetail(updateAction.getNewDetails()));
             }
         });
     }
@@ -136,7 +173,7 @@ public class BlueMapAPIConnector {
             var markerBuilder = POIMarker.builder()
                     .position(addAction.getX(), addAction.getY(), addAction.getZ())
                     .label(addAction.getLabel())
-                    .detail(addAction.getDetail());
+                    .detail(HtmlUtils.toHtmlDetail(addAction.getDetail()));
 
             if (markerGroup.icon() != null && !markerGroup.icon().isEmpty()) {
                 markerBuilder.icon(markerGroup.icon(), markerGroup.offsetX(), markerGroup.offsetY());
@@ -157,13 +194,14 @@ public class BlueMapAPIConnector {
     }
 
     private void onEnable(BlueMapAPI api) {
+        this.blueMapAPI = api;
+
         if (markerActionQueue.isShutdown()) {
             resetQueue();
 
             fireReset();
         }
 
-        this.blueMapAPI = api;
         markerActionQueue.process();
     }
 

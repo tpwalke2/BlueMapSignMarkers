@@ -11,7 +11,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
-import net.minecraft.world.level.Level;
 
 public class Version1SignEntryLoader {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
@@ -50,10 +49,12 @@ public class Version1SignEntryLoader {
     private static String getNormalizedMapId(String mapId) {
         var result = mapId.toLowerCase();
 
+        // Literal values of Level.NETHER/END/OVERWORLD's identifiers, spelled out so this class has no
+        // Minecraft-type dependency and can be unit tested without a game bootstrap.
         return switch (result) {
-            case NETHER -> Level.NETHER.identifier().toString();
-            case END -> Level.END.identifier().toString();
-            case OVERWORLD -> Level.OVERWORLD.identifier().toString();
+            case NETHER -> "minecraft:the_nether";
+            case END -> "minecraft:the_end";
+            case OVERWORLD -> "minecraft:overworld";
             default -> result;
         };
 

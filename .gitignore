@@ -39,3 +39,8 @@ hs_err_*.log
 replay_*.log
 *.hprof
 *.jfr
+
+# other
+
+logs/
+.claude/settings.local.json

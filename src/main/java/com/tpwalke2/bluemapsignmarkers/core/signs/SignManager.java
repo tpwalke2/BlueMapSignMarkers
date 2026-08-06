@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 public class SignManager implements IResetHandler {
-    private static SignManager instance;
+    private static volatile SignManager instance;
     private static final Object mutex = new Object();
 
     private static SignManager getInstance() {
@@ -53,27 +53,40 @@ public class SignManager implements IResetHandler {
         getInstance().shutdown();
     }
 
+    public static List<SignEntryKey> getKeysInChunk(String parentMap, int chunkX, int chunkZ) {
+        return getInstance().chunkIndex.keysInChunk(parentMap, chunkX, chunkZ);
+    }
+
+    private record RuntimeConfig(Map<String, MarkerGroup> prefixGroupMap, ActionFactory actionFactory) {
+    }
+
     private final BlueMapAPIConnector blueMapAPIConnector;
-    private final ActionFactory actionFactory;
     private final ConcurrentMap<SignEntryKey, SignEntry> signCache = new ConcurrentHashMap<>();
-    private final Map<String, MarkerGroup> prefixGroupMap;
+    private final SignChunkIndex chunkIndex = new SignChunkIndex();
+    private volatile RuntimeConfig runtimeConfig;
 
     private SignManager() {
+        runtimeConfig = buildRuntimeConfig();
+        blueMapAPIConnector = new BlueMapAPIConnector();
+        blueMapAPIConnector.addResetHandler(this);
+    }
+
+    private static RuntimeConfig buildRuntimeConfig() {
+        return new RuntimeConfig(buildPrefixGroupMap(), new ActionFactory(new MarkerSetIdentifierCollection()));
+    }
+
+    private static Map<String, MarkerGroup> buildPrefixGroupMap() {
         var groups = ConfigManager.get().getMarkerGroups();
-        prefixGroupMap = new TreeMap<>();
+        Map<String, MarkerGroup> result = new TreeMap<>();
         for (var group : groups) {
-            if (prefixGroupMap.containsKey(group.prefix())) {
+            if (result.containsKey(group.prefix())) {
                 LOGGER.warn("Duplicate marker group prefix found: {}", group.prefix());
                 continue;
             }
 
-            prefixGroupMap.put(group.prefix(), group);
+            result.put(group.prefix(), group);
         }
-
-        MarkerSetIdentifierCollection markerSetIdentifierCollection = new MarkerSetIdentifierCollection();
-        actionFactory = new ActionFactory(markerSetIdentifierCollection);
-        blueMapAPIConnector = new BlueMapAPIConnector();
-        blueMapAPIConnector.addResetHandler(this);
+        return result;
     }
 
     private List<SignEntry> getAllSigns() {
@@ -84,16 +97,29 @@ public class SignManager implements IResetHandler {
         blueMapAPIConnector.shutdown();
     }
 
-    private void reloadSigns() {
+    // synchronized (same monitor as addOrUpdateSign/removeByKey below) so the whole snapshot-clear-replay
+    // sequence is one atomic step relative to live sign edits/removals arriving from the mixins on the
+    // server thread. IResetHandler.reset() fires on whatever thread BlueMapAPI.onEnable runs on, not
+    // necessarily the server thread, so without this a live edit could land mid-replay and get clobbered
+    // by a stale replayed value, or a sign removed mid-replay could be silently re-added from the
+    // snapshot taken before the removal (finding #17, plans/codebase-review-2026-07-11.md). dispatch()
+    // only enqueues onto ReactiveQueue (no blocking BlueMap API work happens under this lock), so this
+    // doesn't introduce hot-path contention the way locking around processMarkerAction would.
+    private synchronized void reloadSigns() {
         LOGGER.info("Reloading all signs...");
         var existingSigns = getAllSigns();
         signCache.clear();
+        chunkIndex.clear();
         for (SignEntry signEntry : existingSigns) {
             addOrUpdateSign(signEntry);
         }
     }
 
-    private void addOrUpdateSign(SignEntry signEntry) {
+    private synchronized void addOrUpdateSign(SignEntry signEntry) {
+        var config = runtimeConfig;
+        var prefixGroupMap = config.prefixGroupMap();
+        var actionFactory = config.actionFactory();
+
         var key = signEntry.key();
         var existing = signCache.get(key);
 
@@ -103,13 +129,25 @@ public class SignManager implements IResetHandler {
         var newPrefix = SignEntryHelper.getPrefix(signEntry);
 
         if (newPrefix == null) {
-            LOGGER.debug("Cannot add or update sign as no prefix found: {}", signEntry);
+            if (existing != null) {
+                LOGGER.debug("Removing POI marker as sign no longer has a prefix: {}", signEntry);
+                removeEntry(signEntry);
+            } else {
+                LOGGER.debug("Cannot add or update sign as no prefix found: {}", signEntry);
+            }
             return;
         }
 
         if (shouldAddPOIMarker(existing, isPOIMarker)) {
+            var newGroup = prefixGroupMap.get(newPrefix);
+            if (newGroup == null) {
+                LOGGER.warn("No marker group configured for prefix {}, skipping add: {}", newPrefix, signEntry);
+                return;
+            }
+
             LOGGER.debug("Adding POI marker: {}", signEntry);
             signCache.put(key, signEntry);
+            chunkIndex.add(key);
             blueMapAPIConnector.dispatch(
                     actionFactory.createAddPOIAction(
                             key.x(),
@@ -118,7 +156,7 @@ public class SignManager implements IResetHandler {
                             key.parentMap(),
                             label,
                             detail,
-                            prefixGroupMap.get(newPrefix)));
+                            newGroup));
             return;
         }
 
@@ -146,35 +184,50 @@ public class SignManager implements IResetHandler {
                 var existingDetail = SignEntryHelper.getDetail(existing);
 
                 if (isTextDifferent(existingLabel, label, existingDetail, detail)) {
-                    LOGGER.debug("Updating POI marker label and detail");
+                    var group = prefixGroupMap.get(newPrefix);
+                    if (group == null) {
+                        LOGGER.warn("No marker group configured for prefix {}, skipping update: {}", newPrefix, signEntry);
+                    } else {
+                        LOGGER.debug("Updating POI marker label and detail");
+                        blueMapAPIConnector.dispatch(
+                                actionFactory.createUpdatePOIAction(
+                                        key.x(),
+                                        key.y(),
+                                        key.z(),
+                                        key.parentMap(),
+                                        label,
+                                        detail,
+                                        group));
+                    }
+                }
+            } else {
+                var existingGroup = prefixGroupMap.get(existingPrefix);
+                if (existingGroup == null) {
+                    LOGGER.warn("No marker group configured for previous prefix {}, skipping remove: {}", existingPrefix, signEntry);
+                } else {
                     blueMapAPIConnector.dispatch(
-                            actionFactory.createUpdatePOIAction(
+                            actionFactory.createRemovePOIAction(
+                                    key.x(),
+                                    key.y(),
+                                    key.z(),
+                                    key.parentMap(),
+                                    existingGroup));
+                }
+
+                var newGroup = prefixGroupMap.get(newPrefix);
+                if (newGroup == null) {
+                    LOGGER.warn("No marker group configured for prefix {}, skipping add: {}", newPrefix, signEntry);
+                } else {
+                    blueMapAPIConnector.dispatch(
+                            actionFactory.createAddPOIAction(
                                     key.x(),
                                     key.y(),
                                     key.z(),
                                     key.parentMap(),
                                     label,
                                     detail,
-                                    prefixGroupMap.get(newPrefix)));
+                                    newGroup));
                 }
-            } else {
-                blueMapAPIConnector.dispatch(
-                        actionFactory.createRemovePOIAction(
-                                key.x(),
-                                key.y(),
-                                key.z(),
-                                key.parentMap(),
-                                prefixGroupMap.get(existingPrefix)));
-
-                blueMapAPIConnector.dispatch(
-                        actionFactory.createAddPOIAction(
-                                key.x(),
-                                key.y(),
-                                key.z(),
-                                key.parentMap(),
-                                label,
-                                detail,
-                                prefixGroupMap.get(newPrefix)));
             }
         }
     }
@@ -195,13 +248,15 @@ public class SignManager implements IResetHandler {
         return existing == null && isPOIMarker;
     }
 
-    private void removeByKey(SignEntryKey key) {
+    private synchronized void removeByKey(SignEntryKey key) {
         var removed = signCache.remove(key);
 
         if (removed == null) {
             LOGGER.debug("No sign found for key: {}", key);
             return;
         }
+
+        chunkIndex.remove(key);
 
         var prefix = SignEntryHelper.getPrefix(removed);
 
@@ -210,13 +265,21 @@ public class SignManager implements IResetHandler {
             return;
         }
 
+        var config = runtimeConfig;
+        var group = config.prefixGroupMap().get(prefix);
+
+        if (group == null) {
+            LOGGER.warn("No marker group configured for prefix {}, skipping remove dispatch: {}", prefix, removed);
+            return;
+        }
+
         blueMapAPIConnector.dispatch(
-                actionFactory.createRemovePOIAction(
+                config.actionFactory().createRemovePOIAction(
                         key.x(),
                         key.y(),
                         key.z(),
                         key.parentMap(),
-                        prefixGroupMap.get(prefix)));
+                        group));
     }
 
     private void removeEntry(SignEntry signEntry) {
@@ -225,6 +288,14 @@ public class SignManager implements IResetHandler {
 
     @Override
     public void reset() {
+        reloadConfig();
         reloadSigns();
+    }
+
+    private void reloadConfig() {
+        LOGGER.info("Reloading marker group configuration...");
+        ConfigManager.reload();
+        SignHelper.reloadParser();
+        runtimeConfig = buildRuntimeConfig();
     }
 }
