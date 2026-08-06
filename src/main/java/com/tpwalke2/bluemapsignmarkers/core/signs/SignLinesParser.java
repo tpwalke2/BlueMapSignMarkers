@@ -13,6 +13,12 @@ import java.util.regex.PatternSyntaxException;
 public class SignLinesParser {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
 
+    // Java's trim() only strips chars <= U+0020; NBSP/zero-width-space/ideographic-space are pasteable
+    // from clipboards but otherwise invisible, so without this a line made of only one of them looks
+    // "non-blank" to the parser and permanently derails it into INVALID.
+    private static final Pattern INVISIBLE_WHITESPACE_AT_EDGES =
+            Pattern.compile("^[\\s\\u00A0\\u200B\\u3000]+|[\\s\\u00A0\\u200B\\u3000]+$");
+
     private enum ParseStates {
         START,
         HAS_MARKER_TYPE,
@@ -54,7 +60,7 @@ public class SignLinesParser {
         var context = new ParsingContext();
 
         for (String line : lines) {
-            line = line.trim();
+            line = trimLine(line);
             if (state == ParseStates.START) {
                 state = processStartState(line, context, markerGroups);
             } else if (state == ParseStates.HAS_MARKER_TYPE) {
@@ -65,6 +71,10 @@ public class SignLinesParser {
         return state == ParseStates.INVALID
                 ? new SignLinesParseResult(null, "", "")
                 : context.buildResult();
+    }
+
+    private static String trimLine(String line) {
+        return INVISIBLE_WHITESPACE_AT_EDGES.matcher(line).replaceAll("");
     }
 
     private static ParseStates processStartState(
