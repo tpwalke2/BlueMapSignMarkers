@@ -157,4 +157,42 @@ class SignLinesParserTest {
         assertEquals("Town Hall", result.label());
         assertEquals("Town Hall\nOpen 9-5", result.detail());
     }
+
+    @Test
+    void nonAsciiInvisibleWhitespaceOnlyLineIsTreatedAsBlank() {
+        var parser = new SignLinesParser(List.of(startsWithGroup("[poi]", "Points of Interest")));
+
+        // NBSP, zero-width space, ideographic space - all pasteable but invisible.
+        var result = parser.parse(new String[]{"\u00A0", "\u200B", "\u3000", "[poi] Town Hall"});
+
+        assertEquals("[poi]", result.prefix());
+        assertEquals("Town Hall", result.label());
+        assertEquals("Town Hall", result.detail());
+    }
+
+    @Test
+    void nonAsciiInvisibleWhitespaceSurroundingPrefixLineIsTrimmed() {
+        var parser = new SignLinesParser(List.of(startsWithGroup("[poi]", "Points of Interest")));
+
+        var result = parser.parse(new String[]{"\u00A0[poi] Town Hall\u3000"});
+
+        assertEquals("[poi]", result.prefix());
+        assertEquals("Town Hall", result.label());
+    }
+
+    @Test
+    void regexPrefixWithTrailingLabelTextOnTheSameLineResultsInBlankLabel() {
+        // Known limitation (see AGENTS.md): REGEX uses line.matches(...), which requires the whole
+        // line to match. A pattern loosened to also accept trailing label text on the prefix line is
+        // the only way to make matches() accept it, but getLabel's replaceAll then greedily strips the
+        // entire line - including the label - leaving it blank. This test locks in that behavior rather
+        // than silently regressing further.
+        var parser = new SignLinesParser(List.of(regexGroup("\\[poi\\].*", "Points of Interest")));
+
+        var result = parser.parse(new String[]{"[poi] Town Hall"});
+
+        assertEquals("\\[poi\\].*", result.prefix());
+        assertEquals("", result.label());
+        assertEquals("", result.detail());
+    }
 }
