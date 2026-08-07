@@ -2,6 +2,7 @@ package com.tpwalke2.bluemapsignmarkers.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
 import com.google.gson.Strictness;
 import com.tpwalke2.bluemapsignmarkers.Constants;
 import com.tpwalke2.bluemapsignmarkers.common.FileUtils;
@@ -16,13 +17,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 public class ConfigProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
@@ -57,7 +61,7 @@ public class ConfigProvider {
             }
         }
 
-        try (FileWriter writer = new FileWriter(file)) {
+        try (var writer = new OutputStreamWriter(Files.newOutputStream(file.toPath()), StandardCharsets.UTF_8)) {
             GSON.toJson(config, writer);
         } catch (Exception e) {
             LOGGER.error("Failed to save config", e);
@@ -91,8 +95,13 @@ public class ConfigProvider {
         }
 
         try {
-            // v1 attempt
-            if (configContent.contains("poiPrefix")) {
+            var root = GSON.fromJson(configContent, JsonObject.class);
+
+            // A v1 config's shape is a bare { "poiPrefix": "..." } object - it never has a "markerGroups"
+            // field. Detecting v1 by that shape (rather than a substring search on the raw file text) means a
+            // v2 config whose group name/icon happens to contain the literal text "poiPrefix" is no longer
+            // misdetected and doesn't get its real marker groups silently overwritten with a single default.
+            if (root != null && root.has("poiPrefix") && !root.has("markerGroups")) {
                 var v1Config = GSON.fromJson(configContent, BMSMConfigV1.class);
                 var migratedConfig = loadV1Config(file, v1Config);
                 saveConfig(migratedConfig, configPath);
@@ -102,14 +111,47 @@ public class ConfigProvider {
             // v2 attempt
             var result = GSON.fromJson(configContent, LoadingBMSMConfigV2.class);
 
-            return new BMSMConfigV2(Arrays
+            var markerGroups = Arrays
                     .stream(result.getMarkerGroups())
                     .map(ConfigProvider::convertToLoadedMarkerGroup)
-                    .toArray(MarkerGroup[]::new));
+                    .toArray(MarkerGroup[]::new);
+
+            validateMarkerGroups(markerGroups);
+
+            return new BMSMConfigV2(markerGroups);
 
         } catch (Exception e) {
             LOGGER.error("Failed to load config:", e);
             return null;
+        }
+    }
+
+    private static void validateMarkerGroups(MarkerGroup[] markerGroups) {
+        var seenPrefixes = new HashSet<String>();
+
+        for (var markerGroup : markerGroups) {
+            var prefix = markerGroup.prefix();
+
+            if (prefix == null || prefix.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Marker group '" + markerGroup.name() + "' has an empty prefix");
+            }
+
+            if (markerGroup.matchType() == MarkerGroupMatchType.REGEX) {
+                try {
+                    Pattern.compile(prefix);
+                } catch (PatternSyntaxException e) {
+                    throw new IllegalArgumentException(
+                            "Marker group '" + markerGroup.name() + "' has a REGEX prefix that doesn't compile: "
+                                    + prefix, e);
+                }
+            }
+
+            if (!seenPrefixes.add(prefix)) {
+                throw new IllegalArgumentException(
+                        "Marker group '" + markerGroup.name() + "' has a prefix duplicated across groups: "
+                                + prefix);
+            }
         }
     }
 
