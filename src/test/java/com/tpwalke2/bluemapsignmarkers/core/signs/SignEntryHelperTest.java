@@ -55,28 +55,25 @@ class SignEntryHelperTest {
 
     @Test
     void isMarkerTypeTrueWhenPrefixResolvesToMatchingType() {
-        var entry = signEntry(parsed("[poi]", "Town Hall", "Town Hall"), empty());
         var prefixGroupMap = Map.of("[poi]", poiGroup("[poi]"));
 
-        assertTrue(SignEntryHelper.isMarkerType(entry, prefixGroupMap, MarkerGroupType.POI));
+        assertTrue(SignEntryHelper.isMarkerType("[poi]", prefixGroupMap, MarkerGroupType.POI));
     }
 
     @Test
     void isMarkerTypeFalseWhenNoPrefix() {
-        var entry = signEntry(empty(), empty());
         var prefixGroupMap = Map.of("[poi]", poiGroup("[poi]"));
 
-        assertFalse(SignEntryHelper.isMarkerType(entry, prefixGroupMap, MarkerGroupType.POI));
+        assertFalse(SignEntryHelper.isMarkerType(null, prefixGroupMap, MarkerGroupType.POI));
     }
 
     @Test
     void isMarkerTypeFalseWhenPrefixNoLongerConfigured() {
         // Simulates a cached sign whose prefix was removed/renamed out of the config on reload -
         // prefixGroupMap.get(prefix) is null, and isMarkerType must not throw.
-        var entry = signEntry(parsed("[poi]", "Town Hall", "Town Hall"), empty());
         var prefixGroupMap = Map.<String, MarkerGroup>of();
 
-        assertFalse(SignEntryHelper.isMarkerType(entry, prefixGroupMap, MarkerGroupType.POI));
+        assertFalse(SignEntryHelper.isMarkerType("[poi]", prefixGroupMap, MarkerGroupType.POI));
     }
 
     @Test

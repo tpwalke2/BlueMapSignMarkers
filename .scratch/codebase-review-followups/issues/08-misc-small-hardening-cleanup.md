@@ -15,10 +15,25 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `"unknown"` playerId sentinel has one canonical source used by both call sites
-- [ ] `SignEntry.equals`/`hashCode` no longer NPE on null fields
-- [ ] Default single-`[poi]`-group literal exists in exactly one place
-- [ ] `SignManager.isMarkerType` no longer recomputes `getPrefix` redundantly
-- [ ] Full test suite still passes
+- [x] `"unknown"` playerId sentinel has one canonical source used by both call sites
+- [x] `SignEntry.equals`/`hashCode` no longer NPE on null fields
+- [x] Default single-`[poi]`-group literal exists in exactly one place
+- [x] `SignManager.isMarkerType` no longer recomputes `getPrefix` redundantly
+- [x] Full test suite still passes
+
+## Comments
+
+1. `BlueMapSignMarkersMod` and `SignManager` now both reference `WorldMap.UNKNOWN` instead of the `"unknown"`
+   string literal.
+2. `SignEntry.equals`/`hashCode` now use `Objects.equals`/`Objects.hash` instead of unguarded field-level
+   `.equals()`/`.hashCode()` calls. Updated `SignEntryTest` (the old test documented the NPE as a known-latent
+   risk; it now asserts null fields are tolerated instead).
+3. Added `MarkerGroup.DEFAULT_POI_GROUP` as the single source of the default `[poi]` group's field values.
+   `BMSMConfigV2` uses it directly; `LoadingBMSMConfigV2` derives its `LoadingMarkerGroupV2` default from it
+   (the two are different record types, so the instance itself can't be shared, but the literal values now
+   live in exactly one place).
+4. `SignEntryHelper.isMarkerType` now takes the already-resolved prefix (`String`) instead of a `SignEntry`,
+   so `SignManager.addOrUpdateSign` computes `newPrefix` once and passes it in, rather than computing it twice
+   (once inside `isMarkerType`, once directly after). Updated `SignEntryHelperTest` for the new signature.

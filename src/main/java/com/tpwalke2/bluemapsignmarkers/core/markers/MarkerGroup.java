@@ -11,6 +11,18 @@ public record MarkerGroup(
         boolean defaultHidden,
         double minDistance,
         double maxDistance) {
+    public static final MarkerGroup DEFAULT_POI_GROUP = new MarkerGroup(
+            "[poi]",
+            MarkerGroupMatchType.STARTS_WITH,
+            MarkerGroupType.POI,
+            "Points of Interest",
+            null,
+            0,
+            0,
+            false,
+            0.0,
+            10000000.0);
+
     public MarkerGroup withType(MarkerGroupType type) {
         return new MarkerGroup(prefix, matchType, type, name, icon, offsetX, offsetY, defaultHidden, minDistance, maxDistance);
     }
