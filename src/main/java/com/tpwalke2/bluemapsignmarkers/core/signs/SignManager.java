@@ -172,7 +172,7 @@ public class SignManager implements IResetHandler {
             LOGGER.debug("Updating POI marker: {}", signEntry);
             signCache.put(
                     key,
-                    signEntry.playerId().equals(WorldMap.UNKNOWN)
+                    WorldMap.UNKNOWN.equals(signEntry.playerId())
                             ? new SignEntry(
                                     key,
                                     existing.playerId(),
