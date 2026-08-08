@@ -72,6 +72,14 @@ public class BlueMapAPIConnector {
         resetHandlers.add(handler);
     }
 
+    // Called on a live config reload (SignManager.reloadConfig()) rather than resetQueue() - resetQueue()
+    // also replaces markerActionQueue, abandoning its executor (never shut down) and any messages still
+    // queued on it. A config reload only needs stale MarkerSet entries evicted so the next getMarkerSets()
+    // call re-derives them (icon/offset/visibility/name) from the reloaded MarkerGroup.
+    public void clearMarkerSetsCache() {
+        markerSetsCache = new ConcurrentHashMap<>();
+    }
+
     private void fireReset() {
         resetHandlers.forEach(IResetHandler::reset);
     }
