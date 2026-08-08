@@ -2,6 +2,7 @@ package com.tpwalke2.bluemapsignmarkers.core.bluemap;
 
 import com.tpwalke2.bluemapsignmarkers.Constants;
 import com.tpwalke2.bluemapsignmarkers.common.HtmlUtils;
+import com.tpwalke2.bluemapsignmarkers.common.LogUtils;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.AddMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.MarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMarkerAction;
@@ -140,9 +141,9 @@ public class BlueMapAPIConnector {
 
         var detail = "";
         if (action instanceof AddMarkerAction addAction) {
-            detail = " with label='" + addAction.getDetail().replace("\n", "\\n") + "'";
+            detail = " with label='" + LogUtils.sanitizeForLog(addAction.getDetail()) + "'";
         } else if (action instanceof UpdateMarkerAction updateAction) {
-            detail = " to label='" + updateAction.getNewDetails().replace("\n", "\\n") + "'";
+            detail = " to label='" + LogUtils.sanitizeForLog(updateAction.getNewDetails()) + "'";
         }
 
         LOGGER.info("{} {} type marker in {} at x={} y={} z={}{}",
@@ -243,10 +244,11 @@ public class BlueMapAPIConnector {
                         .build();
                 blueMapMap.getMarkerSets().putIfAbsent(markerSetIdentifier.markerGroup().name(), markerSet);
             }
-            LOGGER.debug("Caching marker set: {}", markerSetIdentifier);
             markerSetsToReturn.add(markerSet);
-            markerSetsCache.putIfAbsent(markerSetIdentifier, markerSetsToReturn);
         });
+
+        LOGGER.debug("Caching marker set: {}", markerSetIdentifier);
+        markerSetsCache.putIfAbsent(markerSetIdentifier, markerSetsToReturn);
 
         return Optional.of(markerSetsToReturn);
     }

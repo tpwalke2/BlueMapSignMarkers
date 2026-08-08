@@ -1,0 +1,24 @@
+package com.tpwalke2.bluemapsignmarkers.common;
+
+import java.util.regex.Pattern;
+
+public class LogUtils {
+
+    private static final char ESC = 27;
+
+    // Matches ANSI CSI escape sequences (e.g. color/cursor codes) a player could embed in sign text to
+    // corrupt or spoof terminal/log-viewer output. Built from the ESC char code point rather than a 
+    // literal so the pattern text itself can't be mistaken for one of the sequences it strips.
+    private static final Pattern ANSI_ESCAPE = Pattern.compile(Pattern.quote(String.valueOf(ESC)) + "\\[[0-9;]*[a-zA-Z]");
+
+    private LogUtils() {
+    }
+
+    public static String sanitizeForLog(String text) {
+        return ANSI_ESCAPE.matcher(text)
+                .replaceAll("")
+                .replace("\r\n", "\\n")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
+    }
+}

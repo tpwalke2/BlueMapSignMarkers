@@ -11,8 +11,23 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Sign text containing `\r` or ANSI escape sequences is sanitized before being logged at INFO
-- [ ] `getMarkerSets`'s population logic no longer relies on the shared-mutable-list/repeated-putIfAbsent invariant, with the same observable behavior
-- [ ] Existing tests still pass (this class is game-coupled/no automated coverage per AGENTS.md — verify via clean compile + full suite pass)
+- [x] Sign text containing `\r` or ANSI escape sequences is sanitized before being logged at INFO
+- [x] `getMarkerSets`'s population logic no longer relies on the shared-mutable-list/repeated-putIfAbsent invariant, with the same observable behavior
+- [x] Existing tests still pass (this class is game-coupled/no automated coverage per AGENTS.md — verify via clean compile + full suite pass)
+
+## Comments
+
+1. Added `LogUtils.sanitizeForLog` (testable, plain-Java, `common` package) that strips ANSI CSI escape
+   sequences and escapes `\r`/`\n`/`\r\n` as literal `\r`/`\n`. The ESC byte is built from its char code
+   (`(char) 27`) rather than embedded as a literal control character in source, so the source file itself
+   stays free of raw control bytes. `BlueMapAPIConnector.logProcessingMessage` now calls this instead of
+   the old inline `.replace("\n", "\\n")`.
+2. `getMarkerSets` now builds the full `markerSetsToReturn` list first, then does one
+   `markerSetsCache.putIfAbsent` after the `forEach` loop, instead of calling `putIfAbsent` with the same
+   (still-growing) list reference on every iteration. Same observable behavior, no longer depends on an
+   implicit "later puts are no-ops" invariant.
+3. Added `LogUtilsTest` (newline, carriage-return, CRLF, ANSI-stripping, and bracketed-text-passthrough
+   cases). `BlueMapAPIConnector` itself stays without direct tests per AGENTS.md (game-coupled); verified
+   with `JAVA_HOME` pointed at the JDK 25 toolchain via `./gradlew test` and `./gradlew build`, both green.
