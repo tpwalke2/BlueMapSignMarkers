@@ -12,8 +12,10 @@ builds/adds) an entry:
    found) and calls `SignManager.addOrUpdate(...)` for every stored entry (see `config-and-persistence.md`).
 2. **Block entity load** — `BlueMapSignMarkersMod.onBlockEntityLoad` (registered on
    `ServerBlockEntityEvents.BLOCK_ENTITY_LOAD`) fires for every loaded `SignBlockEntity` and calls
-   `SignHelper.createSignEntry(entity, "unknown")` → `SignManager.addOrUpdate(...)`. Player id is `"unknown"`
-   here because chunk load isn't attributable to a player.
+   `SignHelper.createSignEntry(entity, WorldMap.UNKNOWN)` → `SignManager.addOrUpdate(...)`. Player id is the
+   `WorldMap.UNKNOWN` (`"unknown"`) sentinel here because chunk load isn't attributable to a player — this
+   constant is the single canonical source for that sentinel (ticket 08 consolidated a second, independent
+   `"unknown"` literal duplicated in `SignManager`; both now reference `WorldMap.UNKNOWN`).
 3. **Mixins** (`src/main/resources/bluemapsignmarkers.mixins.json`, server-only, `JAVA_21` compat level):
    - `SignBlockEntityInject` injects `SignBlockEntity.updateSignText` at `TAIL` → a player edited a sign →
      `SignManager.addOrUpdate(SignHelper.createSignEntry(this, player.getStringUUID()))`.
@@ -61,6 +63,16 @@ A 3-state machine (`START` → `HAS_MARKER_TYPE` → `INVALID`) driven by `Parsi
 Result: a sign can put its label on the prefix line (`[poi] Town Hall`) or on the following line — both produce
 the same label/detail.
 
+`SignEntryHelper` (plain Java, `core.signs`) derives the values `SignManager` dispatches from a `SignEntry`'s
+front/back `SignLinesParseResult`s: `getPrefix` prefers the front side's prefix, falling back to the back side's
+(`null` if neither matched); `getLabel` likewise prefers front, falling back to back. `getDetail` merges both
+sides' detail text (`"FRONT: ...%nBACK: ..."`) only when front and back **matched the same marker group** (ticket
+07, `.scratch/codebase-review-followups/issues/07-fix-dual-sided-sign-semantics.md`); when they matched two
+*different* groups, only the front side's detail is used — matching `getPrefix`'s front-preferred rule for which
+group the marker actually belongs to. Previously `getDetail` merged both sides' text unconditionally whenever
+neither was blank, so a marker could show detail text attributed to a group it didn't belong to (e.g. the back
+side's group). If only one side matched anything, that side's detail is used regardless of the other's blankness.
+
 ## 3. `SignManager` — the decision point
 
 Singleton (double-checked locking), holds:
@@ -107,10 +119,12 @@ currently a POI-type match)`:
 | non-null | `true` | **Update** (see below) |
 | `null` | `false` | no-op |
 
-`isPOIMarker` comes from `SignEntryHelper.isMarkerType(signEntry, prefixGroupMap, POI)`, which null-guards
-`prefixGroupMap.get(prefix)` — returns `false` rather than throwing `NPE` if the entry's prefix isn't in the
-current map at all (an operator removed/renamed that group's prefix in a config reload since this sign was last
-dispatched). Every subsequent `prefixGroupMap.get(prefix)` call used to build the actual `MarkerGroup` for a
+`isPOIMarker` comes from `SignEntryHelper.isMarkerType(newPrefix, prefixGroupMap, POI)` — it takes the
+already-resolved prefix `String` (not the `SignEntry`) so `addOrUpdateSign` computes `newPrefix` once and passes
+it in, rather than `isMarkerType` re-deriving it via its own internal `getPrefix` call right before the caller
+computes it again a few lines later (ticket 08). It null-guards `prefixGroupMap.get(prefix)` — returns `false`
+rather than throwing `NPE` if the entry's prefix isn't in the current map at all (an operator removed/renamed
+that group's prefix in a config reload since this sign was last dispatched). Every subsequent `prefixGroupMap.get(prefix)` call used to build the actual `MarkerGroup` for a
 dispatch (in the Add branch, the same-prefix Update branch, and both sides of the prefix-changed
 remove-then-add branch, plus `removeByKey`) is null-guarded the same way: if the prefix isn't in the map, that
 specific dispatch is skipped and a warning logged, rather than passing a `null` `MarkerGroup` into `ActionFactory`.
@@ -124,9 +138,18 @@ config-reload known limitation in `plans/marker-group-config-reload-plan.md`.
 rather than overwritten, so a chunk reload never erases the last player known to have edited a sign). Then:
 - If the marker's prefix is unchanged (`existingPrefix.equals(newPrefix)`): only dispatch `UpdateMarkerAction` if
   label or detail actually changed (`isTextDifferent`) — avoids redundant BlueMap API calls on every chunk reload.
-- If the prefix changed (sign text edited to match a *different* marker group): dispatch `RemoveMarkerAction` for
-  the old group, then `AddMarkerAction` for the new group — a prefix change is a remove-then-add, not an in-place
-  update, because the marker lives in a different `MarkerSet`.
+- If the prefix changed (sign text edited to match a *different* marker group) and **both** the old and new
+  prefix resolve to a configured group: dispatch a single `ChangeGroupMarkerAction` (ticket 09,
+  `.scratch/codebase-review-followups/issues/09-reactivequeue-message-ordering.md`) rather than a separate
+  `RemoveMarkerAction` dispatch followed by a separate `AddMarkerAction` dispatch. `ReactiveQueue` (§7) gives no
+  ordering guarantee between independently-submitted messages once its executor has more than one worker thread,
+  so two separate dispatches could have the add run before the remove under load, leaving the marker duplicated
+  across both groups for a window (or permanently, if the remove then silently no-ops against a `MarkerSet` the
+  add already touched). Bundling both halves into one message means they run back-to-back inside the same
+  `synchronized BlueMapAPIConnector.processMarkerAction()` call that dispatched it (see §6) — the pair can never
+  be observed half-applied. If only one side resolves to a configured group (the other prefix was removed/renamed
+  out of the config since this sign was cached), the existing single-sided remove-only or add-only dispatch (with
+  a warning logged for the unresolvable side) is unchanged.
 
 `removeByKey(key)` looks up and removes from `signCache`; if nothing was cached for that key, or the removed
 entry had no resolvable prefix, it logs and returns without dispatching anything.
@@ -182,6 +205,12 @@ surgery) — the removal mixin (§1.3) only fires for an in-game block change on
   `MarkerSet`'s marker map. **No dimension component** — uniqueness across dimensions is guaranteed only because
   each dimension maps to a separate `MarkerSetIdentifier`/`MarkerSet`, not because the id string itself is unique.
 - `MarkerSetIdentifier(mapId, markerGroup)` — one BlueMap marker-set per (map, marker-group) pair.
+- `ActionFactory.createChangeGroupPOIAction(x, y, z, mapId, label, detail, oldMarkerGroup, newMarkerGroup)`
+  (ticket 09) builds a `ChangeGroupMarkerAction` carrying **two** `MarkerIdentifier`s — one per group, both via
+  `MarkerSetIdentifierCollection.getIdentifier` like every other factory method — rather than the single
+  identifier the other three action types carry. The base `MarkerAction`'s identifier is the *new* group's (used
+  by `logProcessingMessage` for the map/type it logs); `getOldMarkerIdentifier()` exposes the old group's
+  separately.
 - `MarkerSetIdentifierCollection` is a per-`SignManager`-instance cache that guarantees the *same*
   `MarkerSetIdentifier` object is returned for a given `(mapId, markerGroup)` pair (indexed both by map and by
   marker group, intersected) — `ActionFactory` always goes through this rather than constructing
@@ -236,6 +265,13 @@ surgery) — the removal mixin (§1.3) only fires for an in-game block change on
   `.getMaps()`, and for each map either fetches an existing `MarkerSet` by `markerGroup.name()` or builds+registers
   one (`label`, `defaultHidden` from the `MarkerGroup`). One `MarkerSetIdentifier` can map to *multiple*
   `MarkerSet`s if a world has multiple BlueMap maps rendered for it — every dispatched action applies to all of them.
+  The `markerSetsCache.putIfAbsent(...)`/debug-log call now happens **once, after** the per-map `forEach` loop
+  (ticket 06) rather than repeated inside it against the same `markerSetsToReturn` list reference — the old
+  placement was correct only by relying on the implicit invariant that `putIfAbsent` against the same key/list is
+  a no-op on every iteration after the first, fragile to a future refactor breaking it silently.
+- `logProcessingMessage` sanitizes sign-derived detail text via `LogUtils.sanitizeForLog` (`common`, ticket 06)
+  before logging it at INFO — strips ANSI CSI escape sequences and normalizes `\r\n`/`\n`/`\r` to literal `\n`
+  and `\r`, closing a log-injection/log-noise vector where only `\n` was previously escaped.
 - `processMarkerAction` is now `synchronized` (finding #5, resolved 2026-07-22): `addMarker`/`updateMarker`/
   `removeMarker` mutate a `MarkerSet`'s marker `Map` (thread-safety of which is BlueMap's concern, not this mod's),
   and `ReactiveQueue`'s executor is sized to `availableProcessors()`, so without this lock two actions dispatched
@@ -246,7 +282,15 @@ surgery) — the removal mixin (§1.3) only fires for an in-game block change on
   `MarkerSet` after BlueMap has actually disabled in the meantime. It then dispatches on the concrete `MarkerAction`
   subtype via a `switch` pattern-match; **`MarkerAction` is a plain abstract class, not `sealed`**, so adding a new
   subtype without adding a `case` here (and in `logProcessingMessage`'s switch) silently falls through to `default`
-  instead of failing to compile — see `AGENTS.md`'s "Adding a new marker/BlueMap action" section.
+  instead of failing to compile — see `AGENTS.md`'s "Adding a new marker/BlueMap action" section. The three
+  single-`MarkerIdentifier` cases (`AddMarkerAction`/`RemoveMarkerAction`/`UpdateMarkerAction`) each resolve their
+  marker sets via a shared `applyToMarkerSets(markerIdentifier, consumer)` helper (looks up via `getMarkerSets`,
+  no-ops with a debug log if none found, otherwise hands the consumer a `Stream<Map<String, Marker>>`). A fourth
+  case, `ChangeGroupMarkerAction` (ticket 09, see §3's prefix-changed paragraph and §5), routes to
+  `processChangeGroupAction`, which calls `applyToMarkerSets` **twice** — once for the old group's identifier
+  (building a throwaway `RemoveMarkerAction` to reuse `removeMarker`), once for the new group's (a throwaway
+  `AddMarkerAction`) — both within the same `processMarkerAction` call, so the remove and the add can't be
+  observed independently by another thread.
 - `addMarker` only actually builds a marker `if (markerGroup.type() == MarkerGroupType.POI)` — non-POI marker
   groups are a no-op today (only `POI` exists in `MarkerGroupType`, so this is future-proofing, not a live branch).
 - **HTML escaping (fixed)**: `addMarker`/`updateMarker` wrap `detail` with `HtmlUtils.toHtmlDetail(...)` (`common`
@@ -273,6 +317,16 @@ unavailable, drain once it's back."
   processing itself is also concurrent, not just the drain loop) — a per-message `RejectedExecutionException`
   during a shutdown race just returns; any other exception from the submission reaches
   `messageProcessorErrorCallback`.
+- **No ordering guarantee between messages** (investigated for ticket 09,
+  `.scratch/codebase-review-followups/issues/09-reactivequeue-message-ordering.md`, confirmed): because each
+  message becomes its own independent executor task, once the fixed thread pool has more than one worker thread
+  there's no guarantee message N finishes — or even starts — before message N+1 submitted right after it.
+  `ReactiveQueueTest.reactiveQueueGivesNoOrderingGuaranteeBetweenIndependentlySubmittedMessages` reproduces this
+  deterministically (blocks the first message's processing, shows the second can complete first on a 2-thread
+  pool). This is left as-is rather than changed — `ReactiveQueue` is a generic reusable primitive with no
+  ordering requirement of its own; a caller needing two dispatches to apply in order must bundle them into a
+  single message instead (see `BlueMapAPIConnector`'s `ChangeGroupMarkerAction`/`processChangeGroupAction`, §5/§6,
+  and §3's prefix-changed paragraph, for the one place this mod actually needed that guarantee).
 - `shutdown()` (finding #2 and #10, both resolved 2026-07-22) is no longer a same-thread-only best-effort call:
   under a `synchronized` block it sets a `volatile shutdownRequested` flag and calls `executor.shutdown()`
   together (paired with `getExecutor()` sharing the same monitor, so a `shutdown()` racing a lazy executor
@@ -295,5 +349,5 @@ unavailable, drain once it's back."
   `messageProcessorErrorCallback`) — only a submission-time failure reaches that callback.
 
 ---
-*Last updated: 2026-07-23 | Verified against: 26.2-0.17.0 (3034be2)*
+*Last updated: 2026-08-08 | Verified against: main (a62aaf1)*
 

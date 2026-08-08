@@ -23,19 +23,32 @@ File: `config/bluemapsignmarkers/BMSM-Core.json`. Path is fixed (not per-world) 
 - `ConfigProvider.loadConfig()`:
   1. If the file doesn't exist: create `new BMSMConfigV2()` (which self-populates the default single `[poi]`
      group via its field initializer), save it, return it.
-  2. If the raw file content contains the literal substring `"poiPrefix"` (a V1-only field), parse as `BMSMConfigV1`,
-     migrate via `loadV1Config` (builds a single `MarkerGroup` from `poiPrefix`, defaults for everything else),
-     back up the old file (`FileUtils.createBackup(path, ".v1.bak", "config file")`), save the migrated V2 config,
-     return it.
-  3. Otherwise parse as `LoadingBMSMConfigV2` (nullable-boxed fields — `config.persistence.LoadingMarkerGroupV2`)
-     and convert each `LoadingMarkerGroupV2` to a runtime `MarkerGroup` via `convertToLoadedMarkerGroup`, which
-     applies defaults per-field (`matchType` → `STARTS_WITH`, `type` → `POI`, `offsetX`/`offsetY` → `0`,
-     `defaultHidden` → `false`, `minDistance` → `0.0`, `maxDistance` → `10000000.0`). This two-model split
-     (`LoadingMarkerGroupV2` boxed/nullable vs. `MarkerGroup` primitive) exists so a partially-specified group in
-     user JSON gets these explicit defaults rather than Gson silently zeroing missing primitive fields.
-  4. Any exception during load (`Gson.fromJson` failure, I/O error) logs and returns `null`, and
-     `ConfigManager.loadCoreConfig` falls back to `new BMSMConfigV2()` defaults — a broken config file never
-     prevents server startup, it just silently reverts to a single default `[poi]` group.
+  2. Parses the raw content once as a `JsonObject` and detects V1 **structurally**: `root.has("poiPrefix") &&
+     !root.has("markerGroups")` — a bare V1 config never has a `markerGroups` field. This replaced a substring
+     search for the literal text `"poiPrefix"` anywhere in the file (review finding #9, resolved as part of
+     ticket 01), which used to misdetect a well-formed V2 config as V1 — and silently collapse its real marker
+     groups to a single default — whenever a group's `name`/`icon` happened to contain that substring. On a V1
+     match: parse as `BMSMConfigV1`, migrate via `loadV1Config` (builds a single `MarkerGroup` from `poiPrefix`,
+     defaults for everything else), back up the old file (`FileUtils.createBackup(path, ".v1.bak", "config file")`
+     — **aborts the migration** by throwing `IllegalStateException` instead of overwriting the original if the
+     backup fails, ticket 02), save the migrated V2 config, return it.
+  3. Otherwise parse as `LoadingBMSMConfigV2` (nullable-boxed fields — `config.persistence.LoadingMarkerGroupV2`,
+     whose default single-`[poi]`-group literal is derived from `MarkerGroup.DEFAULT_POI_GROUP` — see
+     `core-pipeline.md` §3 — rather than duplicated separately) and convert each `LoadingMarkerGroupV2` to a
+     runtime `MarkerGroup` via `convertToLoadedMarkerGroup`, which applies defaults per-field (`matchType` →
+     `STARTS_WITH`, `type` → `POI`, `offsetX`/`offsetY` → `0`, `defaultHidden` → `false`, `minDistance` → `0.0`,
+     `maxDistance` → `10000000.0`). This two-model split (`LoadingMarkerGroupV2` boxed/nullable vs. `MarkerGroup`
+     primitive) exists so a partially-specified group in user JSON gets these explicit defaults rather than Gson
+     silently zeroing missing primitive fields. `validateMarkerGroups` then fails fast (`IllegalArgumentException`,
+     caught by the catch-all below) on an empty prefix, a `REGEX` prefix that doesn't compile, or a prefix
+     duplicated across groups — ticket 01 — rather than surfacing as a skip/NPE later, downstream in
+     `SignLinesParser`/`SignManager`.
+  4. Any exception during load (`Gson.fromJson` failure, I/O error, or a `validateMarkerGroups` failure) logs and
+     returns `null`, and `ConfigManager.loadCoreConfig` falls back to `new BMSMConfigV2()` defaults — a broken
+     config file never prevents server startup, it just silently reverts to a single default `[poi]` group.
+- Config file reads/writes both go through `StandardCharsets.UTF_8` explicitly (`Files.readString`/
+  `OutputStreamWriter`, ticket 01) rather than the JVM's platform-default charset, so a non-ASCII marker-group
+  name survives a restart regardless of the host's default encoding.
 - `saveConfig(config)` creates parent dirs if needed and writes pretty-printed Gson JSON.
 
 ## Sign persistence (`core/signs/persistence/`)
@@ -89,7 +102,22 @@ each entry's `key().parentMap()`/`x()`/`z()` — the shared grouping logic behin
    - Otherwise reads it and runs the **exact same V1/V2/V3 chain as before sharding**, unchanged:
      `VersionedFileSignEntryLoader.loadSignEntries(...)`, falling back to `Version1SignEntryLoader.loadSignEntries(...)`
      if that returns `null`. Region-sharding is layered *after* this existing version normalization, not a
-     replacement for it.
+     replacement for it. `VersionedFileSignEntryLoader` treats a structurally-valid document missing
+     `version`/`data` (e.g. `"{}"`) as an explicit, intentional signal to fall back to `Version1SignEntryLoader`
+     (ticket 05), rather than relying on Gson's nulls to coincidentally route there. Both loaders isolate
+     per-entry conversion failures (`convertEntrySafely`/`loadEntry`, ticket 05) so one malformed V1/V2 entry logs
+     and is skipped instead of losing the whole file — the same pattern `SignProvider.loadSigns` already applies
+     per entry at step 3 below. `Version1SignEntryLoader`'s dimension normalization (`getNormalizedMapId`)
+     recognizes both the short legacy names (`"nether"`/`"end"`/`"overworld"`) and the canonical-but-unnamespaced
+     resource paths (`"the_nether"`/`"the_end"`), with or without a `minecraft:` namespace already attached
+     (ticket 05) — previously only the three exact lowercase shorthand strings normalized, so anything else fell
+     through unchanged and permanently mismatched the live dimension key post-migration, duplicating markers as
+     "new" signs. Both `Version1SignEntryLoader` and the V2 branch of `VersionedFileSignEntryLoader` back up the
+     legacy file before migrating (`.v1.bak`/`.v2.bak`) and **abort the migration if that backup fails** (ticket
+     02) rather than overwriting the original with no recoverable copy — `Version1SignEntryLoader` throws
+     `IllegalStateException` (uncaught here, isolated instead by `LegacySignFileMigrator`'s own try/catch around
+     the whole chain), while `VersionedFileSignEntryLoader`'s V2 branch logs an error and returns `null` (falling
+     through to the V1 loader, same as any other failure to load as V2).
    - Writes the resulting entries via `RegionShardedSignEntryWriter.write(...)` (see below). Backs up the legacy
      file via `FileUtils.moveToBackup(legacyPath, ".migrated", ...)` — **renamed, not deleted** — only after
      confirming every region file expected from `SignRegionPartitioner.partition(entryList)` actually exists on
@@ -143,5 +171,5 @@ in place. Old region files (or a not-yet-migrated legacy `signs.json`) on live s
 the version they were written with.
 
 ---
-*Last updated: 2026-07-23 | Verified against: 26.2-0.17.0 (3034be2)*
+*Last updated: 2026-08-08 | Verified against: main (a62aaf1)*
 
