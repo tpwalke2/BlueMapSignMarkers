@@ -120,4 +120,13 @@ class SignEntryHelperTest {
 
         assertEquals(String.format("FRONT: %s%nBACK: %s", "Open 9-5", "Ask for Bob"), SignEntryHelper.getDetail(entry));
     }
+
+    @Test
+    void getDetailUsesOnlyFrontWhenSidesMatchDifferentGroups() {
+        // Front and back match different marker groups - the marker belongs to the front's group
+        // (getPrefix prefers front), so the back's detail must not leak into it.
+        var entry = signEntry(parsed("[poi]", "Town Hall", "Open 9-5"), parsed("[event]", "Fair", "Ask for Bob"));
+
+        assertEquals("Open 9-5", SignEntryHelper.getDetail(entry));
+    }
 }
