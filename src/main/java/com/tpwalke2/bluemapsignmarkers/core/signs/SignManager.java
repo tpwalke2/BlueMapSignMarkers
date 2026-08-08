@@ -297,5 +297,6 @@ public class SignManager implements IResetHandler {
         ConfigManager.reload();
         SignHelper.reloadParser();
         runtimeConfig = buildRuntimeConfig();
+        blueMapAPIConnector.clearMarkerSetsCache();
     }
 }
