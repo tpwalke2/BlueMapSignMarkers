@@ -1,8 +1,6 @@
 package com.tpwalke2.bluemapsignmarkers.config.models;
 
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
-import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupMatchType;
-import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 
 public final class BMSMConfigV2 {
     public BMSMConfigV2() {}
@@ -15,17 +13,7 @@ public final class BMSMConfigV2 {
         this.markerGroups = new MarkerGroup[]{markerGroup};
     }
 
-    private MarkerGroup[] markerGroups = new MarkerGroup[]{
-            new MarkerGroup("[poi]",
-                    MarkerGroupMatchType.STARTS_WITH,
-                    MarkerGroupType.POI,
-                    "Points of Interest",
-                    null,
-                    0,
-                    0,
-                    false,
-                    0.0,
-                    10000000.0)};
+    private MarkerGroup[] markerGroups = new MarkerGroup[]{MarkerGroup.DEFAULT_POI_GROUP};
 
     public MarkerGroup[] getMarkerGroups() {
         return markerGroups;

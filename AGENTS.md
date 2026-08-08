@@ -138,3 +138,13 @@ design. Persisted sign data stays raw/unescaped; escaping happens only at this B
 
 Design/implementation plans for larger pieces of work are written to the `plans/` folder before being implemented,
 so they can be reviewed independently of the eventual code change.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live as local markdown files under `.scratch/`. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.

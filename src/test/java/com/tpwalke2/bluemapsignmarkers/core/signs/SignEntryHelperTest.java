@@ -55,28 +55,25 @@ class SignEntryHelperTest {
 
     @Test
     void isMarkerTypeTrueWhenPrefixResolvesToMatchingType() {
-        var entry = signEntry(parsed("[poi]", "Town Hall", "Town Hall"), empty());
         var prefixGroupMap = Map.of("[poi]", poiGroup("[poi]"));
 
-        assertTrue(SignEntryHelper.isMarkerType(entry, prefixGroupMap, MarkerGroupType.POI));
+        assertTrue(SignEntryHelper.isMarkerType("[poi]", prefixGroupMap, MarkerGroupType.POI));
     }
 
     @Test
     void isMarkerTypeFalseWhenNoPrefix() {
-        var entry = signEntry(empty(), empty());
         var prefixGroupMap = Map.of("[poi]", poiGroup("[poi]"));
 
-        assertFalse(SignEntryHelper.isMarkerType(entry, prefixGroupMap, MarkerGroupType.POI));
+        assertFalse(SignEntryHelper.isMarkerType(null, prefixGroupMap, MarkerGroupType.POI));
     }
 
     @Test
     void isMarkerTypeFalseWhenPrefixNoLongerConfigured() {
         // Simulates a cached sign whose prefix was removed/renamed out of the config on reload -
         // prefixGroupMap.get(prefix) is null, and isMarkerType must not throw.
-        var entry = signEntry(parsed("[poi]", "Town Hall", "Town Hall"), empty());
         var prefixGroupMap = Map.<String, MarkerGroup>of();
 
-        assertFalse(SignEntryHelper.isMarkerType(entry, prefixGroupMap, MarkerGroupType.POI));
+        assertFalse(SignEntryHelper.isMarkerType("[poi]", prefixGroupMap, MarkerGroupType.POI));
     }
 
     @Test
@@ -119,5 +116,14 @@ class SignEntryHelperTest {
         var entry = signEntry(parsed("[poi]", "Town Hall", "Open 9-5"), parsed("[poi]", "Fair", "Ask for Bob"));
 
         assertEquals(String.format("FRONT: %s%nBACK: %s", "Open 9-5", "Ask for Bob"), SignEntryHelper.getDetail(entry));
+    }
+
+    @Test
+    void getDetailUsesOnlyFrontWhenSidesMatchDifferentGroups() {
+        // Front and back match different marker groups - the marker belongs to the front's group
+        // (getPrefix prefers front), so the back's detail must not leak into it.
+        var entry = signEntry(parsed("[poi]", "Town Hall", "Open 9-5"), parsed("[event]", "Fair", "Ask for Bob"));
+
+        assertEquals("Open 9-5", SignEntryHelper.getDetail(entry));
     }
 }

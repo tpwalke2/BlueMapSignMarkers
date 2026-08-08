@@ -2,11 +2,14 @@ package com.tpwalke2.bluemapsignmarkers.core.bluemap;
 
 import com.tpwalke2.bluemapsignmarkers.Constants;
 import com.tpwalke2.bluemapsignmarkers.common.HtmlUtils;
+import com.tpwalke2.bluemapsignmarkers.common.LogUtils;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.AddMarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.ChangeGroupMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.MarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.UpdateMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.reactive.ReactiveQueue;
 import de.bluecolored.bluemap.api.BlueMapAPI;
@@ -72,6 +75,14 @@ public class BlueMapAPIConnector {
         resetHandlers.add(handler);
     }
 
+    // Called on a live config reload (SignManager.reloadConfig()) rather than resetQueue() - resetQueue()
+    // also replaces markerActionQueue, abandoning its executor (never shut down) and any messages still
+    // queued on it. A config reload only needs stale MarkerSet entries evicted so the next getMarkerSets()
+    // call re-derives them (icon/offset/visibility/name) from the reloaded MarkerGroup.
+    public void clearMarkerSetsCache() {
+        markerSetsCache = new ConcurrentHashMap<>();
+    }
+
     private void fireReset() {
         resetHandlers.forEach(IResetHandler::reset);
     }
@@ -104,7 +115,31 @@ public class BlueMapAPIConnector {
 
         logProcessingMessage(markerAction);
 
-        var markerSets = getMarkerSets(markerAction.getMarkerIdentifier().parentSet());
+        switch (markerAction) {
+            case AddMarkerAction addAction ->
+                    applyToMarkerSets(addAction.getMarkerIdentifier(), markerSetMaps -> addMarker(addAction, markerSetMaps));
+            case RemoveMarkerAction removeAction ->
+                    applyToMarkerSets(removeAction.getMarkerIdentifier(), markerSetMaps -> removeMarker(removeAction, markerSetMaps));
+            case UpdateMarkerAction updateAction ->
+                    applyToMarkerSets(updateAction.getMarkerIdentifier(), markerSetMaps -> updateMarker(updateAction, markerSetMaps));
+            case ChangeGroupMarkerAction changeAction -> processChangeGroupAction(changeAction);
+            default -> LOGGER.warn("Unknown marker action: {}", markerAction);
+        }
+    }
+
+    // Both halves run here, inside the single synchronized processMarkerAction() call that dispatched
+    // this action, so a prefix change is never observable half-applied (e.g. present in both the old
+    // and new marker group, or missing from both).
+    private void processChangeGroupAction(ChangeGroupMarkerAction changeAction) {
+        var removeAction = new RemoveMarkerAction(changeAction.getOldMarkerIdentifier());
+        applyToMarkerSets(removeAction.getMarkerIdentifier(), markerSetMaps -> removeMarker(removeAction, markerSetMaps));
+
+        var addAction = new AddMarkerAction(changeAction.getNewMarkerIdentifier(), changeAction.getLabel(), changeAction.getDetail());
+        applyToMarkerSets(addAction.getMarkerIdentifier(), markerSetMaps -> addMarker(addAction, markerSetMaps));
+    }
+
+    private void applyToMarkerSets(MarkerIdentifier markerIdentifier, Consumer<Stream<Map<String, Marker>>> consumer) {
+        var markerSets = getMarkerSets(markerIdentifier.parentSet());
 
         if (markerSets.isEmpty()) {
             LOGGER.debug("Marker sets not found.");
@@ -112,14 +147,7 @@ public class BlueMapAPIConnector {
         }
 
         LOGGER.debug("Marker sets found.");
-        var markerSetMaps = markerSets.get().stream().map(MarkerSet::getMarkers);
-
-        switch (markerAction) {
-            case AddMarkerAction addAction -> addMarker(addAction, markerSetMaps);
-            case RemoveMarkerAction removeAction -> removeMarker(removeAction, markerSetMaps);
-            case UpdateMarkerAction updateAction -> updateMarker(updateAction, markerSetMaps);
-            default -> LOGGER.warn("Unknown marker action: {}", markerAction);
-        }
+        consumer.accept(markerSets.get().stream().map(MarkerSet::getMarkers));
     }
 
     private void logProcessingMessage(MarkerAction action) {
@@ -127,14 +155,21 @@ public class BlueMapAPIConnector {
             case AddMarkerAction ignored -> "Adding";
             case RemoveMarkerAction ignored -> "Removing";
             case UpdateMarkerAction ignored -> "Updating";
+            case ChangeGroupMarkerAction ignored -> "Moving";
             default -> "Processing";
         };
 
         var detail = "";
         if (action instanceof AddMarkerAction addAction) {
-            detail = " with label='" + addAction.getDetail().replace("\n", "\\n") + "'";
+            detail = " with detail='" + LogUtils.sanitizeForLog(addAction.getDetail()) + "'";
         } else if (action instanceof UpdateMarkerAction updateAction) {
-            detail = " to label='" + updateAction.getNewDetails().replace("\n", "\\n") + "'";
+            detail = " to detail='" + LogUtils.sanitizeForLog(updateAction.getNewDetails()) + "'";
+        } else if (action instanceof ChangeGroupMarkerAction changeAction) {
+            detail = " from group '"
+                    + LogUtils.sanitizeForLog(changeAction.getOldMarkerIdentifier().parentSet().markerGroup().name())
+                    + "' to group '"
+                    + LogUtils.sanitizeForLog(changeAction.getNewMarkerIdentifier().parentSet().markerGroup().name())
+                    + "' with detail='" + LogUtils.sanitizeForLog(changeAction.getDetail()) + "'";
         }
 
         LOGGER.info("{} {} type marker in {} at x={} y={} z={}{}",
@@ -235,10 +270,11 @@ public class BlueMapAPIConnector {
                         .build();
                 blueMapMap.getMarkerSets().putIfAbsent(markerSetIdentifier.markerGroup().name(), markerSet);
             }
-            LOGGER.debug("Caching marker set: {}", markerSetIdentifier);
             markerSetsToReturn.add(markerSet);
-            markerSetsCache.putIfAbsent(markerSetIdentifier, markerSetsToReturn);
         });
+
+        LOGGER.debug("Caching marker set: {}", markerSetIdentifier);
+        markerSetsCache.putIfAbsent(markerSetIdentifier, markerSetsToReturn);
 
         return Optional.of(markerSetsToReturn);
     }

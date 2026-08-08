@@ -19,9 +19,10 @@ class FileUtilsTest {
         var original = tempDir.resolve("original.txt");
         Files.writeString(original, "original content");
 
-        FileUtils.createBackup(original.toString(), ".bak", "test file");
+        var succeeded = FileUtils.createBackup(original.toString(), ".bak", "test file");
 
         var backup = tempDir.resolve("original.txt.bak");
+        assertTrue(succeeded);
         assertTrue(Files.exists(backup));
         assertEquals("original content", Files.readString(backup));
         assertTrue(Files.exists(original), "the original should be untouched by a backup copy");
@@ -34,8 +35,9 @@ class FileUtilsTest {
         var backup = tempDir.resolve("original.txt.bak");
         Files.writeString(backup, "pre-existing backup content");
 
-        FileUtils.createBackup(original.toString(), ".bak", "test file");
+        var succeeded = FileUtils.createBackup(original.toString(), ".bak", "test file");
 
+        assertTrue(succeeded, "an already-existing backup counts as success");
         assertEquals("pre-existing backup content", Files.readString(backup),
                 "an existing backup should not be overwritten");
     }
@@ -75,19 +77,32 @@ class FileUtilsTest {
         assertEquals("pre-existing backup content", Files.readString(backup));
     }
 
-    // Documents review finding #13: copyFile catches IOException and only logs a warning - it never signals
-    // failure back to createBackup's caller. Here the backup destination is routed through the original file
-    // itself as a fake parent directory (a regular file can't be traversed as one, on any OS), so Files.copy
-    // throws; createBackup swallows it and returns normally instead of throwing or returning a status, leaving
-    // the caller to (incorrectly) assume the backup succeeded.
+    // The backup destination is routed through the original file itself as a fake parent directory (a regular
+    // file can't be traversed as one, on any OS), so Files.copy throws; createBackup now reports that failure
+    // back to the caller via its return value instead of swallowing it.
     @Test
-    void createBackupSwallowsACopyFailureInsteadOfSignalingItToTheCaller(@TempDir Path tempDir) throws IOException {
+    void createBackupReturnsFalseWhenTheCopyFails(@TempDir Path tempDir) throws IOException {
         var original = tempDir.resolve("original.txt");
         Files.writeString(original, "original content");
         var unwritableSuffix = "/nested/backup.bak";
 
-        assertDoesNotThrow(() -> FileUtils.createBackup(original.toString(), unwritableSuffix, "test file"));
+        var succeeded = assertDoesNotThrow(() -> FileUtils.createBackup(original.toString(), unwritableSuffix, "test file"));
 
+        assertFalse(succeeded, "a failed copy must be reported back to the caller, not swallowed");
         assertFalse(Files.exists(Path.of(original + unwritableSuffix)), "the backup was never actually created");
+    }
+
+    // A directory sitting at the backup path isn't a valid backup - treating File.exists() alone as "already
+    // backed up" would let a caller proceed to overwrite the original with no real backup in place.
+    @Test
+    void createBackupReturnsFalseWhenTheBackupDestinationIsADirectory(@TempDir Path tempDir) throws IOException {
+        var original = tempDir.resolve("original.txt");
+        Files.writeString(original, "original content");
+        var backup = tempDir.resolve("original.txt.bak");
+        Files.createDirectory(backup);
+
+        var succeeded = FileUtils.createBackup(original.toString(), ".bak", "test file");
+
+        assertFalse(succeeded, "a directory at the backup path is not a valid backup");
     }
 }

@@ -341,6 +341,50 @@ class ReactiveQueueTest {
         }
     }
 
+    // Investigated for ticket 09 (.scratch/codebase-review-followups/issues/09-reactivequeue-message-ordering.md):
+    // processMessages() submits each queued message as its own independent task to the executor
+    // (see ReactiveQueue.processMessages), so there is no guarantee a message finishes - or even
+    // starts - before a message enqueued after it, once more than one worker thread is available.
+    // A caller needing two dispatches to apply in order (e.g. a remove followed by an add for the
+    // same entity) must bundle them into a single message rather than relying on enqueue() order
+    // across two separate calls - see ChangeGroupMarkerAction/BlueMapAPIConnector.processChangeGroupAction,
+    // which SignManager's prefix-change path now dispatches as one message for exactly this reason.
+    @Test
+    void reactiveQueueGivesNoOrderingGuaranteeBetweenIndependentlySubmittedMessages() throws Exception {
+        var delegate = Executors.newFixedThreadPool(2);
+        var firstStarted = new CountDownLatch(1);
+        var releaseFirst = new CountDownLatch(1);
+        var order = new ConcurrentLinkedQueue<String>();
+        var bothDone = new CountDownLatch(2);
+        var queue = new ReactiveQueue<String>(
+                () -> true,
+                message -> {
+                    if (message.equals("first")) {
+                        firstStarted.countDown();
+                        awaitUninterruptibly(releaseFirst);
+                    }
+                    order.add(message);
+                    bothDone.countDown();
+                },
+                error -> { },
+                delegate);
+        try {
+            queue.enqueue("first");
+            assertTrue(firstStarted.await(5, TimeUnit.SECONDS), "first message's task never started");
+
+            queue.enqueue("second");
+            assertTrue(awaitTrue(() -> order.contains("second"), 5000),
+                    "second message should be able to finish before first under a multi-threaded pool");
+
+            releaseFirst.countDown();
+            assertTrue(bothDone.await(5, TimeUnit.SECONDS));
+            assertEquals(List.of("second", "first"), List.copyOf(order),
+                    "no ordering guarantee: the later-enqueued message finished first");
+        } finally {
+            delegate.shutdownNow();
+        }
+    }
+
     private static void awaitUninterruptibly(CountDownLatch latch) {
         try {
             latch.await();

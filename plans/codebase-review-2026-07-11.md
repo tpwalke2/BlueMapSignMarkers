@@ -223,6 +223,16 @@ and `loadV1Config` overwrites the entire config with a single default POI group 
 real marker groups. A `.v1.bak` backup is made first, so it's recoverable, but the corrupted config no longer
 contains `poiPrefix`, so it won't retrigger — the damage silently sticks unless someone notices.
 
+**Resolved 2026-08-07 (`e7ca4ec`, "#169 Tighten logic around loading old config versions";
+`.scratch/codebase-review-followups/issues/01-config-load-save-correctness.md`).** `ConfigProvider.loadConfig` now
+detects V1 structurally — `root.has("poiPrefix") && !root.has("markerGroups")` on the parsed `JsonObject` — instead
+of a substring search on the raw file text, so a V2 config whose group name/icon happens to contain the literal
+text `poiPrefix` is no longer misdetected. `ConfigProviderTest`'s existing substring-bug test was updated to assert
+the fix. Bundled into the same ticket (see also findings #13's note and the Low-severity "no fail-fast config
+validation"/"charset mismatch" bullets below, both closed by this same change): `validateMarkerGroups` now rejects
+an empty prefix, a non-compiling `REGEX` prefix, or a prefix duplicated across groups at load time, and
+`saveConfig`/`loadConfig` both use `StandardCharsets.UTF_8` explicitly.
+
 ### 10. No `awaitTermination`; old-generation tasks can straddle a `resetQueue()`/`fireReset()` replay
 **`ReactiveQueue.java:52-54` (`shutdown()`) and `BlueMapAPIConnector.java` `resetQueue()` (58-66) / `onEnable()`
 (160-169)**
@@ -310,6 +320,22 @@ original file on the next line. If the backup silently fails (disk full, permiss
 pre-migration data is gone with no recoverable backup and no visible signal beyond a log line — undermines the
 entire point of backing up before a data-changing migration.
 
+**Resolved 2026-08-08 (`cc38ce5`, "#169 Ensure backup created before migrating original", plus follow-ups
+`4950aac`/post-review fixes; `.scratch/codebase-review-followups/issues/02-abort-migration-overwrite-on-backup-failure.md`).**
+`FileUtils.createBackup`/`copyFile` now return `boolean` instead of swallowing the `IOException`, and all three
+backup call sites check it: `ConfigProvider.loadV1Config` throws `IllegalStateException` on failure (caught by
+`loadConfig`'s catch-all, which returns `null` without ever reaching `saveConfig`'s overwrite);
+`Version1SignEntryLoader.loadSignEntries` throws the same way, caught by `LegacySignFileMigrator.migrate`, which
+leaves the legacy file in place; `VersionedFileSignEntryLoader.loadSignEntries` (V2 branch) logs at ERROR and
+returns `null` directly, falling through to the V1 loader rather than proceeding to overwrite. Two issues found in
+review were fixed in the same pass: `copyFile`/`moveFile` now log the caught exception as SLF4J's trailing
+argument (was previously interpolated into a `{}` placeholder, dropping the stack trace), and `createBackup`
+checks `isFile()` rather than bare `exists()` for the "already backed up" case, so a non-file (e.g. a stray
+directory) at the backup path is correctly treated as "no valid backup" rather than as success. `copyFile` also
+now copies to a `.tmp` sibling of the destination and does an atomic `Files.move` into place, so a failure
+partway through the copy (e.g. disk full) can't leave a truncated file at the real destination that a later
+`createBackup` call would mistake for a valid completed backup.
+
 ### 14. `SignLinesParser`: REGEX groups can't have a label share the line with the prefix
 **`src/main/java/com/tpwalke2/bluemapsignmarkers/core/signs/SignLinesParser.java:88-90`**
 `getLabel`'s REGEX branch reapplies the same pattern via `replaceAll` that `matches()` requires to match the whole
@@ -319,6 +345,16 @@ accept it at all, but then `replaceAll` greedily strips the entire line, includi
 There's no configuration that makes "label on the same line as a REGEX prefix" actually work, and the failure is
 silent. Not covered by any existing test.
 
+**Reviewed, descoped — not fixed (2026-08-06, `.scratch/codebase-review-followups/issues/03-signlinesparser-text-edge-cases.md`).**
+`AGENTS.md` documents whole-line `REGEX` matching (`line.matches(...)`) as intentional existing behavior, not a
+bug: switching `getLabel`'s REGEX branch to `lookingAt()`-style anchored-start matching to allow trailing label
+text would be a much larger, backward-incompatible change to REGEX semantics for every configured group, out of
+scope for a hardening ticket. Instead of fixing the behavior, added
+`SignLinesParserTest.regexPrefixWithTrailingLabelTextOnTheSameLineResultsInBlankLabel` to lock in the current
+(documented-limitation) blank-label behavior as a regression test, per this review's own Nitpick-section
+recommendation — closing that Nitpick item, but leaving this finding itself open as a known, intentional
+limitation rather than a defect.
+
 ### 15. `SignLinesParser.trim()` doesn't recognize non-ASCII invisible whitespace
 **`src/main/java/com/tpwalke2/bluemapsignmarkers/core/signs/SignLinesParser.java:27`**
 `.trim()` misses NBSP (U+00A0), ideographic space (U+3000), zero-width space (U+200B) — all reachable via
@@ -326,6 +362,12 @@ clipboard-paste into a sign. A line consisting solely of one becomes the sign's 
 marker group, and permanently transitions the parser to `INVALID` — so a genuine `[poi]` line immediately after is
 never reached. A leading invisible character on an otherwise-valid prefix line defeats `startsWith`/most regexes the
 same way, with only a DEBUG log and no other feedback.
+
+**Resolved 2026-08-06 (`.scratch/codebase-review-followups/issues/03-signlinesparser-text-edge-cases.md`).**
+`SignLinesParser.trimLine` now strips NBSP (U+00A0), zero-width space (U+200B), and ideographic space (U+3000)
+from line edges alongside standard whitespace, so a line consisting solely of (or led/trailed by) one of these no
+longer derails the parser to `INVALID`. Added `nonAsciiInvisibleWhitespaceOnlyLineIsTreatedAsBlank` and
+`nonAsciiInvisibleWhitespaceSurroundingPrefixLineIsTrimmed` to `SignLinesParserTest`.
 
 ### 16. `MarkerSetIdentifierCollection`'s internal collections aren't thread-safe
 **`src/main/java/com/tpwalke2/bluemapsignmarkers/core/markers/MarkerSetIdentifierCollection.java:6-11,34-38`**
@@ -378,6 +420,10 @@ AGENTS.md it has no automated unit coverage; verified via clean compile and a fu
   (`BlueMapSignMarkersMod.java:42`, `SignManager.java:136`). Two independently-hardcoded literals that only happen
   to match today; editing one without the other silently breaks playerId-preservation logic on chunk load vs.
   player edit.
+
+  **Resolved 2026-08-08 (`83cfc3a`/`1fe01b5`, "#169 Misc collection of small hardening fixes";
+  `.scratch/codebase-review-followups/issues/08-misc-small-hardening-cleanup.md`).** Both call sites now reference
+  `WorldMap.UNKNOWN` directly instead of independent `"unknown"` literals.
 - ~~**`ServerPathProvider.java` is dead code**~~ — **Resolved.** `BlueMapSignMarkersMod` now `implements ...
   ServerPathProvider`; no longer unwired.
 - **Charset mismatch between save and load** in `ConfigProvider.java` (`saveConfig` uses platform-default
@@ -386,22 +432,53 @@ AGENTS.md it has no automated unit coverage; verified via clean compile and a fu
   (originally also flagged in `SignProvider.java`) is **resolved**: that class was replaced by the region-sharded
   storage classes (`RegionShardedSignEntryWriter`/`Loader`, `LegacySignFileMigrator`, `#109`), which consistently
   use `Files.writeString`/`readString` with explicit UTF-8 on both sides.
+
+  **Config-side resolved 2026-08-07 (`e7ca4ec`, ticket 01 — see finding #9's note).** `saveConfig` now writes via
+  `OutputStreamWriter(..., StandardCharsets.UTF_8)` instead of a platform-default-charset `FileWriter`.
 - **No fail-fast config validation** — nothing checks marker-group prefixes are non-empty, that REGEX prefixes
   compile, or that prefixes are unique across groups at load time; bad data is only caught later, silently or by
   crashing (see finding #8).
+
+  **Resolved 2026-08-07 (`e7ca4ec`, ticket 01 — see finding #9's note).** `ConfigProvider.validateMarkerGroups`
+  now rejects (fails the load, same as any other `loadConfig` exception) an empty prefix, a non-compiling `REGEX`
+  prefix, or a prefix duplicated across groups, at load time rather than deferring to a later skip/NPE.
 - **`Version1SignEntryLoader.getNormalizedMapId`** only recognizes exact lowercase `"nether"`/`"end"`/`"overworld"`
   literals; any other legacy dimension string falls through unchanged, permanently mismatching the live dimension
   key post-migration and duplicating markers as "new" signs. Unverifiable against the true historical V1 format from
   files in scope.
+
+  **Resolved 2026-08-08 (`9c9b824`, "#169 Fixes for dimensions in legacy loaders";
+  `.scratch/codebase-review-followups/issues/05-harden-legacy-migration-loaders.md`).** `getNormalizedMapId` now
+  also recognizes the canonical-but-unnamespaced resource paths (`"the_nether"`/`"the_end"`), with or without a
+  `minecraft:` namespace already attached, alongside the original three shorthand literals. An unrecognized
+  dimension string is still silently lowercased on the `default` branch rather than preserved as-is or rejected —
+  a remaining Low-severity gap, now documented explicitly in `Version1SignEntryLoaderTest`.
 - **`VersionedFileSignEntryLoader`**: a structurally-valid-but-incomplete JSON (missing `version`/`data`) is handled
   by Gson returning nulls rather than throwing, which happens to funnel into the same V1-fallback path as a genuine
   parse exception — works today but by coincidence, not design.
+
+  **Resolved 2026-08-08 (`3fc8280`, "#169 Items from code review"; ticket 05).** `loadSignEntries` now checks
+  `versionedSignFile == null || versionedSignFile.version() == null || versionedSignFile.data() == null` explicitly
+  and falls back to the V1 loader as an intentional, logged branch, rather than relying on Gson's nulls to
+  coincidentally reach the same fallback.
 - **`getMarkerSets`'s `putIfAbsent`-inside-per-map-forEach pattern is fragile** (`BlueMapAPIConnector.java:187-204`)
   — correctness today depends on an implicit, undocumented invariant (shared mutable list + no-op `putIfAbsent` on
   every iteration after the first) that a future refactor could silently break.
+
+  **Resolved 2026-08-08 (`aa21d2d`, "#169 log sanitize bug fix; tighten get marker sets retrieval";
+  `.scratch/codebase-review-followups/issues/06-harden-bluemapapiconnector-internals.md`).** The
+  `markerSetsCache.putIfAbsent(...)`/debug-log call now happens once, after the per-map `forEach` loop completes,
+  instead of repeated inside it against the same list reference — same observable behavior, no longer dependent on
+  the implicit no-op-after-first-iteration invariant.
 - **`logProcessingMessage` logs full raw sign text at INFO unconditionally**, sanitizing only `\n`
   (`BlueMapAPIConnector.java:97-102`) — other control characters (`\r`, ANSI escapes) aren't sanitized, a minor
   log-injection/log-noise vector.
+
+  **Resolved 2026-08-08 (`aa21d2d`, ticket 06).** New `LogUtils.sanitizeForLog` (`common`) strips ANSI CSI escape
+  sequences and normalizes `\r\n`/`\n`/`\r` to literal `\n`/`\r`, used at every `logProcessingMessage` call site
+  that logs sign-derived detail text, including the `ChangeGroupMarkerAction` case added by finding-adjacent
+  ticket 09 (both the old and new group names are sanitized there too, since group names are also
+  config/operator-supplied text — see `43aec10`).
 - **Cache-key growth risk, now confirmed rather than speculative**: `MarkerSetIdentifier`/`markerSetsCache` keys
   are value-equality on the *entire* `MarkerGroup` record, so any config field change (icon, offsets, distances)
   between reloads produces a new, never-evicted cache entry. Originally speculative, pending a config-reload path
@@ -409,14 +486,37 @@ AGENTS.md it has no automated unit coverage; verified via clean compile and a fu
   work) and confirms the risk: it rebuilds the prefix map but never calls `blueMapAPIConnector.resetQueue()`, so
   `markerSetsCache` is never cleared on a live config reload. Worth reconsidering as Medium severity rather than
   Low.
+
+  **Resolved 2026-08-08 (`7be3141`, "#169 Clear marker sets cache on reload";
+  `.scratch/codebase-review-followups/issues/04-clear-markersetscache-on-reload.md`).** Added
+  `BlueMapAPIConnector.clearMarkerSetsCache()` — replaces `markerSetsCache` with a fresh `ConcurrentHashMap` —
+  called from `SignManager.reloadConfig()`. Deliberately not routed through the existing `resetQueue()`: that
+  method also replaces `markerActionQueue`, abandoning its executor (never shut down — thread leak) and dropping
+  any messages still queued on it; `resetQueue()` stays reserved for the shutdown-queue-recovery path in
+  `onEnable()`.
 - **`SignManager`: dual-sided signs with different prefixes mix marker-group semantics** — the marker's group
   (icon/type/visibility) comes from whichever side `getPrefix` picks (front preferred), but `getDetail` merges
   *both* sides' text regardless of whether they matched different groups.
+
+  **Resolved 2026-08-08 (`06df248`, "#169 Mixed groups on dual-sided signs";
+  `.scratch/codebase-review-followups/issues/07-fix-dual-sided-sign-semantics.md`).** `SignEntryHelper.getDetail`
+  now merges both sides' detail text only when front and back matched the *same* marker group; when they matched
+  different groups, only the front side's detail is used, matching `getPrefix`'s front-preferred rule for which
+  group the marker belongs to. Added `getDetailUsesOnlyFrontWhenSidesMatchDifferentGroups` to `SignEntryHelperTest`.
 - **`SignEntry`'s hand-written `equals`/`hashCode`** have no null-guards on `key`/`playerId`/`frontText`/`backText`;
   latent only, since no current call site actually calls `SignEntry.equals()`/`hashCode()` (the sign cache is keyed
   by `SignEntryKey`).
+
+  **Resolved 2026-08-08 (`83cfc3a`, ticket 08).** `equals`/`hashCode` now use `Objects.equals`/`Objects.hash`
+  instead of unguarded field-level `.equals()`/`.hashCode()` calls. `SignEntryTest`'s
+  `equalsAndHashCodeToleratesNullFields` replaced the prior test that documented the NPE as a known-latent risk.
 - **`Version3Converter`/`Version1SignEntryLoader`** have no per-entry exception handling, same all-or-nothing loss
   pattern as finding #4.
+
+  **Resolved 2026-08-08 (`9c9b824`/`3fc8280`, ticket 05).** `Version1SignEntryLoader.loadEntry` and
+  `VersionedFileSignEntryLoader.convertEntrySafely` now each wrap per-entry conversion in their own try/catch,
+  logging and skipping one bad entry rather than losing the whole file — the same pattern `SignProvider.loadSigns`
+  already applied per entry (finding #4).
 
 ## Nitpick
 
@@ -426,12 +526,26 @@ AGENTS.md it has no automated unit coverage; verified via clean compile and a fu
   `synchronized` to guard concurrent hot-reloads for real, not a redundant guard on a one-time static initializer.
 - The default single-`[poi]`-group literal is duplicated verbatim across `BMSMConfigV2` and `LoadingBMSMConfigV2`
   with no shared constant.
+
+  **Resolved 2026-08-08 (`83cfc3a`, ticket 08).** Added `MarkerGroup.DEFAULT_POI_GROUP` as the single source of the
+  default `[poi]` group's field values. `BMSMConfigV2` uses it directly; `LoadingBMSMConfigV2` derives its
+  `LoadingMarkerGroupV2` default from it (the two are different record types, so the instance itself can't be
+  shared, but the literal values now live in exactly one place).
 - `SignManager.isMarkerType` re-derives `getPrefix(signEntry)` that's already computed a few lines later —
   redundant, harmless.
+
+  **Resolved 2026-08-08 (`83cfc3a`, ticket 08).** `SignEntryHelper.isMarkerType` now takes the already-resolved
+  prefix `String` directly instead of a `SignEntry`, so `SignManager.addOrUpdateSign` computes `newPrefix` once and
+  passes it in rather than `isMarkerType` re-deriving it internally.
 - `MarkerAction` subclasses' `getX/Y/Z` widen `int` to `double` — fine, presumably to match the BlueMap API's
   positional types.
 - `SignLinesParserTest.java` has no test for a permissive REGEX pattern with trailing label text on the prefix line
   — worth a test to document/lock in the blank-label behavior from finding #14.
+
+  **Resolved 2026-08-06 (ticket 03 — see finding #14's note).** Added
+  `regexPrefixWithTrailingLabelTextOnTheSameLineResultsInBlankLabel` to `SignLinesParserTest`, locking in the
+  current documented-limitation behavior rather than changing it (finding #14 was reviewed and descoped, not
+  fixed).
 
 ## Verified correct (no action needed)
 
@@ -451,10 +565,31 @@ AGENTS.md it has no automated unit coverage; verified via clean compile and a fu
   list all three `MarkerAction` subclasses — the AGENTS.md-documented "missing case falls to `default`" risk is real
   but not currently triggered.
 
+  **Updated 2026-08-08:** a fourth subclass, `ChangeGroupMarkerAction`, was added by ticket 09 (see the Open
+  Questions section below) with a `case` arm in both switches, following exactly this convention — still no gap.
+
 ## Open questions requiring follow-up outside this review's scope
 
 - Does `ReactiveQueue.processMessages` submit each message as an independent task to the same executor (implying no
   ordering guarantee between sequential dispatches, e.g. a prefix-change's remove-then-add)? If so, `SignManager`'s
   prefix-change branch (dispatching remove then add as two separate calls) may not apply in order under load.
+
+  **Resolved 2026-08-08 (`a62aaf1`, "#169 fixes for message ordering", plus follow-up `43aec10`;
+  `.scratch/codebase-review-followups/issues/09-reactivequeue-message-ordering.md`).** Confirmed: yes,
+  `processMessages` submits each message as its own independent executor task, so once the fixed thread pool has
+  more than one worker thread there's no guarantee about relative execution order between messages —
+  `ReactiveQueueTest.reactiveQueueGivesNoOrderingGuaranteeBetweenIndependentlySubmittedMessages` reproduces this
+  deterministically. Rather than changing `ReactiveQueue`'s general behavior (a generic reusable primitive with no
+  ordering requirement of its own), the concrete risk was fixed by bundling `SignManager`'s prefix-change
+  remove-then-add into a single message: new `ChangeGroupMarkerAction` (`core/bluemap/actions`) carries both the
+  old and new group's `MarkerIdentifier`s, and `BlueMapAPIConnector.processChangeGroupAction` runs the remove and
+  the add back-to-back inside the same `synchronized processMarkerAction` call that dispatched it, so the pair can
+  never be observed half-applied. Only applies when both the old and new prefix resolve to a configured group; the
+  existing single-sided warn-and-skip fallbacks are unchanged otherwise.
 - Confirm whether `BlueMapAPI.unregisterListener` matches by identity or by some other means, to settle finding #7
   definitively.
+
+  **Resolved — already answered by finding #7's own note (2026-07-23):** confirmed against `bluemap-api` 2.8.0's
+  source that `unregisterListener` matches by `equals`/`hashCode`, and the fix (passing the same `Consumer`
+  instances to both `onEnable`/`onDisable` registration and `unregisterListener`) is in place. This open-question
+  entry predates that finding-level resolution and can be treated as closed.

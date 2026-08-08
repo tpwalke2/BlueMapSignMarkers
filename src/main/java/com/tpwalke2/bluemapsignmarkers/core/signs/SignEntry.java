@@ -1,5 +1,7 @@
 package com.tpwalke2.bluemapsignmarkers.core.signs;
 
+import java.util.Objects;
+
 public record SignEntry(
         SignEntryKey key,
         String playerId,
@@ -15,19 +17,15 @@ public record SignEntry(
         if (this == o) return true;
         if (!(o instanceof SignEntry signEntry)) return false;
 
-        return key.equals(signEntry.key)
-                && playerId.equals(signEntry.playerId)
-                && frontText.equals(signEntry.frontText)
-                && backText.equals(signEntry.backText);
+        return Objects.equals(key, signEntry.key)
+                && Objects.equals(playerId, signEntry.playerId)
+                && Objects.equals(frontText, signEntry.frontText)
+                && Objects.equals(backText, signEntry.backText);
     }
 
     @Override
     public int hashCode() {
-        int result = key.hashCode();
-        result = 31 * result + playerId.hashCode();
-        result = 31 * result + frontText.hashCode();
-        result = 31 * result + backText.hashCode();
-        return result;
+        return Objects.hash(key, playerId, frontText, backText);
     }
 
     @Override

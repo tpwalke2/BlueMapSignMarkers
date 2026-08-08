@@ -2,6 +2,7 @@ package com.tpwalke2.bluemapsignmarkers.core.signs;
 
 import com.tpwalke2.bluemapsignmarkers.Constants;
 import com.tpwalke2.bluemapsignmarkers.config.ConfigManager;
+import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.BlueMapAPIConnector;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.IResetHandler;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.ActionFactory;
@@ -123,10 +124,10 @@ public class SignManager implements IResetHandler {
         var key = signEntry.key();
         var existing = signCache.get(key);
 
-        var isPOIMarker = SignEntryHelper.isMarkerType(signEntry, prefixGroupMap, MarkerGroupType.POI);
+        var newPrefix = SignEntryHelper.getPrefix(signEntry);
+        var isPOIMarker = SignEntryHelper.isMarkerType(newPrefix, prefixGroupMap, MarkerGroupType.POI);
         var label = SignEntryHelper.getLabel(signEntry);
         var detail = SignEntryHelper.getDetail(signEntry);
-        var newPrefix = SignEntryHelper.getPrefix(signEntry);
 
         if (newPrefix == null) {
             if (existing != null) {
@@ -171,7 +172,7 @@ public class SignManager implements IResetHandler {
             LOGGER.debug("Updating POI marker: {}", signEntry);
             signCache.put(
                     key,
-                    signEntry.playerId().equals("unknown")
+                    WorldMap.UNKNOWN.equals(signEntry.playerId())
                             ? new SignEntry(
                                     key,
                                     existing.playerId(),
@@ -202,6 +203,27 @@ public class SignManager implements IResetHandler {
                 }
             } else {
                 var existingGroup = prefixGroupMap.get(existingPrefix);
+                var newGroup = prefixGroupMap.get(newPrefix);
+
+                if (existingGroup != null && newGroup != null) {
+                    // Dispatched as a single unit rather than separate remove/add messages -
+                    // ReactiveQueue gives no ordering guarantee between independently-submitted
+                    // messages, so under load the add could otherwise run before the remove and
+                    // leave the marker duplicated across both groups (see
+                    // .scratch/codebase-review-followups/issues/09-reactivequeue-message-ordering.md).
+                    blueMapAPIConnector.dispatch(
+                            actionFactory.createChangeGroupPOIAction(
+                                    key.x(),
+                                    key.y(),
+                                    key.z(),
+                                    key.parentMap(),
+                                    label,
+                                    detail,
+                                    existingGroup,
+                                    newGroup));
+                    return;
+                }
+
                 if (existingGroup == null) {
                     LOGGER.warn("No marker group configured for previous prefix {}, skipping remove: {}", existingPrefix, signEntry);
                 } else {
@@ -214,7 +236,6 @@ public class SignManager implements IResetHandler {
                                     existingGroup));
                 }
 
-                var newGroup = prefixGroupMap.get(newPrefix);
                 if (newGroup == null) {
                     LOGGER.warn("No marker group configured for prefix {}, skipping add: {}", newPrefix, signEntry);
                 } else {
@@ -297,5 +318,6 @@ public class SignManager implements IResetHandler {
         ConfigManager.reload();
         SignHelper.reloadParser();
         runtimeConfig = buildRuntimeConfig();
+        blueMapAPIConnector.clearMarkerSetsCache();
     }
 }

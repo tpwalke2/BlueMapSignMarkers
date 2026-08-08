@@ -14,10 +14,9 @@ public class SignEntryHelper {
     }
 
     public static boolean isMarkerType(
-            SignEntry signEntry,
+            String prefix,
             Map<String, MarkerGroup> prefixGroupMap,
             MarkerGroupType markerGroupType) {
-        var prefix = getPrefix(signEntry);
         if (prefix == null) return false;
         var group = prefixGroupMap.get(prefix);
         return group != null && group.type() == markerGroupType;
@@ -32,6 +31,16 @@ public class SignEntryHelper {
     }
 
     public static String getDetail(SignEntry signEntry) {
+        var frontPrefix = signEntry.frontText().prefix();
+        var backPrefix = signEntry.backText().prefix();
+
+        // Front and back matched different marker groups: the marker itself belongs to the front's
+        // group (see getPrefix), so only the front's detail is shown - merging in the back's detail
+        // would attribute text from a group the marker doesn't belong to.
+        if (frontPrefix != null && backPrefix != null && !frontPrefix.equals(backPrefix)) {
+            return signEntry.frontText().detail();
+        }
+
         var frontDetail = signEntry.frontText().detail();
         var backDetail = signEntry.backText().detail();
 

@@ -17,6 +17,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class Version1SignEntryLoaderTest {
@@ -70,6 +72,40 @@ class Version1SignEntryLoaderTest {
     }
 
     @Test
+    void unnamespacedCanonicalResourcePathsNormalizeToTheNamespacedForm(@TempDir Path tempDir) throws IOException {
+        assertEquals("minecraft:the_nether", load(tempDir, "the_nether"));
+        assertEquals("minecraft:the_end", load(tempDir, "the_end"));
+    }
+
+    @Test
+    void namespacedShorthandDimensionStringsNormalizeToTheCanonicalForm(@TempDir Path tempDir) throws IOException {
+        assertEquals("minecraft:the_nether", load(tempDir, "minecraft:nether"));
+        assertEquals("minecraft:the_end", load(tempDir, "minecraft:end"));
+    }
+
+    @Test
+    void loadSignEntriesSkipsAMalformedEntryInsteadOfDroppingTheWholeFile(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("signs.json").toString();
+        var goodEntry = new SignEntryV2(
+                new SignEntryKey(0, 64, 0, "overworld"),
+                "player-1",
+                new SignLinesParseResultV2(MarkerTypeV2.POI, "Town Hall", "Town Hall"),
+                new SignLinesParseResultV2(null, "", ""));
+        var badEntry = new SignEntryV2(
+                new SignEntryKey(1, 64, 1, "overworld"),
+                "player-2",
+                null,
+                new SignLinesParseResultV2(null, "", ""));
+        var content = GSON.toJson(new SignEntryV2[]{goodEntry, badEntry});
+        Files.writeString(Path.of(path), content, StandardCharsets.UTF_8);
+
+        var result = Version1SignEntryLoader.loadSignEntries(path, content, POI_GROUP, GSON);
+
+        assertEquals(1, result.length);
+        assertEquals(0, result[0].key().x());
+    }
+
+    @Test
     void loadSignEntriesBacksUpTheOriginalFileBeforeReturning(@TempDir Path tempDir) throws IOException {
         var path = tempDir.resolve("signs.json").toString();
         var entry = new SignEntryV2(
@@ -85,5 +121,26 @@ class Version1SignEntryLoaderTest {
         var backup = Path.of(path + ".v1.bak");
         assertTrue(Files.exists(backup), "the original V1 file should be backed up");
         assertEquals(content, Files.readString(backup));
+    }
+
+    // signsContent is already fully read into memory by the caller before this method runs, so deleting the
+    // on-disk source file leaves parsing unaffected but makes the backup copy step fail - simulating a disk-full
+    // or permissions failure without depending on platform-specific filesystem permission enforcement.
+    @Test
+    void loadSignEntriesAbortsWithoutReturningEntriesWhenTheBackupFails(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("signs.json").toString();
+        var entry = new SignEntryV2(
+                new SignEntryKey(0, 64, 0, "overworld"),
+                "player-1",
+                new SignLinesParseResultV2(MarkerTypeV2.POI, "Town Hall", "Town Hall"),
+                new SignLinesParseResultV2(null, "", ""));
+        var content = GSON.toJson(new SignEntryV2[]{entry});
+        Files.writeString(Path.of(path), content, StandardCharsets.UTF_8);
+        Files.delete(Path.of(path));
+
+        assertThrows(IllegalStateException.class,
+                () -> Version1SignEntryLoader.loadSignEntries(path, content, POI_GROUP, GSON));
+
+        assertFalse(Files.exists(Path.of(path + ".v1.bak")), "no backup should exist after a failed copy");
     }
 }
