@@ -43,6 +43,30 @@ public class ActionFactory {
                         markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)));
     }
 
+    public ChangeGroupMarkerAction createChangeGroupPOIAction(
+            int x,
+            int y,
+            int z,
+            String mapId,
+            String label,
+            String detail,
+            MarkerGroup oldMarkerGroup,
+            MarkerGroup newMarkerGroup) {
+        return new ChangeGroupMarkerAction(
+                new MarkerIdentifier(
+                        x,
+                        y,
+                        z,
+                        markerSetIdentifierCollection.getIdentifier(mapId, oldMarkerGroup)),
+                new MarkerIdentifier(
+                        x,
+                        y,
+                        z,
+                        markerSetIdentifierCollection.getIdentifier(mapId, newMarkerGroup)),
+                label,
+                detail);
+    }
+
     public UpdateMarkerAction createUpdatePOIAction(
             int x,
             int y,
