@@ -14,13 +14,15 @@ public class FileUtils {
 
     private FileUtils() {}
 
-    public static void createBackup(String originalPath, String suffix, String fileDescription) {
+    // Returns true if a backup already exists or was created successfully; false if backup creation was
+    // attempted and failed, meaning callers must not proceed to overwrite the original file.
+    public static boolean createBackup(String originalPath, String suffix, String fileDescription) {
         var backupPath = originalPath + suffix;
         var backupFile = new File(backupPath);
-        if (!backupFile.exists()) {
-            LOGGER.info("Creating backup of {}...", fileDescription);
-            copyFile(originalPath, backupPath);
-        }
+        if (backupFile.exists()) return true;
+
+        LOGGER.info("Creating backup of {}...", fileDescription);
+        return copyFile(originalPath, backupPath);
     }
 
     public static void moveToBackup(String originalPath, String suffix, String fileDescription) {
@@ -35,11 +37,13 @@ public class FileUtils {
         moveFile(originalPath, backupPath);
     }
 
-    private static void copyFile(String sourcePath, String destinationPath) {
+    private static boolean copyFile(String sourcePath, String destinationPath) {
         try {
             Files.copy(Paths.get(sourcePath), Paths.get(destinationPath));
+            return true;
         } catch (IOException e) {
             LOGGER.warn("Failed to copy {} to {}: {}", sourcePath, destinationPath, e);
+            return false;
         }
     }
 

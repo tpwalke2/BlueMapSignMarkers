@@ -29,7 +29,11 @@ public class Version1SignEntryLoader {
                 .map(entry -> Version3Converter.convertToV3(entry, markerGroups))
                 .toArray(SignEntry[]::new);
 
-        FileUtils.createBackup(path, ".v1.bak", "markers file");
+        if (!FileUtils.createBackup(path, ".v1.bak", "markers file")) {
+            throw new IllegalStateException(
+                    "Failed to back up markers file " + path + " before v1-to-v3 migration; aborting migration to "
+                            + "avoid overwriting the original with no recoverable backup");
+        }
 
         return signEntries;
     }

@@ -73,6 +73,26 @@ class VersionedFileSignEntryLoaderTest {
         assertEquals(content, Files.readString(backup));
     }
 
+    // content is already fully read into memory by the caller before this method runs, so deleting the on-disk
+    // source file leaves parsing unaffected but makes the backup copy step fail - simulating a disk-full or
+    // permissions failure without depending on platform-specific filesystem permission enforcement.
+    @Test
+    void v2ContentReturnsNullRatherThanOverwritingWhenTheBackupFails(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("signs.json").toString();
+        var v2Entry = new SignEntryV2(KEY, "player-1",
+                new SignLinesParseResultV2(MarkerTypeV2.POI, "label", "detail"),
+                new SignLinesParseResultV2(null, "", ""));
+        var content = GSON.toJson(new VersionedSignFile(SignFileVersions.V2, GSON.toJson(new SignEntryV2[]{v2Entry})));
+        Files.writeString(Path.of(path), content, StandardCharsets.UTF_8);
+        Files.delete(Path.of(path));
+
+        var result = VersionedFileSignEntryLoader.loadSignEntries(
+                path, content, new MarkerGroup[]{poiGroup("[poi]")}, GSON);
+
+        assertNull(result, "a failed backup must abort the migration instead of returning converted entries");
+        assertFalse(Files.exists(Path.of(path + ".v2.bak")), "no backup should exist after a failed copy");
+    }
+
     @Test
     void malformedJsonReturnsNullRatherThanThrowing() {
         var result = VersionedFileSignEntryLoader.loadSignEntries(

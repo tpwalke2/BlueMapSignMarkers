@@ -32,7 +32,12 @@ public class VersionedFileSignEntryLoader {
                         .map(entry -> Version3Converter.convertToV3(entry, markerGroups))
                         .toArray(SignEntry[]::new);
 
-                FileUtils.createBackup(path, ".v2.bak", "markers file");
+                if (!FileUtils.createBackup(path, ".v2.bak", "markers file")) {
+                    LOGGER.error(
+                            "Failed to back up markers file {} before v2-to-v3 migration; aborting migration to "
+                                    + "avoid overwriting the original with no recoverable backup", path);
+                    return null;
+                }
 
                 return signEntries;
             } else {
