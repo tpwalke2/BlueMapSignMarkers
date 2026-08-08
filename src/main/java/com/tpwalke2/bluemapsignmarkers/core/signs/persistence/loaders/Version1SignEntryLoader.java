@@ -53,7 +53,7 @@ public class Version1SignEntryLoader {
         try {
             return Version3Converter.convertToV3(withNormalizedKey(entry), markerGroups);
         } catch (Exception e) {
-            LOGGER.error("Failed to load v1 sign entry, skipping: {}", entry, e);
+            LOGGER.error("Failed to load v1 sign entry, skipping: {}", entry.key(), e);
             return null;
         }
     }

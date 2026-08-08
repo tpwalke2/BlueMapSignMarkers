@@ -33,7 +33,7 @@ public class VersionedFileSignEntryLoader {
             // signal to fall back to the version 1 loader rather than relying on version()/data() being
             // null to coincidentally route through the same fallback below.
             if (versionedSignFile == null || versionedSignFile.version() == null || versionedSignFile.data() == null) {
-                LOGGER.info("Markers file has no version/data envelope, falling back to version 1 loader...");
+                LOGGER.info("Markers file {} has no version/data envelope, treating as legacy version 1 format...", path);
                 return null;
             }
 
@@ -68,7 +68,7 @@ public class VersionedFileSignEntryLoader {
         try {
             return Version3Converter.convertToV3(entry, markerGroups);
         } catch (Exception e) {
-            LOGGER.error("Failed to convert v2 sign entry, skipping: {}", entry, e);
+            LOGGER.error("Failed to convert v2 sign entry, skipping: {}", entry.key(), e);
             return null;
         }
     }
