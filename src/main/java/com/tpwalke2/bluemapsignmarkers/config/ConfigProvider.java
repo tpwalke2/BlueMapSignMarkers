@@ -173,7 +173,11 @@ public class ConfigProvider {
     private static BMSMConfigV2 loadV1Config(File file, BMSMConfigV1 v1Config) {
         var path = file.toString();
         LOGGER.info("Migrating config from v1 to v2...");
-        FileUtils.createBackup(path, ".v1.bak", "config file");
+        if (!FileUtils.createBackup(path, ".v1.bak", "config file")) {
+            throw new IllegalStateException(
+                    "Failed to back up config file " + path + " before v1-to-v2 migration; aborting migration to "
+                            + "avoid overwriting the original with no recoverable backup");
+        }
 
         return new BMSMConfigV2(
                 new MarkerGroup(
