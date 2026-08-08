@@ -44,3 +44,15 @@ file from disk internally with no seam to delete it between the read and the bac
 cross-platform way to fail just the backup copy while leaving the read that precedes it in the same call
 succeeding. The `ConfigProvider` path reuses the identical `FileUtils.createBackup` return-value check already
 covered at the `FileUtils` and sign-loader level. Full `./gradlew build` passes.
+
+**Post-review fixes:** two issues found in `FileUtils` review, both fixed:
+
+- `copyFile`/`moveFile`'s failure logs passed the exception through a `{}` placeholder, which only prints
+  `e.toString()` and drops the stack trace. Now passed as SLF4J's trailing non-placeholder argument so the full
+  stack trace is logged.
+- `createBackup` treated any existing path at the backup destination as a successful backup, even a directory left
+  behind by something else. A directory there isn't a valid backup, so `createBackup` now checks `isFile()` for the
+  "already backed up" case and returns `false` (logging an ERROR) if something non-file occupies that path -
+  callers correctly abort instead of proceeding to overwrite the original with no real backup.
+
+Added `FileUtilsTest.createBackupReturnsFalseWhenTheBackupDestinationIsADirectory`. Full `./gradlew build` passes.

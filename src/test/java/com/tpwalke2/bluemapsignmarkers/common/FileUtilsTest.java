@@ -91,4 +91,18 @@ class FileUtilsTest {
         assertFalse(succeeded, "a failed copy must be reported back to the caller, not swallowed");
         assertFalse(Files.exists(Path.of(original + unwritableSuffix)), "the backup was never actually created");
     }
+
+    // A directory sitting at the backup path isn't a valid backup - treating File.exists() alone as "already
+    // backed up" would let a caller proceed to overwrite the original with no real backup in place.
+    @Test
+    void createBackupReturnsFalseWhenTheBackupDestinationIsADirectory(@TempDir Path tempDir) throws IOException {
+        var original = tempDir.resolve("original.txt");
+        Files.writeString(original, "original content");
+        var backup = tempDir.resolve("original.txt.bak");
+        Files.createDirectory(backup);
+
+        var succeeded = FileUtils.createBackup(original.toString(), ".bak", "test file");
+
+        assertFalse(succeeded, "a directory at the backup path is not a valid backup");
+    }
 }

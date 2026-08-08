@@ -19,7 +19,14 @@ public class FileUtils {
     public static boolean createBackup(String originalPath, String suffix, String fileDescription) {
         var backupPath = originalPath + suffix;
         var backupFile = new File(backupPath);
-        if (backupFile.exists()) return true;
+        if (backupFile.isFile()) return true;
+
+        if (backupFile.exists()) {
+            LOGGER.error(
+                    "Backup destination {} already exists but isn't a regular file; refusing to treat it as a "
+                            + "valid backup of {}", backupPath, fileDescription);
+            return false;
+        }
 
         LOGGER.info("Creating backup of {}...", fileDescription);
         return copyFile(originalPath, backupPath);
@@ -42,7 +49,7 @@ public class FileUtils {
             Files.copy(Paths.get(sourcePath), Paths.get(destinationPath));
             return true;
         } catch (IOException e) {
-            LOGGER.warn("Failed to copy {} to {}: {}", sourcePath, destinationPath, e);
+            LOGGER.warn("Failed to copy {} to {}", sourcePath, destinationPath, e);
             return false;
         }
     }
@@ -51,7 +58,7 @@ public class FileUtils {
         try {
             Files.move(Paths.get(sourcePath), Paths.get(destinationPath));
         } catch (IOException e) {
-            LOGGER.warn("Failed to move {} to {}: {}", sourcePath, destinationPath, e);
+            LOGGER.warn("Failed to move {} to {}", sourcePath, destinationPath, e);
         }
     }
 }
