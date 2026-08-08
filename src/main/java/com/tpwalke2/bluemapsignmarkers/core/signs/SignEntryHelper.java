@@ -14,10 +14,9 @@ public class SignEntryHelper {
     }
 
     public static boolean isMarkerType(
-            SignEntry signEntry,
+            String prefix,
             Map<String, MarkerGroup> prefixGroupMap,
             MarkerGroupType markerGroupType) {
-        var prefix = getPrefix(signEntry);
         if (prefix == null) return false;
         var group = prefixGroupMap.get(prefix);
         return group != null && group.type() == markerGroupType;

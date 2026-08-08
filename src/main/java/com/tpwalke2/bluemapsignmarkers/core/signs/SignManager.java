@@ -2,6 +2,7 @@ package com.tpwalke2.bluemapsignmarkers.core.signs;
 
 import com.tpwalke2.bluemapsignmarkers.Constants;
 import com.tpwalke2.bluemapsignmarkers.config.ConfigManager;
+import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.BlueMapAPIConnector;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.IResetHandler;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.ActionFactory;
@@ -123,10 +124,10 @@ public class SignManager implements IResetHandler {
         var key = signEntry.key();
         var existing = signCache.get(key);
 
-        var isPOIMarker = SignEntryHelper.isMarkerType(signEntry, prefixGroupMap, MarkerGroupType.POI);
+        var newPrefix = SignEntryHelper.getPrefix(signEntry);
+        var isPOIMarker = SignEntryHelper.isMarkerType(newPrefix, prefixGroupMap, MarkerGroupType.POI);
         var label = SignEntryHelper.getLabel(signEntry);
         var detail = SignEntryHelper.getDetail(signEntry);
-        var newPrefix = SignEntryHelper.getPrefix(signEntry);
 
         if (newPrefix == null) {
             if (existing != null) {
@@ -171,7 +172,7 @@ public class SignManager implements IResetHandler {
             LOGGER.debug("Updating POI marker: {}", signEntry);
             signCache.put(
                     key,
-                    signEntry.playerId().equals("unknown")
+                    signEntry.playerId().equals(WorldMap.UNKNOWN)
                             ? new SignEntry(
                                     key,
                                     existing.playerId(),

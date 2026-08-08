@@ -1,8 +1,6 @@
 package com.tpwalke2.bluemapsignmarkers.config.persistence;
 
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
-import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupMatchType;
-import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 
 public final class LoadingBMSMConfigV2 {
     public LoadingBMSMConfigV2() {
@@ -16,17 +14,22 @@ public final class LoadingBMSMConfigV2 {
         this.markerGroups = new LoadingMarkerGroupV2[]{markerGroup};
     }
 
-    private LoadingMarkerGroupV2[] markerGroups = new LoadingMarkerGroupV2[]{
-            new LoadingMarkerGroupV2("[poi]",
-                    MarkerGroupMatchType.STARTS_WITH,
-                    MarkerGroupType.POI,
-                    "Points of Interest",
-                    null,
-                    0,
-                    0,
-                    false,
-                    0.0,
-                    10000000.0)};
+    private LoadingMarkerGroupV2[] markerGroups = new LoadingMarkerGroupV2[]{defaultGroup()};
+
+    private static LoadingMarkerGroupV2 defaultGroup() {
+        var defaultGroup = MarkerGroup.DEFAULT_POI_GROUP;
+        return new LoadingMarkerGroupV2(
+                defaultGroup.prefix(),
+                defaultGroup.matchType(),
+                defaultGroup.type(),
+                defaultGroup.name(),
+                defaultGroup.icon(),
+                defaultGroup.offsetX(),
+                defaultGroup.offsetY(),
+                defaultGroup.defaultHidden(),
+                defaultGroup.minDistance(),
+                defaultGroup.maxDistance());
+    }
 
     public LoadingMarkerGroupV2[] getMarkerGroups() {
         return markerGroups;

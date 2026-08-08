@@ -1,5 +1,6 @@
 package com.tpwalke2.bluemapsignmarkers;
 
+import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignHelper;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignManager;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.SignProvider;
@@ -64,7 +65,7 @@ public class BlueMapSignMarkersMod implements DedicatedServerModInitializer, Ser
 	private void onBlockEntityLoad(BlockEntity blockEntity, ServerLevel world) {
 		if (!(blockEntity instanceof SignBlockEntity castBlockEntity)) return;
 
-		SignManager.addOrUpdate(SignHelper.createSignEntry(castBlockEntity, "unknown"));
+		SignManager.addOrUpdate(SignHelper.createSignEntry(castBlockEntity, WorldMap.UNKNOWN));
 	}
 
 	// No special case for a newly-generated chunk (generated == true): that flag also fires when a chunk's saved

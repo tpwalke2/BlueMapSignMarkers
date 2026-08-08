@@ -2,10 +2,10 @@ package com.tpwalke2.bluemapsignmarkers.core.signs;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class SignEntryTest {
 
@@ -106,16 +106,17 @@ class SignEntryTest {
         assertEquals(KEY, entry.key(), "the original entry should be unmodified");
     }
 
-    // Documents a latent risk flagged in plans/codebase-review-2026-07-11.md: the hand-written equals/hashCode
-    // call straight into key.equals(...)/key.hashCode() with no null guard, so an entry whose own key (or
-    // playerId/frontText/backText, by the same unguarded pattern) is null throws NPE instead of behaving like a
-    // normal equals/hashCode implementation. Currently latent only - no call site actually calls
-    // SignEntry.equals()/hashCode(), since the sign cache is keyed by SignEntryKey, not SignEntry itself.
     @Test
-    void equalsAndHashCodeThrowNpeWhenThisEntrysKeyIsNull() {
+    void equalsAndHashCodeToleratesNullFields() {
         var entryWithNullKey = new SignEntry(null, PLAYER_ID, FRONT, BACK);
 
-        assertThrows(NullPointerException.class, () -> entryWithNullKey.equals(baseEntry()));
-        assertThrows(NullPointerException.class, entryWithNullKey::hashCode);
+        assertFalse(entryWithNullKey.equals(baseEntry()));
+        assertDoesNotThrow(entryWithNullKey::hashCode);
+
+        var entryWithAllNullFields = new SignEntry(null, null, null, null);
+        var otherEntryWithAllNullFields = new SignEntry(null, null, null, null);
+
+        assertEquals(entryWithAllNullFields, otherEntryWithAllNullFields);
+        assertEquals(entryWithAllNullFields.hashCode(), otherEntryWithAllNullFields.hashCode());
     }
 }
