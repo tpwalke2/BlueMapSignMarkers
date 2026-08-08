@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
+import java.util.Objects;
 
 public class Version1SignEntryLoader {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
@@ -25,8 +26,8 @@ public class Version1SignEntryLoader {
             Gson gson) {
         LOGGER.info("Loading version 1 markers file...");
         var signEntries = Arrays.stream(gson.fromJson(signsContent, SignEntryV2[].class))
-                .map(Version1SignEntryLoader::withNormalizedKey)
-                .map(entry -> Version3Converter.convertToV3(entry, markerGroups))
+                .map(entry -> loadEntry(entry, markerGroups))
+                .filter(Objects::nonNull)
                 .toArray(SignEntry[]::new);
 
         if (!FileUtils.createBackup(path, ".v1.bak", "markers file")) {
@@ -38,9 +39,24 @@ public class Version1SignEntryLoader {
         return signEntries;
     }
 
+    private static final String NAMESPACE_PREFIX = "minecraft:";
     private static final String NETHER = "nether";
+    private static final String THE_NETHER = "the_nether";
     private static final String END = "end";
+    private static final String THE_END = "the_end";
     private static final String OVERWORLD = "overworld";
+
+    // Isolates one bad entry (malformed key, unexpected null field, etc.) so it doesn't abort the
+    // whole file's migration - the same log-and-skip pattern SignProvider.loadSigns already applies
+    // per entry after loading.
+    private static SignEntry loadEntry(SignEntryV2 entry, MarkerGroup[] markerGroups) {
+        try {
+            return Version3Converter.convertToV3(withNormalizedKey(entry), markerGroups);
+        } catch (Exception e) {
+            LOGGER.error("Failed to load v1 sign entry, skipping: {}", entry.key(), e);
+            return null;
+        }
+    }
 
     private static SignEntryV2 withNormalizedKey(SignEntryV2 entry) {
         return entry.withKey(withNormalizedMapId(entry.key()));
@@ -51,16 +67,20 @@ public class Version1SignEntryLoader {
     }
 
     private static String getNormalizedMapId(String mapId) {
-        var result = mapId.toLowerCase();
+        var lower = mapId.toLowerCase();
+        var path = lower.startsWith(NAMESPACE_PREFIX) ? lower.substring(NAMESPACE_PREFIX.length()) : lower;
 
-        // Literal values of Level.NETHER/END/OVERWORLD's identifiers, spelled out so this class has no
-        // Minecraft-type dependency and can be unit tested without a game bootstrap.
-        return switch (result) {
-            case NETHER -> "minecraft:the_nether";
-            case END -> "minecraft:the_end";
-            case OVERWORLD -> "minecraft:overworld";
-            default -> result;
+        // Recognizes both the short vanilla dimension names ("nether"/"end"/"overworld") this mod's
+        // earliest versions stored and the canonical-but-unnamespaced resource path
+        // ("the_nether"/"the_end"), with or without a "minecraft:" namespace already attached - any of
+        // these previously fell through unchanged (or only partly normalized) and would permanently
+        // mismatch the live "minecraft:the_nether"/"minecraft:the_end"/"minecraft:overworld" dimension
+        // key post-migration, duplicating markers as "new" signs.
+        return switch (path) {
+            case NETHER, THE_NETHER -> NAMESPACE_PREFIX + THE_NETHER;
+            case END, THE_END -> NAMESPACE_PREFIX + THE_END;
+            case OVERWORLD -> NAMESPACE_PREFIX + OVERWORLD;
+            default -> lower;
         };
-
     }
 }
