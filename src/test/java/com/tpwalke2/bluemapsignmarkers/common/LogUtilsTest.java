@@ -31,6 +31,13 @@ class LogUtilsTest {
     }
 
     @Test
+    void ansiPrivateModeCsiSequencesAreStripped() {
+        var hideCursorText = "hidden cursor: " + ESC + "[?25l" + "done";
+
+        assertEquals("hidden cursor: done", LogUtils.sanitizeForLog(hideCursorText));
+    }
+
+    @Test
     void ordinaryBracketedTextIsLeftUntouched() {
         assertEquals("[poi] Town Hall", LogUtils.sanitizeForLog("[poi] Town Hall"));
     }

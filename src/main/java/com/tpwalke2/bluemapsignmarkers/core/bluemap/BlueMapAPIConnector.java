@@ -141,9 +141,9 @@ public class BlueMapAPIConnector {
 
         var detail = "";
         if (action instanceof AddMarkerAction addAction) {
-            detail = " with label='" + LogUtils.sanitizeForLog(addAction.getDetail()) + "'";
+            detail = " with detail='" + LogUtils.sanitizeForLog(addAction.getDetail()) + "'";
         } else if (action instanceof UpdateMarkerAction updateAction) {
-            detail = " to label='" + LogUtils.sanitizeForLog(updateAction.getNewDetails()) + "'";
+            detail = " to detail='" + LogUtils.sanitizeForLog(updateAction.getNewDetails()) + "'";
         }
 
         LOGGER.info("{} {} type marker in {} at x={} y={} z={}{}",

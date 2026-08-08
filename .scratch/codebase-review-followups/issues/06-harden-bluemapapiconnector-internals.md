@@ -31,3 +31,9 @@
 3. Added `LogUtilsTest` (newline, carriage-return, CRLF, ANSI-stripping, and bracketed-text-passthrough
    cases). `BlueMapAPIConnector` itself stays without direct tests per AGENTS.md (game-coupled); verified
    with `JAVA_HOME` pointed at the JDK 25 toolchain via `./gradlew test` and `./gradlew build`, both green.
+4. Review fixes: the INFO log line said "label" while logging the marker *detail* (`getDetail()`/
+   `getNewDetails()`) - reworded to "detail" so it matches what's actually logged. `LogUtils`'s CSI regex
+   only matched `[0-9;]*` before a letter, missing private-mode sequences (e.g. `ESC[?25l`, parameter byte
+   `?`) - widened to the full ECMA-48 CSI grammar (parameter bytes `0-9:;<=>?`, intermediate bytes space
+   through `/`, final byte `@` through `~`). Added `ansiPrivateModeCsiSequencesAreStripped` to
+   `LogUtilsTest` covering the gap. Re-verified with `./gradlew test`.
