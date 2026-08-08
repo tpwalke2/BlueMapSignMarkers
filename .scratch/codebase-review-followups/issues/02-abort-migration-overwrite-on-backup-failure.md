@@ -56,3 +56,14 @@ covered at the `FileUtils` and sign-loader level. Full `./gradlew build` passes.
   callers correctly abort instead of proceeding to overwrite the original with no real backup.
 
 Added `FileUtilsTest.createBackupReturnsFalseWhenTheBackupDestinationIsADirectory`. Full `./gradlew build` passes.
+
+**Post-review fix 2:** a failure partway through `Files.copy` (e.g. disk full mid-copy) could leave a truncated file
+sitting at the backup destination path; a later `createBackup()` call would see `isFile()` true and mistake it for
+a valid completed backup, letting a migration proceed with no real backup. `copyFile` now copies to a `.tmp` sibling
+of the destination first, then does an atomic `Files.move` into place - the real destination path is only ever
+touched by that single atomic move, so a mid-copy failure only ever leaves (at most) the `.tmp` file, which is
+deleted in the failure path (`deleteQuietly`). Not covered by a new test: reliably forcing a failure *after* the
+temp copy succeeds but *before* the move completes isn't practically simulable without mocking `java.nio.file.Files`
+(the existing failure tests all fail at copy time, before any file exists to leave behind) - the fix is a structural
+guarantee (destination is unreachable except via one atomic move) rather than one a black-box test can exercise.
+Full `./gradlew build` still passes with all existing tests green.
