@@ -203,6 +203,27 @@ public class SignManager implements IResetHandler {
                 }
             } else {
                 var existingGroup = prefixGroupMap.get(existingPrefix);
+                var newGroup = prefixGroupMap.get(newPrefix);
+
+                if (existingGroup != null && newGroup != null) {
+                    // Dispatched as a single unit rather than separate remove/add messages -
+                    // ReactiveQueue gives no ordering guarantee between independently-submitted
+                    // messages, so under load the add could otherwise run before the remove and
+                    // leave the marker duplicated across both groups (see
+                    // .scratch/codebase-review-followups/issues/09-reactivequeue-message-ordering.md).
+                    blueMapAPIConnector.dispatch(
+                            actionFactory.createChangeGroupPOIAction(
+                                    key.x(),
+                                    key.y(),
+                                    key.z(),
+                                    key.parentMap(),
+                                    label,
+                                    detail,
+                                    existingGroup,
+                                    newGroup));
+                    return;
+                }
+
                 if (existingGroup == null) {
                     LOGGER.warn("No marker group configured for previous prefix {}, skipping remove: {}", existingPrefix, signEntry);
                 } else {
@@ -215,7 +236,6 @@ public class SignManager implements IResetHandler {
                                     existingGroup));
                 }
 
-                var newGroup = prefixGroupMap.get(newPrefix);
                 if (newGroup == null) {
                     LOGGER.warn("No marker group configured for prefix {}, skipping add: {}", newPrefix, signEntry);
                 } else {

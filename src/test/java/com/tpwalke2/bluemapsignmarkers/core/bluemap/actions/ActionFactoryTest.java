@@ -58,6 +58,24 @@ class ActionFactoryTest {
     }
 
     @Test
+    void createChangeGroupPOIActionBuildsBothMarkerIdentifiersAndActionFields() {
+        var factory = new ActionFactory(new MarkerSetIdentifierCollection());
+        var oldGroup = markerGroup("[event]");
+        var newGroup = markerGroup("[poi]");
+
+        var action = factory.createChangeGroupPOIAction(1, 2, 3, "world", "label", "detail", oldGroup, newGroup);
+
+        assertEquals(oldGroup, action.getOldMarkerIdentifier().parentSet().markerGroup());
+        assertEquals(newGroup, action.getNewMarkerIdentifier().parentSet().markerGroup());
+        assertEquals(1, action.getNewMarkerIdentifier().x());
+        assertEquals(2, action.getNewMarkerIdentifier().y());
+        assertEquals(3, action.getNewMarkerIdentifier().z());
+        assertEquals("world", action.getOldMarkerIdentifier().parentSet().mapId());
+        assertEquals("label", action.getLabel());
+        assertEquals("detail", action.getDetail());
+    }
+
+    @Test
     void repeatedCallsForTheSameMapAndGroupReuseTheSameMarkerSetIdentifier() {
         var factory = new ActionFactory(new MarkerSetIdentifierCollection());
         var group = markerGroup("[poi]");
