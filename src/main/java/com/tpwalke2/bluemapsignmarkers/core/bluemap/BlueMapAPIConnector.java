@@ -165,7 +165,10 @@ public class BlueMapAPIConnector {
         } else if (action instanceof UpdateMarkerAction updateAction) {
             detail = " to detail='" + LogUtils.sanitizeForLog(updateAction.getNewDetails()) + "'";
         } else if (action instanceof ChangeGroupMarkerAction changeAction) {
-            detail = " from group '" + changeAction.getOldMarkerIdentifier().parentSet().markerGroup().name()
+            detail = " from group '"
+                    + LogUtils.sanitizeForLog(changeAction.getOldMarkerIdentifier().parentSet().markerGroup().name())
+                    + "' to group '"
+                    + LogUtils.sanitizeForLog(changeAction.getNewMarkerIdentifier().parentSet().markerGroup().name())
                     + "' with detail='" + LogUtils.sanitizeForLog(changeAction.getDetail()) + "'";
         }
 
