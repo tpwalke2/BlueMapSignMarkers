@@ -34,6 +34,13 @@ dependencies {
 	// Fabric API. Only the lifecycle-events module is used (see BlueMapSignMarkersMod).
 	implementation fabricApi.module("fabric-lifecycle-events-v1", project.fabric_api_version)
 
+	// BlueMap's own Fabric entrypoint (de.bluecolored.bluemap.fabric.FabricMod) uses these two modules
+	// (CommandRegistrationCallback, PacketSender/ServerPlayConnectionEvents) but isn't a Gradle dependency of this
+	// project - it's dropped directly into run/mods for runServer. Declare them runtimeOnly purely so the dev
+	// server has them on the classpath; this project's own code doesn't use them.
+	runtimeOnly fabricApi.module("fabric-command-api-v2", project.fabric_api_version)
+	runtimeOnly fabricApi.module("fabric-networking-api-v1", project.fabric_api_version)
+
 	compileOnly "de.bluecolored:bluemap-api:${project.blue_map_api_version}"
 
 	testImplementation platform("org.junit:junit-bom:5.11.4")
