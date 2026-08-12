@@ -6,10 +6,11 @@ public record SignEntry(
         SignEntryKey key,
         String playerId,
         SignLinesParseResult frontText,
-        SignLinesParseResult backText) {
+        SignLinesParseResult backText,
+        long createdAtMillis) {
 
     public SignEntry withKey(SignEntryKey key) {
-        return new SignEntry(key, playerId, frontText, backText);
+        return new SignEntry(key, playerId, frontText, backText, createdAtMillis);
     }
 
     @Override
@@ -20,12 +21,13 @@ public record SignEntry(
         return Objects.equals(key, signEntry.key)
                 && Objects.equals(playerId, signEntry.playerId)
                 && Objects.equals(frontText, signEntry.frontText)
-                && Objects.equals(backText, signEntry.backText);
+                && Objects.equals(backText, signEntry.backText)
+                && createdAtMillis == signEntry.createdAtMillis;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(key, playerId, frontText, backText);
+        return Objects.hash(key, playerId, frontText, backText, createdAtMillis);
     }
 
     @Override
@@ -35,6 +37,7 @@ public record SignEntry(
                 ", playerId='" + playerId + "'" +
                 ", frontText=" + frontText.toString() +
                 ", backText=" + backText.toString() +
+                ", createdAtMillis=" + createdAtMillis +
                 '}';
     }
 }

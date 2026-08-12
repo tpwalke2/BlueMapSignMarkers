@@ -11,6 +11,7 @@ import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.SignFileVersions;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.VersionedSignFile;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.MarkerTypeV2;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV2;
+import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV3;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignLinesParseResultV2;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -39,17 +40,37 @@ class VersionedFileSignEntryLoaderTest {
     }
 
     @Test
-    void v3ContentIsParsedDirectlyWithoutCreatingABackup(@TempDir Path tempDir) throws IOException {
+    void v4ContentIsParsedDirectlyWithoutCreatingABackup(@TempDir Path tempDir) throws IOException {
         var path = tempDir.resolve("signs.json").toString();
         var entry = new SignEntry(KEY, "player-1", new SignLinesParseResult("[poi]", "label", "detail"),
-                new SignLinesParseResult(null, "", ""));
-        var content = GSON.toJson(new VersionedSignFile(SignFileVersions.V3, GSON.toJson(new SignEntry[]{entry})));
+                new SignLinesParseResult(null, "", ""), 1000L);
+        var content = GSON.toJson(new VersionedSignFile(SignFileVersions.V4, GSON.toJson(new SignEntry[]{entry})));
         Files.writeString(Path.of(path), content, StandardCharsets.UTF_8);
 
         var result = VersionedFileSignEntryLoader.loadSignEntries(path, content, NO_GROUPS, GSON);
 
         assertArrayEquals(new SignEntry[]{entry}, result);
-        assertFalse(Files.exists(Path.of(path + ".v2.bak")), "a V3 file should not be backed up as a V2 file");
+        assertFalse(Files.exists(Path.of(path + ".v3.bak")), "a V4 file should not be backed up as a V3 file");
+    }
+
+    @Test
+    void v3ContentIsConvertedThroughVersion4ConverterAndBackedUp(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("signs.json").toString();
+        var v3Entry = new SignEntryV3(KEY, "player-1", new SignLinesParseResult("[poi]", "label", "detail"),
+                new SignLinesParseResult(null, "", ""));
+        var content = GSON.toJson(new VersionedSignFile(SignFileVersions.V3, GSON.toJson(new SignEntryV3[]{v3Entry})));
+        Files.writeString(Path.of(path), content, StandardCharsets.UTF_8);
+
+        var result = VersionedFileSignEntryLoader.loadSignEntries(path, content, NO_GROUPS, GSON);
+
+        assertEquals(1, result.length);
+        assertEquals(KEY, result[0].key());
+        assertEquals("player-1", result[0].playerId());
+        assertEquals("[poi]", result[0].frontText().prefix());
+
+        var backup = Path.of(path + ".v3.bak");
+        assertTrue(Files.exists(backup), "the original V3 file should be backed up before being replaced");
+        assertEquals(content, Files.readString(backup));
     }
 
     @Test

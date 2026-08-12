@@ -21,7 +21,7 @@ class SignEntryHelperTest {
     }
 
     private static SignEntry signEntry(SignLinesParseResult frontText, SignLinesParseResult backText) {
-        return new SignEntry(KEY, "unknown", frontText, backText);
+        return new SignEntry(KEY, "unknown", frontText, backText, 1000L);
     }
 
     private static SignLinesParseResult parsed(String prefix, String label, String detail) {

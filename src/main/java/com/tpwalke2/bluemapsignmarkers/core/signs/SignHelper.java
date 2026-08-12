@@ -35,7 +35,8 @@ public class SignHelper {
                         getSignParentMap(signBlockEntity.getLevel())),
                 playerId,
                 getParsedSignText(signBlockEntity.getFrontText()),
-                getParsedSignText(signBlockEntity.getBackText()));
+                getParsedSignText(signBlockEntity.getBackText()),
+                System.currentTimeMillis());
     }
 
     public static String getSignParentMap(Level world) {

@@ -172,13 +172,12 @@ public class SignManager implements IResetHandler {
             LOGGER.debug("Updating POI marker: {}", signEntry);
             signCache.put(
                     key,
-                    WorldMap.UNKNOWN.equals(signEntry.playerId())
-                            ? new SignEntry(
-                                    key,
-                                    existing.playerId(),
-                                    signEntry.frontText(),
-                                    signEntry.backText())
-                            : signEntry);
+                    new SignEntry(
+                            key,
+                            WorldMap.UNKNOWN.equals(signEntry.playerId()) ? existing.playerId() : signEntry.playerId(),
+                            signEntry.frontText(),
+                            signEntry.backText(),
+                            existing.createdAtMillis()));
 
             if (existingPrefix.equals(newPrefix)) {
                 var existingLabel = SignEntryHelper.getLabel(existing);

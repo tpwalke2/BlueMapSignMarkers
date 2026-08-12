@@ -32,12 +32,13 @@
 duplicate `createdAtMillis` after migration — accepted, not fixed here. Ticket 03 (`LineGroupResolver`) sorts on
 `(createdAtMillis, key.x(), key.y(), key.z())` to break ties deterministically.
 
-**Status:** open
+**Status:** done
 
-- [ ] `SignEntry` carries `createdAtMillis`; equals/hashCode/toString/withKey updated
-- [ ] `SignFileVersions.V4` added
-- [ ] `SignEntryV3` frozen model + `Version4Converter` implemented
-- [ ] `VersionedFileSignEntryLoader` migrates V3 files to V4, backs up as `.v3.bak`
-- [ ] `RegionShardedSignEntryWriter` writes V4 for new/updated files
-- [ ] A pre-V4 world save still loads (manual check via `runServer` with an old save, or a loader unit test)
-- [ ] `Version4ConverterTest` passes; `./gradlew test` and `./gradlew build` pass
+- [x] `SignEntry` carries `createdAtMillis`; equals/hashCode/toString/withKey updated
+- [x] `SignFileVersions.V4` added
+- [x] `SignEntryV3` frozen model + `Version4Converter` implemented
+- [x] `VersionedFileSignEntryLoader` migrates V3 files to V4, backs up as `.v3.bak`
+- [x] `RegionShardedSignEntryWriter` writes V4 for new/updated files
+- [x] A pre-V4 world save still loads (covered by `VersionedFileSignEntryLoaderTest`'s V3-migration test and
+      `LegacySignFileMigratorTest`; not separately verified via `runServer`)
+- [x] `Version4ConverterTest` passes; `./gradlew test` and `./gradlew build` pass
