@@ -19,10 +19,10 @@
     (still distinguishes "field omitted" via `null`), not the defaulted `MarkerGroup`.
 - `README.md` — `lineWidth`/`lineColor` entries in the Marker Groups section plus a `LINE` example.
 
-**Status:** open
+**Status:** done
 
-- [ ] `MarkerGroupType.LINE` exists; `MarkerGroup` carries `lineWidth`/`lineColor`
-- [ ] Missing `lineWidth`/`lineColor` in config default to `2`/`"#FF0000FF"` without crashing
-- [ ] Mismatched fields for a group's type log a warning, never throw
-- [ ] `README.md` documents the new fields and a `LINE` example
-- [ ] `./gradlew test` and `./gradlew build` pass
+- [x] `MarkerGroupType.LINE` exists; `MarkerGroup` carries `lineWidth`/`lineColor`
+- [x] Missing `lineWidth`/`lineColor` in config default to `2`/`"#FF0000FF"` without crashing
+- [x] Mismatched fields for a group's type log a warning, never throw
+- [x] `README.md` documents the new fields and a `LINE` example
+- [x] `./gradlew test` and `./gradlew build` pass

@@ -26,7 +26,7 @@ class Version1SignEntryLoaderTest {
     private static final Gson GSON = new Gson();
     private static final MarkerGroup[] POI_GROUP = {
             new MarkerGroup("[poi]", MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI,
-                    "[poi]", null, 0, 0, false, 0, 0)
+                    "[poi]", null, 0, 0, false, 0, 0, 2, "#FF0000FF")
     };
 
     private static String load(Path tempDir, String legacyDimension) throws IOException {

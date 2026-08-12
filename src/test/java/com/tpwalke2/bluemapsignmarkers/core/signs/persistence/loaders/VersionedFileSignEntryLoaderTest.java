@@ -34,7 +34,8 @@ class VersionedFileSignEntryLoaderTest {
 
     private static MarkerGroup poiGroup(String prefix) {
         return new MarkerGroup(
-                prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, prefix, null, 0, 0, false, 0, 0);
+                prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, prefix, null, 0, 0, false, 0, 0,
+                2, "#FF0000FF");
     }
 
     @Test

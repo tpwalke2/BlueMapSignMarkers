@@ -174,7 +174,9 @@ class ConfigProviderTest {
                         0,
                         false,
                         0.0,
-                        10000000.0));
+                        10000000.0,
+                        2,
+                        "#FF0000FF"));
 
         ConfigProvider.saveConfig(original, path);
         var reloaded = ConfigProvider.loadConfig(path);

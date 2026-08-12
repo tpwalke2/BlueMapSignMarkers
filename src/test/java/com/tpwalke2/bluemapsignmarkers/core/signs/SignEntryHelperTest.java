@@ -17,7 +17,7 @@ class SignEntryHelperTest {
     private static final SignEntryKey KEY = new SignEntryKey(1, 2, 3, "minecraft:overworld");
 
     private static MarkerGroup poiGroup(String prefix) {
-        return new MarkerGroup(prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, "Points of Interest", null, 0, 0, false, 0.0, 10000000.0);
+        return new MarkerGroup(prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, "Points of Interest", null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF");
     }
 
     private static SignEntry signEntry(SignLinesParseResult frontText, SignLinesParseResult backText) {

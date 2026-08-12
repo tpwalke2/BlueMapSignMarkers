@@ -111,12 +111,14 @@ public class ConfigProvider {
             // v2 attempt
             var result = GSON.fromJson(configContent, LoadingBMSMConfigV2.class);
 
+            var loadingMarkerGroups = result.getMarkerGroups();
             var markerGroups = Arrays
-                    .stream(result.getMarkerGroups())
+                    .stream(loadingMarkerGroups)
                     .map(ConfigProvider::convertToLoadedMarkerGroup)
                     .toArray(MarkerGroup[]::new);
 
             validateMarkerGroups(markerGroups);
+            warnOnTypeFieldMismatches(loadingMarkerGroups);
 
             return new BMSMConfigV2(markerGroups);
 
@@ -155,6 +157,32 @@ public class ConfigProvider {
         }
     }
 
+    private static void warnOnTypeFieldMismatches(LoadingMarkerGroupV2[] markerGroups) {
+        for (var markerGroup : markerGroups) {
+            var type = markerGroup.type() == null ? MarkerGroupType.POI : markerGroup.type();
+            var name = markerGroup.name();
+
+            if (type == MarkerGroupType.POI) {
+                if (markerGroup.lineWidth() != null) {
+                    LOGGER.warn("Marker group '{}' is type POI but has 'lineWidth' set; this field is ignored for POI groups", name);
+                }
+                if (markerGroup.lineColor() != null) {
+                    LOGGER.warn("Marker group '{}' is type POI but has 'lineColor' set; this field is ignored for POI groups", name);
+                }
+            } else if (type == MarkerGroupType.LINE) {
+                if (markerGroup.icon() != null) {
+                    LOGGER.warn("Marker group '{}' is type LINE but has 'icon' set; this field is ignored for LINE groups", name);
+                }
+                if (markerGroup.offsetX() != null) {
+                    LOGGER.warn("Marker group '{}' is type LINE but has 'offsetX' set; this field is ignored for LINE groups", name);
+                }
+                if (markerGroup.offsetY() != null) {
+                    LOGGER.warn("Marker group '{}' is type LINE but has 'offsetY' set; this field is ignored for LINE groups", name);
+                }
+            }
+        }
+    }
+
     private static MarkerGroup convertToLoadedMarkerGroup(LoadingMarkerGroupV2 markerGroup) {
         return new MarkerGroup(
                 markerGroup.prefix(),
@@ -166,7 +194,9 @@ public class ConfigProvider {
                 markerGroup.offsetY() == null ? 0 : markerGroup.offsetY(),
                 markerGroup.defaultHidden() != null && markerGroup.defaultHidden(),
                 markerGroup.minDistance() == null ? 0.0 : markerGroup.minDistance(),
-                markerGroup.maxDistance() == null ? 10000000.0 : markerGroup.maxDistance()
+                markerGroup.maxDistance() == null ? 10000000.0 : markerGroup.maxDistance(),
+                markerGroup.lineWidth() == null ? 2 : markerGroup.lineWidth(),
+                markerGroup.lineColor() == null ? "#FF0000FF" : markerGroup.lineColor()
         );
     }
 
@@ -190,6 +220,8 @@ public class ConfigProvider {
                         0,
                         false,
                         0,
-                        10000000.0));
+                        10000000.0,
+                        2,
+                        "#FF0000FF"));
     }
 }

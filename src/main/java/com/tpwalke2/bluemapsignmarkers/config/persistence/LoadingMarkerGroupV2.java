@@ -13,5 +13,7 @@ public record LoadingMarkerGroupV2(
         Integer offsetY,
         Boolean defaultHidden,
         Double minDistance,
-        Double maxDistance) {
+        Double maxDistance,
+        Integer lineWidth,
+        String lineColor) {
 }
