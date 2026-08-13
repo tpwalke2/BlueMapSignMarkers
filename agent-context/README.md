@@ -19,8 +19,8 @@ method-level behavior, data-shape history — so an agent doesn't have to re-der
 | Document | What it covers |
 |----------|----------------|
 | `context/architecture.md` | Tech stack, directory map, package taxonomy, build/CI/publish tooling |
-| `context/core-pipeline.md` | Sign text → marker action: parsing state machine, `SignManager` decision logic, chunk-load sign reconciliation (`SignChunkKey`/`SignChunkIndex`), `ReactiveQueue`/`BlueMapAPIConnector` mechanics, marker ID/set identity scheme |
-| `context/config-and-persistence.md` | Marker-group config loading/migration (V1→V2), region-sharded sign persistence, per-region-file versioning (V1→V2→V3), legacy-file migration and backup-on-migrate behavior |
+| `context/core-pipeline.md` | Sign text → marker action: parsing state machine, `SignManager`'s representation-diff transition table (POI and `LINE` marker groups), chunk-load sign reconciliation (`SignChunkKey`/`SignChunkIndex`), `ReactiveQueue`/`BlueMapAPIConnector` mechanics, marker ID/set identity scheme (position-keyed POI ids and content-keyed line ids) |
+| `context/config-and-persistence.md` | Marker-group config loading/migration (V1→V2, incl. `LINE`-type fields), region-sharded sign persistence, per-region-file versioning (V1→V2→V3→V4), legacy-file migration and backup-on-migrate behavior |
 | `context/testing.md` | Test infra, testable-vs-game-coupled split, CI test-result summarization, current coverage and known gaps |
 
 ## Document Scopes
@@ -28,9 +28,9 @@ method-level behavior, data-shape history — so an agent doesn't have to re-der
 | Document | Codebase paths watched |
 |----------|------------------------|
 | `context/architecture.md` | `build.gradle`, `gradle.properties`, `settings.gradle`, top-level dirs, `.github/workflows/` |
-| `context/core-pipeline.md` | `src/main/java/.../core/signs/` (excl. `persistence/`), `core/bluemap/`, `core/reactive/`, `core/markers/`, `mixin/`, `BlueMapSignMarkersMod.java` |
-| `context/config-and-persistence.md` | `src/main/java/.../config/`, `core/signs/persistence/`, `README.md` (config format section) |
+| `context/core-pipeline.md` | `src/main/java/.../core/signs/` (excl. `persistence/`), `core/bluemap/`, `core/reactive/`, `core/markers/`, `mixin/`, `BlueMapSignMarkersMod.java`, `common/` (`HtmlUtils`, `LogUtils`, `ColorUtils`) |
+| `context/config-and-persistence.md` | `src/main/java/.../config/`, `core/signs/persistence/`, `README.md` (config format section), `common/FileUtils.java` |
 | `context/testing.md` | `src/test/java/`, `.github/workflows/build.yml`, `.github/workflows/publish.yml` |
 
 ---
-*Last updated: 2026-08-08 | Verified against: main (a62aaf1)*
+*Last updated: 2026-08-13 | Verified against: main (374d6db)*

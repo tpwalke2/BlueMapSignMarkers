@@ -19,11 +19,23 @@
 - "Core pipeline: sign text → marker action" section — `SignManager`'s add/update/remove decision logic is
   rewritten as a representation lookup table (spec §7); update the description of step 2 to match.
 
-**Status:** open
+**Status:** resolved
 
-- [ ] Marker groups and config section updated
-- [ ] Adding a new marker/BlueMap action section updated
-- [ ] Sign persistence and versioning section updated
-- [ ] Testable vs. game-coupled code section updated
-- [ ] Core pipeline section updated
-- [ ] `AGENTS.md` reads coherently end to end for the `LINE` feature (not just patched in isolation)
+- [x] Marker groups and config section updated
+- [x] Adding a new marker/BlueMap action section updated
+- [x] Sign persistence and versioning section updated
+- [x] Testable vs. game-coupled code section updated
+- [x] Core pipeline section updated
+- [x] `AGENTS.md` reads coherently end to end for the `LINE` feature (not just patched in isolation)
+
+## Comments
+
+Updated all five sections. Core pipeline's step 2 now describes `SignManager`'s add/update/remove/type-flip logic as
+a single `Representation`-diff transition table (ticket 06/07), rather than the old separate-cases description, and
+reload as capturing the pre-swap prefix→group map and diffing per-sign instead of clear-and-replay. Marker groups
+section gained `lineWidth`/`lineColor` on `MarkerGroup` and a paragraph on `LineGroupResolver`'s membership/ordering
+rules. Adding-a-new-action section lists `SetLineMarkerAction`/`RemoveLineMarkerAction`/`GroupTransitionMarkerAction`
+and notes the last replaced `ChangeGroupMarkerAction`. Persistence section adds `Version4Converter`/`createdAtMillis`
+to the version chain. Testable-code list gained `LineGroupResolver`, `ColorUtils`,
+`DispatchedMarkerIdentifier`/`LineMarkerIdentifier`/`LinePoint`. Verified all referenced class names exist in
+`src/main/java` before writing them in. Read the whole file end to end after editing — reads coherently.
