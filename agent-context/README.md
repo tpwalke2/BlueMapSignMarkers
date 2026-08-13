@@ -33,4 +33,4 @@ method-level behavior, data-shape history — so an agent doesn't have to re-der
 | `context/testing.md` | `src/test/java/`, `.github/workflows/build.yml`, `.github/workflows/publish.yml` |
 
 ---
-*Last updated: 2026-08-13 | Verified against: main (374d6db)*
+*Last updated: 2026-08-13 | Verified against: main (00c9855)*

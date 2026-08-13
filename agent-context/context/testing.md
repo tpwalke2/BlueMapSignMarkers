@@ -113,9 +113,9 @@ As of `main` (`374d6db`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   `poiPrefix` is no longer misdetected as V1; and `validateMarkerGroups` failing fast (ticket 01) on an empty
   prefix, a non-compiling `REGEX` prefix, or a prefix duplicated across groups, each surfacing as `loadConfig`
   returning `null` (caught by the same catch-all) rather than corrupting silently or deferring to a later NPE/skip.
-  Note: `lineWidth`/`lineColor` defaulting and `warnOnTypeFieldMismatches`'s POI/LINE field-mismatch warning have no
-  dedicated assertions in this class yet — an uncovered gap from the line-markers work, not something this update
-  invented coverage for.
+  `lineWidth`/`lineColor` defaulting to `2`/`"#FF0000FF"` for a `LINE` group when omitted, preservation of explicit
+  values on a `LINE` group, and a `POI` group with `lineWidth`/`lineColor` set still loading (the
+  `warnOnTypeFieldMismatches` path is warning-only, not a load failure) each have a dedicated test (ticket 12).
 - `config/ConfigManagerTest.java` — `get()` returns the config from the most recent `reload`; falls back to
   `new BMSMConfigV2()` defaults when the configured path fails to load; a second `reload()` replaces (not merges
   with) what an earlier `reload` cached.
@@ -125,9 +125,10 @@ As of `main` (`374d6db`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   asserts `createChangeGroupPOIAction` returns a `GroupTransitionMarkerAction` with exactly two `effects` — a
   `RemoveMarkerAction` for the old group then an `AddMarkerAction` for the new one — rather than the older single
   action type carrying two identifiers directly; repeated calls for the same map/group (same or different action
-  type) reuse the same `MarkerSetIdentifier` instance via `MarkerSetIdentifierCollection`. Note: `createSetLineAction`/
-  `createRemoveLineAction` have no dedicated test in this class yet — an uncovered gap, not something this update
-  invented coverage for.
+  type) reuse the same `MarkerSetIdentifier` instance via `MarkerSetIdentifierCollection`. `createSetLineAction`/
+  `createRemoveLineAction` each have a dedicated test asserting the built `SetLineMarkerAction`/`RemoveLineMarkerAction`
+  fields and `LineMarkerIdentifier`, plus a reuse test confirming line and POI actions for the same map/group share
+  one `MarkerSetIdentifier` (ticket 11).
 - `core/markers/MarkerSetIdentifierCollectionTest.java` — `getIdentifier` returns the same instance for a repeated
   `(mapId, markerGroup)` pair (case-insensitive on `mapId`), distinct pairs get distinct identifiers. Also includes
   `concurrentFirstTimeCallersForTheSameComboConvergeOnOneIdentifierInstance`, an active (not `@Disabled`) regression
@@ -199,5 +200,5 @@ JUnit reporter action** — those actions don't get `checks: write` permission o
 public repo, so the summary step was written to need no extra permissions.
 
 ---
-*Last updated: 2026-08-13 | Verified against: main (374d6db)*
+*Last updated: 2026-08-13 | Verified against: main (00c9855)*
 

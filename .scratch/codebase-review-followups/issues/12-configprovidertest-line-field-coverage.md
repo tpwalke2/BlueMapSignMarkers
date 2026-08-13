@@ -17,12 +17,17 @@ Add test methods (matching `ConfigProviderTest`'s existing per-behavior style):
 
 **Blocked by:** None.
 
-**Status:** open
+**Status:** resolved
 
-- [ ] `lineWidth`/`lineColor` defaulting for a `LINE` group has a dedicated test
-- [ ] Explicit `lineWidth`/`lineColor` values on a `LINE` group are preserved, not overwritten by defaults
-- [ ] A `POI` group with `lineWidth`/`lineColor` set still loads (warning path, not a load failure)
-- [ ] Full test suite still passes
+- [x] `lineWidth`/`lineColor` defaulting for a `LINE` group has a dedicated test
+- [x] Explicit `lineWidth`/`lineColor` values on a `LINE` group are preserved, not overwritten by defaults
+- [x] A `POI` group with `lineWidth`/`lineColor` set still loads (warning path, not a load failure)
+- [x] Full test suite still passes
+
+**Resolved:** Added `loadConfigDefaultsLineWidthAndLineColorForALineGroupWhenOmitted`,
+`loadConfigPreservesExplicitLineWidthAndLineColorForALineGroup`, and
+`loadConfigStillLoadsAPOIGroupWithLineWidthAndLineColorSet` to `ConfigProviderTest`. Full suite passes (JDK 25
+toolchain).
 
 ## Comments
 

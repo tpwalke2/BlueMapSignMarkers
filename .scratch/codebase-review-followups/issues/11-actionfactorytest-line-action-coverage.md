@@ -17,12 +17,17 @@ built action's fields and the `MarkerIdentifier`/`MarkerSetIdentifier` it resolv
 
 **Blocked by:** None.
 
-**Status:** open
+**Status:** resolved
 
-- [ ] `createSetLineAction` has a dedicated test asserting the built `SetLineMarkerAction`'s fields
-- [ ] `createRemoveLineAction` has a dedicated test asserting the built `RemoveLineMarkerAction`'s fields
-- [ ] Both are covered by the existing `MarkerSetIdentifierCollection` reuse assertion pattern
-- [ ] Full test suite still passes
+- [x] `createSetLineAction` has a dedicated test asserting the built `SetLineMarkerAction`'s fields
+- [x] `createRemoveLineAction` has a dedicated test asserting the built `RemoveLineMarkerAction`'s fields
+- [x] Both are covered by the existing `MarkerSetIdentifierCollection` reuse assertion pattern
+- [x] Full test suite still passes
+
+**Resolved:** Added `createSetLineActionBuildsTheLineMarkerIdentifierAndActionFields`,
+`createRemoveLineActionBuildsTheLineMarkerIdentifier`, and
+`lineActionsForTheSameMapAndGroupReuseTheSameMarkerSetIdentifierAsPOIActions` to `ActionFactoryTest`, plus a
+`lineMarkerGroup` helper. Full suite passes (ran via JDK 25 toolchain since the Gradle daemon JVM defaults to 21).
 
 ## Comments
 
