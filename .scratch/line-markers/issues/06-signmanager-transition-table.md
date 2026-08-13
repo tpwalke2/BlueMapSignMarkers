@@ -30,13 +30,26 @@ harmless even if overtaken by a fresher one.
 
 **Out of scope here:** the `reloadConfig()`/`/bluemap reload` rewrite that reuses this table — that's ticket 07.
 
-**Status:** open
+**Status:** resolved
 
-- [ ] Transition table implemented, replacing `shouldAdd/Remove/UpdatePOIMarker` + prefix-change branch
-- [ ] `addOrUpdateSign` dispatches via the table; existing cache/`chunkIndex`/`WorldMap.UNKNOWN` behavior unchanged
-- [ ] `./gradlew build` passes (this class stays untestable by unit test — no Minecraft/BlueMap types allowed in
+- [x] Transition table implemented, replacing `shouldAdd/Remove/UpdatePOIMarker` + prefix-change branch
+- [x] `addOrUpdateSign` dispatches via the table; existing cache/`chunkIndex`/`WorldMap.UNKNOWN` behavior unchanged
+- [x] `./gradlew build` passes (this class stays untestable by unit test — no Minecraft/BlueMap types allowed in
       signature per `AGENTS.md`, but `SignManager` itself has them; verified manually)
 - [ ] Manual, via `runServer`: place 3 signs with the same line-group prefix+label at different times — no marker
       until the 2nd, line grows to include the 3rd; break the middle sign — line reconnects the remaining two;
       break down to 1 remaining sign — marker disappears; edit one sign's prefix from a `LINE` group to `POI` and
       back — no duplicate/orphaned markers in either direction
+
+## Comments
+
+Replaced `shouldAdd/Remove/UpdatePOIMarker` + the prefix-change branch with a representation-based transition
+table: a private `Representation(MarkerGroup, label, detail)` record (null = NONE) computed from a sign's parsed
+text against the current prefix→group map, and `computeTransitionAction(key, oldRep, newRep, actionFactory)`
+covering all nine `(NONE/POI/LINE) x (NONE/POI/LINE)` cells. `lineJoinAction`/`lineLeaveAction` share the
+"recompute via `LineGroupResolver.members` against the post-mutation `signCache`, dispatch Set if ≥2 members,
+else Remove/no-op" logic for both directions. `addOrUpdateSign` mutates `signCache`/`chunkIndex` first (so
+membership recompute sees the post-change state), then dispatches the single resulting action (a plain
+`MarkerAction`, or a `GroupTransitionMarkerAction` when both a leave- and join-effect apply). `removeByKey` reuses
+the same table as the `(oldRep, null)` cell. `./gradlew build` passes; manual smoke test still pending (needs
+`runServer`).

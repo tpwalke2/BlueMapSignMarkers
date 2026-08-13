@@ -6,6 +6,9 @@ import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.BlueMapAPIConnector;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.IResetHandler;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.ActionFactory;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.GroupTransitionMarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.MarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.markers.LinePoint;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifierCollection;
@@ -18,6 +21,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.stream.Collectors;
 
 public class SignManager implements IResetHandler {
     private static volatile SignManager instance;
@@ -59,6 +63,11 @@ public class SignManager implements IResetHandler {
     }
 
     private record RuntimeConfig(Map<String, MarkerGroup> prefixGroupMap, ActionFactory actionFactory) {
+    }
+
+    // A sign's marker representation under the current config: null means the sign matches no marker
+    // group (NONE); otherwise group.type() says whether it's a POI or a LINE member.
+    private record Representation(MarkerGroup group, String label, String detail) {
     }
 
     private final BlueMapAPIConnector blueMapAPIConnector;
@@ -116,6 +125,119 @@ public class SignManager implements IResetHandler {
         }
     }
 
+    private Representation computeRepresentation(SignEntry entry, Map<String, MarkerGroup> prefixGroupMap) {
+        if (entry == null) return null;
+
+        var prefix = SignEntryHelper.getPrefix(entry);
+        if (prefix == null) return null;
+
+        var group = prefixGroupMap.get(prefix);
+        if (group == null) {
+            LOGGER.warn("No marker group configured for prefix {}, skipping: {}", prefix, entry);
+            return null;
+        }
+
+        return new Representation(group, SignEntryHelper.getLabel(entry), SignEntryHelper.getDetail(entry));
+    }
+
+    private static boolean sameGroupAndLabel(Representation a, Representation b) {
+        return a.group().prefix().equals(b.group().prefix()) && a.label().equals(b.label());
+    }
+
+    // The (oldRepresentation, newRepresentation) transition table from
+    // .scratch/line-markers/spec.md §6. Returns null for a no-op, a single MarkerAction when only one
+    // effect applies, or a GroupTransitionMarkerAction bundling a leave-effect + join-effect so
+    // ReactiveQueue's lack of ordering guarantees can't transiently show a sign in two places.
+    private MarkerAction computeTransitionAction(
+            SignEntryKey key,
+            Representation oldRep,
+            Representation newRep,
+            ActionFactory actionFactory) {
+        if (oldRep == null && newRep == null) return null;
+
+        if (oldRep == null) {
+            return newRep.group().type() == MarkerGroupType.POI
+                    ? actionFactory.createAddPOIAction(key.x(), key.y(), key.z(), key.parentMap(), newRep.label(), newRep.detail(), newRep.group())
+                    : lineJoinAction(key.parentMap(), newRep, actionFactory, false);
+        }
+
+        if (newRep == null) {
+            return oldRep.group().type() == MarkerGroupType.POI
+                    ? actionFactory.createRemovePOIAction(key.x(), key.y(), key.z(), key.parentMap(), oldRep.group())
+                    : lineLeaveAction(key.parentMap(), oldRep, actionFactory);
+        }
+
+        var oldType = oldRep.group().type();
+        var newType = newRep.group().type();
+
+        if (oldType == MarkerGroupType.POI && newType == MarkerGroupType.POI) {
+            if (sameGroupAndLabel(oldRep, newRep)) {
+                return oldRep.detail().equals(newRep.detail())
+                        ? null
+                        : actionFactory.createUpdatePOIAction(key.x(), key.y(), key.z(), key.parentMap(), newRep.label(), newRep.detail(), newRep.group());
+            }
+            return actionFactory.createChangeGroupPOIAction(key.x(), key.y(), key.z(), key.parentMap(), newRep.label(), newRep.detail(), oldRep.group(), newRep.group());
+        }
+
+        if (oldType == MarkerGroupType.LINE && newType == MarkerGroupType.LINE && sameGroupAndLabel(oldRep, newRep)) {
+            return lineJoinAction(key.parentMap(), newRep, actionFactory, true);
+        }
+
+        var effects = new ArrayList<MarkerAction>(2);
+
+        var leave = oldType == MarkerGroupType.POI
+                ? actionFactory.createRemovePOIAction(key.x(), key.y(), key.z(), key.parentMap(), oldRep.group())
+                : lineLeaveAction(key.parentMap(), oldRep, actionFactory);
+        if (leave != null) effects.add(leave);
+
+        var join = newType == MarkerGroupType.POI
+                ? actionFactory.createAddPOIAction(key.x(), key.y(), key.z(), key.parentMap(), newRep.label(), newRep.detail(), newRep.group())
+                : lineJoinAction(key.parentMap(), newRep, actionFactory, false);
+        if (join != null) effects.add(join);
+
+        if (effects.isEmpty()) return null;
+        if (effects.size() == 1) return effects.get(0);
+        return new GroupTransitionMarkerAction(effects);
+    }
+
+    // Recomputes a line group including the current sign (it must already be in signCache under this
+    // group/label by the time this is called). Dispatches Set once ≥2 members exist; below that the line
+    // is still incomplete and nothing is dispatched. sameGroupRecompute forces isFirstAppearance=false,
+    // since a same-group/label recompute can only reach ≥2 members if a marker already existed.
+    private MarkerAction lineJoinAction(String parentMap, Representation rep, ActionFactory actionFactory, boolean sameGroupRecompute) {
+        var members = LineGroupResolver.members(getAllSigns(), parentMap, rep.group().prefix(), rep.label());
+        if (members.size() < 2) return null;
+
+        var isFirstAppearance = !sameGroupRecompute && members.size() == 2;
+        return actionFactory.createSetLineAction(parentMap, rep.group(), rep.label(), joinLineDetail(members), toPoints(members), isFirstAppearance);
+    }
+
+    // Recomputes a line group excluding the current sign (it must already be removed from/no longer
+    // present in signCache under this group/label by the time this is called). Dispatches Set if ≥2
+    // members remain, Remove if it drops below 2 and a marker existed before (i.e. exactly 1 remains -
+    // meaning there were 2 before), or nothing if there was never a marker to begin with (0 remain).
+    private MarkerAction lineLeaveAction(String parentMap, Representation rep, ActionFactory actionFactory) {
+        var members = LineGroupResolver.members(getAllSigns(), parentMap, rep.group().prefix(), rep.label());
+
+        if (members.size() >= 2) {
+            return actionFactory.createSetLineAction(parentMap, rep.group(), rep.label(), joinLineDetail(members), toPoints(members), false);
+        }
+
+        if (members.size() == 1) {
+            return actionFactory.createRemoveLineAction(parentMap, rep.group(), rep.label());
+        }
+
+        return null;
+    }
+
+    private static List<LinePoint> toPoints(List<SignEntry> members) {
+        return members.stream().map(e -> new LinePoint(e.key().x(), e.key().y(), e.key().z())).toList();
+    }
+
+    private static String joinLineDetail(List<SignEntry> members) {
+        return members.stream().map(SignEntryHelper::getDetail).collect(Collectors.joining(System.lineSeparator()));
+    }
+
     private synchronized void addOrUpdateSign(SignEntry signEntry) {
         var config = runtimeConfig;
         var prefixGroupMap = config.prefixGroupMap();
@@ -124,148 +246,35 @@ public class SignManager implements IResetHandler {
         var key = signEntry.key();
         var existing = signCache.get(key);
 
-        var newPrefix = SignEntryHelper.getPrefix(signEntry);
-        var isPOIMarker = SignEntryHelper.isMarkerType(newPrefix, prefixGroupMap, MarkerGroupType.POI);
-        var label = SignEntryHelper.getLabel(signEntry);
-        var detail = SignEntryHelper.getDetail(signEntry);
+        var oldRep = computeRepresentation(existing, prefixGroupMap);
+        var newRep = computeRepresentation(signEntry, prefixGroupMap);
 
-        if (newPrefix == null) {
+        var mergedEntry = existing == null
+                ? signEntry
+                : new SignEntry(
+                        key,
+                        WorldMap.UNKNOWN.equals(signEntry.playerId()) ? existing.playerId() : signEntry.playerId(),
+                        signEntry.frontText(),
+                        signEntry.backText(),
+                        existing.createdAtMillis());
+
+        if (newRep == null) {
             if (existing != null) {
-                LOGGER.debug("Removing POI marker as sign no longer has a prefix: {}", signEntry);
-                removeEntry(signEntry);
-            } else {
-                LOGGER.debug("Cannot add or update sign as no prefix found: {}", signEntry);
+                signCache.remove(key);
+                chunkIndex.remove(key);
             }
-            return;
-        }
-
-        if (shouldAddPOIMarker(existing, isPOIMarker)) {
-            var newGroup = prefixGroupMap.get(newPrefix);
-            if (newGroup == null) {
-                LOGGER.warn("No marker group configured for prefix {}, skipping add: {}", newPrefix, signEntry);
-                return;
-            }
-
-            LOGGER.debug("Adding POI marker: {}", signEntry);
-            signCache.put(key, signEntry);
-            chunkIndex.add(key);
-            blueMapAPIConnector.dispatch(
-                    actionFactory.createAddPOIAction(
-                            key.x(),
-                            key.y(),
-                            key.z(),
-                            key.parentMap(),
-                            label,
-                            detail,
-                            newGroup));
-            return;
-        }
-
-        if (shouldRemovePOIMarker(existing, isPOIMarker)) {
-            LOGGER.debug("Removing POI marker: {}", signEntry);
-            removeEntry(signEntry);
-        }
-
-        if (shouldUpdatePOIMarker(existing, isPOIMarker)) {
-            var existingPrefix = SignEntryHelper.getPrefix(existing);
-
-            LOGGER.debug("Updating POI marker: {}", signEntry);
-            signCache.put(
-                    key,
-                    new SignEntry(
-                            key,
-                            WorldMap.UNKNOWN.equals(signEntry.playerId()) ? existing.playerId() : signEntry.playerId(),
-                            signEntry.frontText(),
-                            signEntry.backText(),
-                            existing.createdAtMillis()));
-
-            if (existingPrefix.equals(newPrefix)) {
-                var existingLabel = SignEntryHelper.getLabel(existing);
-                var existingDetail = SignEntryHelper.getDetail(existing);
-
-                if (isTextDifferent(existingLabel, label, existingDetail, detail)) {
-                    var group = prefixGroupMap.get(newPrefix);
-                    if (group == null) {
-                        LOGGER.warn("No marker group configured for prefix {}, skipping update: {}", newPrefix, signEntry);
-                    } else {
-                        LOGGER.debug("Updating POI marker label and detail");
-                        blueMapAPIConnector.dispatch(
-                                actionFactory.createUpdatePOIAction(
-                                        key.x(),
-                                        key.y(),
-                                        key.z(),
-                                        key.parentMap(),
-                                        label,
-                                        detail,
-                                        group));
-                    }
-                }
-            } else {
-                var existingGroup = prefixGroupMap.get(existingPrefix);
-                var newGroup = prefixGroupMap.get(newPrefix);
-
-                if (existingGroup != null && newGroup != null) {
-                    // Dispatched as a single unit rather than separate remove/add messages -
-                    // ReactiveQueue gives no ordering guarantee between independently-submitted
-                    // messages, so under load the add could otherwise run before the remove and
-                    // leave the marker duplicated across both groups (see
-                    // .scratch/codebase-review-followups/issues/09-reactivequeue-message-ordering.md).
-                    blueMapAPIConnector.dispatch(
-                            actionFactory.createChangeGroupPOIAction(
-                                    key.x(),
-                                    key.y(),
-                                    key.z(),
-                                    key.parentMap(),
-                                    label,
-                                    detail,
-                                    existingGroup,
-                                    newGroup));
-                    return;
-                }
-
-                if (existingGroup == null) {
-                    LOGGER.warn("No marker group configured for previous prefix {}, skipping remove: {}", existingPrefix, signEntry);
-                } else {
-                    blueMapAPIConnector.dispatch(
-                            actionFactory.createRemovePOIAction(
-                                    key.x(),
-                                    key.y(),
-                                    key.z(),
-                                    key.parentMap(),
-                                    existingGroup));
-                }
-
-                if (newGroup == null) {
-                    LOGGER.warn("No marker group configured for prefix {}, skipping add: {}", newPrefix, signEntry);
-                } else {
-                    blueMapAPIConnector.dispatch(
-                            actionFactory.createAddPOIAction(
-                                    key.x(),
-                                    key.y(),
-                                    key.z(),
-                                    key.parentMap(),
-                                    label,
-                                    detail,
-                                    newGroup));
-                }
+        } else {
+            signCache.put(key, mergedEntry);
+            if (existing == null) {
+                chunkIndex.add(key);
             }
         }
-    }
 
-    private static boolean isTextDifferent(String existingLabel, String label, String existingDetail, String detail) {
-        return !existingLabel.equals(label) || !existingDetail.equals(detail);
-    }
-
-    private static boolean shouldUpdatePOIMarker(SignEntry existing, boolean isPOIMarker) {
-        return existing != null && isPOIMarker;
-    }
-
-    private static boolean shouldRemovePOIMarker(SignEntry existing, boolean isPOIMarker) {
-        return existing != null && !isPOIMarker;
-    }
-
-    private static boolean shouldAddPOIMarker(SignEntry existing, boolean isPOIMarker) {
-        return existing == null && isPOIMarker;
+        var action = computeTransitionAction(key, oldRep, newRep, actionFactory);
+        if (action != null) {
+            LOGGER.debug("Dispatching marker action for {}: {}", key, action);
+            blueMapAPIConnector.dispatch(action);
+        }
     }
 
     private synchronized void removeByKey(SignEntryKey key) {
@@ -278,32 +287,13 @@ public class SignManager implements IResetHandler {
 
         chunkIndex.remove(key);
 
-        var prefix = SignEntryHelper.getPrefix(removed);
-
-        if (prefix == null) {
-            LOGGER.debug("Cannot remove sign as no prefix found: {}", removed);
-            return;
-        }
-
         var config = runtimeConfig;
-        var group = config.prefixGroupMap().get(prefix);
-
-        if (group == null) {
-            LOGGER.warn("No marker group configured for prefix {}, skipping remove dispatch: {}", prefix, removed);
-            return;
+        var oldRep = computeRepresentation(removed, config.prefixGroupMap());
+        var action = computeTransitionAction(key, oldRep, null, config.actionFactory());
+        if (action != null) {
+            LOGGER.debug("Dispatching marker action for {}: {}", key, action);
+            blueMapAPIConnector.dispatch(action);
         }
-
-        blueMapAPIConnector.dispatch(
-                config.actionFactory().createRemovePOIAction(
-                        key.x(),
-                        key.y(),
-                        key.z(),
-                        key.parentMap(),
-                        group));
-    }
-
-    private void removeEntry(SignEntry signEntry) {
-        removeByKey(signEntry.key());
     }
 
     @Override
