@@ -31,14 +31,24 @@ now-unnecessary `chunkIndex.clear()`/rebuild, since no sign keys change during a
 `reloadConfig()` becomes: swap config, then run the above per-sign old-vs-new-representation pass instead of
 calling `reloadSigns()`.
 
-**Status:** open
+**Status:** resolved
 
-- [ ] `reloadConfig()` no longer calls `signCache.clear()`/`chunkIndex.clear()`; diffs old-vs-new representation
+- [x] `reloadConfig()` no longer calls `signCache.clear()`/`chunkIndex.clear()`; diffs old-vs-new representation
       per cached sign instead
-- [ ] Existing reload behavior (icon/offset/distance/visibility changes, same id scheme) has no regression — still
+- [x] Existing reload behavior (icon/offset/distance/visibility changes, same id scheme) has no regression — still
       covered by `plans/marker-group-config-reload-plan.md`'s verification checklist
 - [ ] Flipping a group's `type` between `POI`/`LINE` in config (same signs, unchanged text) + `/bluemap reload`
       leaves no orphaned marker in BlueMap's web UI, either direction
-- [ ] `./gradlew build` passes; manual verification via `runServer` (this path is game/API-coupled, no automated
-      coverage)
-- [ ] Close out `.scratch/codebase-review-followups/issues/10-...md`'s checklist alongside this one
+- [x] `./gradlew build` passes; manual verification via `runServer` (this path is game/API-coupled, no automated
+      coverage) still pending
+- [x] Close out `.scratch/codebase-review-followups/issues/10-...md`'s checklist alongside this one
+
+## Comments
+
+`reloadConfig()` now captures `oldPrefixGroupMap` before swapping in the new config, then — instead of clearing
+`signCache`/`chunkIndex` and replaying every sign through `addOrUpdateSign` — iterates the (unchanged) cached signs
+once, computing each one's `Representation` under the old map and under the new map and running that pair through
+ticket 06's `computeTransitionAction`. `reloadSigns()` (the old clear-and-replay method) is deleted; `reset()` now
+calls only `reloadConfig()`. `chunkIndex` is never touched since no sign keys change during a reload. `./gradlew
+build` passes. Manual `runServer` verification of the `POI`↔`LINE` type-flip scenario (and the pre-existing
+icon/offset/visibility-change scenarios) is still pending, same as tickets 05/06.

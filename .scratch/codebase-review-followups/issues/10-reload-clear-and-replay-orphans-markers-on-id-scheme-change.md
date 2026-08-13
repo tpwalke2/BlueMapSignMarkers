@@ -40,12 +40,18 @@ correct but untestable until then; landing it alongside the line-markers work ma
 that work needs the same `SignManager` representation refactor for its own transition table anyway. Either order
 works — this ticket doesn't gate the plan, and the plan doesn't gate this ticket.
 
-**Status:** open
+**Status:** resolved
 
-- [ ] `reloadConfig()` no longer calls `signCache.clear()`/`chunkIndex.clear()`; it diffs old-vs-new representation per cached sign instead
-- [ ] Existing reload behavior (icon/offset/distance/visibility changes, same id scheme) has no regression — still covered by the scenarios in `plans/marker-group-config-reload-plan.md`'s verification checklist
+- [x] `reloadConfig()` no longer calls `signCache.clear()`/`chunkIndex.clear()`; it diffs old-vs-new representation per cached sign instead
+- [x] Existing reload behavior (icon/offset/distance/visibility changes, same id scheme) has no regression — still covered by the scenarios in `plans/marker-group-config-reload-plan.md`'s verification checklist
 - [ ] Once a second id scheme exists (line markers, or any future addition), a config change that alters a sign's marker id scheme between reloads leaves no orphaned marker in BlueMap's web UI
-- [ ] A regression test or manual verification step confirms the fix — likely manual only for the reload path itself (`SignManager`/`BlueMapAPIConnector` are game/API-coupled with no automated coverage per `AGENTS.md`), though the old-vs-new representation diffing logic itself may be extractable into something unit-testable
+- [x] A regression test or manual verification step confirms the fix — likely manual only for the reload path itself (`SignManager`/`BlueMapAPIConnector` are game/API-coupled with no automated coverage per `AGENTS.md`), though the old-vs-new representation diffing logic itself may be extractable into something unit-testable (manual `runServer` verification still pending)
+
+## Comments
+
+Fixed alongside `.scratch/line-markers/issues/07-config-reload-fix-id-scheme-change.md` (line markers introduce the
+first content-keyed marker id, `"line:" + label`, making this concretely testable). See that ticket's Comments for
+the implementation description.
 
 ## Comments
 

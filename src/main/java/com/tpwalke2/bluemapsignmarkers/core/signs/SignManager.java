@@ -107,24 +107,6 @@ public class SignManager implements IResetHandler {
         blueMapAPIConnector.shutdown();
     }
 
-    // synchronized (same monitor as addOrUpdateSign/removeByKey below) so the whole snapshot-clear-replay
-    // sequence is one atomic step relative to live sign edits/removals arriving from the mixins on the
-    // server thread. IResetHandler.reset() fires on whatever thread BlueMapAPI.onEnable runs on, not
-    // necessarily the server thread, so without this a live edit could land mid-replay and get clobbered
-    // by a stale replayed value, or a sign removed mid-replay could be silently re-added from the
-    // snapshot taken before the removal (finding #17, plans/codebase-review-2026-07-11.md). dispatch()
-    // only enqueues onto ReactiveQueue (no blocking BlueMap API work happens under this lock), so this
-    // doesn't introduce hot-path contention the way locking around processMarkerAction would.
-    private synchronized void reloadSigns() {
-        LOGGER.info("Reloading all signs...");
-        var existingSigns = getAllSigns();
-        signCache.clear();
-        chunkIndex.clear();
-        for (SignEntry signEntry : existingSigns) {
-            addOrUpdateSign(signEntry);
-        }
-    }
-
     private Representation computeRepresentation(SignEntry entry, Map<String, MarkerGroup> prefixGroupMap) {
         if (entry == null) return null;
 
@@ -299,14 +281,41 @@ public class SignManager implements IResetHandler {
     @Override
     public void reset() {
         reloadConfig();
-        reloadSigns();
     }
 
-    private void reloadConfig() {
+    // synchronized (same monitor as addOrUpdateSign/removeByKey above) so the whole swap-config-then-diff
+    // sequence is one atomic step relative to live sign edits/removals arriving from the mixins on the
+    // server thread. IResetHandler.reset() fires on whatever thread BlueMapAPI.onEnable runs on, not
+    // necessarily the server thread, so without this a live edit could land mid-diff and get clobbered by
+    // a stale dispatch, or a sign removed mid-diff could be silently re-added. dispatch() only enqueues
+    // onto ReactiveQueue (no blocking BlueMap API work happens under this lock), so this doesn't introduce
+    // hot-path contention the way locking around processMarkerAction would.
+    //
+    // signCache/chunkIndex are deliberately NOT cleared here (unlike a naive clear-and-replay): a marker's
+    // id can be content-keyed (a LINE marker's id is "line:" + label) rather than position-keyed, so a
+    // config change that flips a group's type between POI and LINE would otherwise leave the old id's
+    // marker orphaned in BlueMap's MarkerSet forever, since a replayed add only ever adds under the new id
+    // and nothing ever explicitly removes the old one. Diffing each sign's representation under the old vs.
+    // new config and running that pair through the same transition table as a live edit dispatches an
+    // explicit leave-effect for the old representation whenever it differs, so no id is ever left behind.
+    private synchronized void reloadConfig() {
         LOGGER.info("Reloading marker group configuration...");
+        var oldPrefixGroupMap = runtimeConfig.prefixGroupMap();
+
         ConfigManager.reload();
         SignHelper.reloadParser();
         runtimeConfig = buildRuntimeConfig();
         blueMapAPIConnector.clearMarkerSetsCache();
+
+        var newConfig = runtimeConfig;
+        for (SignEntry entry : getAllSigns()) {
+            var oldRep = computeRepresentation(entry, oldPrefixGroupMap);
+            var newRep = computeRepresentation(entry, newConfig.prefixGroupMap());
+            var action = computeTransitionAction(entry.key(), oldRep, newRep, newConfig.actionFactory());
+            if (action != null) {
+                LOGGER.debug("Dispatching marker action for {}: {}", entry.key(), action);
+                blueMapAPIConnector.dispatch(action);
+            }
+        }
     }
 }
