@@ -31,11 +31,22 @@
 7. Start from a pre-V4 world save (signs from before this change); confirm signs load, migrate to V4, and any
    newly-configured `LINE` group involving old signs renders (documented arbitrary ordering) rather than erroring.
 
-**Status:** open
+**Status:** in progress
 
-- [ ] `README.md` reviewed end to end for the `LINE` feature
-- [ ] `mod_version` bumped in `gradle.properties`
-- [ ] `./gradlew test` and `./gradlew build` pass
-- [ ] All 7 manual verification scenarios above pass
+- [x] `README.md` reviewed end to end for the `LINE` feature — `type`/`lineWidth`/`lineColor` documented, example
+      config includes a `LINE` group, prose reads coherently
+- [x] `mod_version` bumped in `gradle.properties` (`26.2-0.18.0` → `26.2-0.19.0`)
+- [x] `./gradlew test` and `./gradlew build` pass; `LineGroupResolverTest`, `ColorUtilsTest`,
+      `Version4ConverterTest` all present and passing
+- [ ] All 7 manual verification scenarios above pass — requires interactive `runServer` testing, not yet performed
 - [ ] Known limitations section of the spec (no reordering, prefix-rename needs live re-edit, no closed/filled
-      shapes) still accurate — no surprises found during manual testing that should be added there
+      shapes) still accurate — no surprises found during manual testing that should be added there (pending the
+      manual pass above)
+
+## Comments
+
+`README.md` already covered the `LINE` type/`lineWidth`/`lineColor` fields from ticket 01 and reads coherently
+end to end; no changes needed there. `mod_version` bumped to `26.2-0.19.0` (new marker type + persisted-format
+change). `./gradlew build` passes and the three tests this ticket calls out to confirm
+(`LineGroupResolverTest`, `ColorUtilsTest`, `Version4ConverterTest`) all exist and pass. The 7-scenario manual
+`runServer` verification pass is the only remaining item — it's interactive and needs to be run by hand.
