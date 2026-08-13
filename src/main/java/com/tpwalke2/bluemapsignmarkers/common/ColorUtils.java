@@ -1,0 +1,27 @@
+package com.tpwalke2.bluemapsignmarkers.common;
+
+public class ColorUtils {
+    private static final int[] DEFAULT_COLOR = {255, 0, 0, 255};
+
+    private ColorUtils() {}
+
+    // Accepts "#RRGGBB" or "#RRGGBBAA" (leading '#' optional). Falls back to opaque red on any
+    // malformed input rather than throwing - a bad config value must not crash the server.
+    public static int[] parseHex(String hex) {
+        if (hex == null) return DEFAULT_COLOR;
+
+        var stripped = hex.startsWith("#") ? hex.substring(1) : hex;
+
+        if (stripped.length() != 6 && stripped.length() != 8) return DEFAULT_COLOR;
+
+        try {
+            var r = Integer.parseInt(stripped.substring(0, 2), 16);
+            var g = Integer.parseInt(stripped.substring(2, 4), 16);
+            var b = Integer.parseInt(stripped.substring(4, 6), 16);
+            var a = stripped.length() == 8 ? Integer.parseInt(stripped.substring(6, 8), 16) : 255;
+            return new int[]{r, g, b, a};
+        } catch (NumberFormatException e) {
+            return DEFAULT_COLOR;
+        }
+    }
+}

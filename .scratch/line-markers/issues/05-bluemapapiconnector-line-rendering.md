@@ -44,13 +44,21 @@
   `detail` is those joined in point order, same `FRONT:`/`BACK:`-style join `SignEntryHelper.getDetail` already
   uses.
 
-**Status:** open
+**Status:** resolved
 
-- [ ] `ColorUtils.parseHex` implemented with a unit test covering valid/invalid hex input
-- [ ] `setLineMarker`/`removeMarkerById` implemented; `applyToMarkerSets` widened
-- [ ] Both switch statements (`processMarkerAction`, `logProcessingMessage`) have cases for
+- [x] `ColorUtils.parseHex` implemented with a unit test covering valid/invalid hex input
+- [x] `setLineMarker`/`removeMarkerById` implemented; `applyToMarkerSets` widened (already narrowed to
+      `DispatchedMarkerIdentifier` by ticket 04)
+- [x] Both switch statements (`processMarkerAction`, `logProcessingMessage`) have cases for
       `SetLineMarkerAction`/`RemoveLineMarkerAction`/`GroupTransitionMarkerAction` — no silent `default`
-      fallthrough for these types
-- [ ] `./gradlew test` and `./gradlew build` pass
+      fallthrough for these types (`GroupTransitionMarkerAction` case was already present from ticket 04)
+- [x] `./gradlew test` and `./gradlew build` pass
 - [ ] Manual smoke test deferred to ticket 08 (needs `SignManager` wiring from ticket 06 to actually dispatch a
       line action end-to-end)
+
+## Comments
+
+Implemented `common/ColorUtils.parseHex` (accepts `#RRGGBB`/`#RRGGBBAA`, optional leading `#`, falls back to
+opaque red on malformed input) plus `BlueMapAPIConnector.setLineMarker`/`removeMarkerById` and the two new switch
+cases, matching the spec's code exactly. `applyToMarkerSets` and the `GroupTransitionMarkerAction` case were
+already in place from ticket 04, so no change needed there.

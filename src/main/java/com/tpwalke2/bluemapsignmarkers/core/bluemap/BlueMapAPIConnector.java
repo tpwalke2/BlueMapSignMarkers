@@ -1,23 +1,31 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap;
 
+import com.flowpowered.math.vector.Vector3d;
 import com.tpwalke2.bluemapsignmarkers.Constants;
+import com.tpwalke2.bluemapsignmarkers.common.ColorUtils;
 import com.tpwalke2.bluemapsignmarkers.common.HtmlUtils;
 import com.tpwalke2.bluemapsignmarkers.common.LogUtils;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.AddMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.GroupTransitionMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.MarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveLineMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetLineMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.UpdateMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.markers.DispatchedMarkerIdentifier;
+import com.tpwalke2.bluemapsignmarkers.core.markers.LineMarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.reactive.ReactiveQueue;
 import de.bluecolored.bluemap.api.BlueMapAPI;
 import de.bluecolored.bluemap.api.BlueMapMap;
+import de.bluecolored.bluemap.api.markers.LineMarker;
 import de.bluecolored.bluemap.api.markers.Marker;
 import de.bluecolored.bluemap.api.markers.MarkerSet;
 import de.bluecolored.bluemap.api.markers.POIMarker;
+import de.bluecolored.bluemap.api.math.Color;
+import de.bluecolored.bluemap.api.math.Line;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -135,6 +143,10 @@ public class BlueMapAPIConnector {
                     applyToMarkerSets(removeAction.getMarkerIdentifier(), markerSetMaps -> removeMarker(removeAction, markerSetMaps));
             case UpdateMarkerAction updateAction ->
                     applyToMarkerSets(updateAction.getMarkerIdentifier(), markerSetMaps -> updateMarker(updateAction, markerSetMaps));
+            case SetLineMarkerAction setAction ->
+                    applyToMarkerSets(setAction.getMarkerIdentifier(), markerSetMaps -> setLineMarker(setAction, markerSetMaps));
+            case RemoveLineMarkerAction removeAction ->
+                    applyToMarkerSets(removeAction.getMarkerIdentifier(), markerSetMaps -> removeMarkerById(removeAction.getMarkerIdentifier().getId(), markerSetMaps));
             default -> LOGGER.warn("Unknown marker action: {}", markerAction);
         }
     }
@@ -156,6 +168,8 @@ public class BlueMapAPIConnector {
             case AddMarkerAction ignored -> "Adding";
             case RemoveMarkerAction ignored -> "Removing";
             case UpdateMarkerAction ignored -> "Updating";
+            case RemoveLineMarkerAction ignored -> "Removing";
+            case SetLineMarkerAction setAction -> setAction.isFirstAppearance() ? "Adding" : "Updating";
             default -> "Processing";
         };
 
@@ -170,6 +184,10 @@ public class BlueMapAPIConnector {
         var position = "";
         if (identifier instanceof MarkerIdentifier markerIdentifier) {
             position = String.format(" at x=%d y=%d z=%d", markerIdentifier.x(), markerIdentifier.y(), markerIdentifier.z());
+        } else if (identifier instanceof LineMarkerIdentifier && action instanceof SetLineMarkerAction setAction) {
+            position = String.format(" label='%s' with %d point(s)", setAction.getLabel(), setAction.getPoints().size());
+        } else if (identifier instanceof LineMarkerIdentifier lineMarkerIdentifier) {
+            position = String.format(" label='%s'", lineMarkerIdentifier.label());
         }
 
         LOGGER.info("{} {} type marker in {}{}{}",
@@ -195,7 +213,28 @@ public class BlueMapAPIConnector {
 
     private static void removeMarker(RemoveMarkerAction removeAction, Stream<Map<String, Marker>> markerSetMaps) {
         LOGGER.debug("Removing marker...");
-        markerSetMaps.forEach(stringMarkerMap -> stringMarkerMap.remove(removeAction.getMarkerIdentifier().getId()));
+        removeMarkerById(removeAction.getMarkerIdentifier().getId(), markerSetMaps);
+    }
+
+    private static void removeMarkerById(String id, Stream<Map<String, Marker>> markerSetMaps) {
+        markerSetMaps.forEach(stringMarkerMap -> stringMarkerMap.remove(id));
+    }
+
+    private static void setLineMarker(SetLineMarkerAction action, Stream<Map<String, Marker>> markerSetMaps) {
+        LOGGER.debug("Setting line marker...");
+        if (action.getPoints().size() < 2) return; // defensive - SignManager should never dispatch below 2
+
+        var line = new Line(action.getPoints().stream().map(p -> new Vector3d(p.x(), p.y(), p.z())).toList());
+        var color = ColorUtils.parseHex(action.getLineColor());
+
+        markerSetMaps.forEach(markers -> markers.put(action.getMarkerIdentifier().getId(),
+                LineMarker.builder()
+                        .label(action.getLabel())
+                        .detail(HtmlUtils.toHtmlDetail(action.getDetail()))
+                        .line(line)
+                        .lineWidth(action.getLineWidth())
+                        .lineColor(new Color(color[0], color[1], color[2], color[3]))
+                        .build()));
     }
 
     private static void addMarker(AddMarkerAction addAction, Stream<Map<String, Marker>> markerSetMaps) {
