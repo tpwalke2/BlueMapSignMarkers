@@ -25,10 +25,10 @@ Takes a plain `Collection<SignEntry>` (not `SignManager`'s cache type) — no Mi
 signature, per `AGENTS.md`'s testable-core convention. A line's key is `(parentMap, prefix, label)` — two signs
 with the same prefix+label in different dimensions are different lines (already scoped by `parentMap`).
 
-**Status:** open
+**Status:** done
 
-- [ ] `LineGroupResolver.members(...)` implemented as above
-- [ ] New test `src/test/java/.../core/signs/LineGroupResolverTest.java` covers: membership scanning across
+- [x] `LineGroupResolver.members(...)` implemented as above
+- [x] New test `src/test/java/.../core/signs/LineGroupResolverTest.java` covers: membership scanning across
       dimensions/prefixes/labels, ordering by `createdAtMillis`, tie-breaking on duplicate `createdAtMillis`
       (per ticket 02's cross-file-migration note)
-- [ ] `./gradlew test` and `./gradlew build` pass
+- [x] `./gradlew test` and `./gradlew build` pass
