@@ -347,7 +347,7 @@ class ReactiveQueueTest {
     // starts - before a message enqueued after it, once more than one worker thread is available.
     // A caller needing two dispatches to apply in order (e.g. a remove followed by an add for the
     // same entity) must bundle them into a single message rather than relying on enqueue() order
-    // across two separate calls - see ChangeGroupMarkerAction/BlueMapAPIConnector.processChangeGroupAction,
+    // across two separate calls - see GroupTransitionMarkerAction/BlueMapAPIConnector.applySingleAction,
     // which SignManager's prefix-change path now dispatches as one message for exactly this reason.
     @Test
     void reactiveQueueGivesNoOrderingGuaranteeBetweenIndependentlySubmittedMessages() throws Exception {

@@ -1,8 +1,12 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap.actions;
 
+import com.tpwalke2.bluemapsignmarkers.core.markers.LineMarkerIdentifier;
+import com.tpwalke2.bluemapsignmarkers.core.markers.LinePoint;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifierCollection;
+
+import java.util.List;
 
 public class ActionFactory {
     private final MarkerSetIdentifierCollection markerSetIdentifierCollection;
@@ -43,7 +47,7 @@ public class ActionFactory {
                         markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)));
     }
 
-    public ChangeGroupMarkerAction createChangeGroupPOIAction(
+    public GroupTransitionMarkerAction createChangeGroupPOIAction(
             int x,
             int y,
             int z,
@@ -52,19 +56,42 @@ public class ActionFactory {
             String detail,
             MarkerGroup oldMarkerGroup,
             MarkerGroup newMarkerGroup) {
-        return new ChangeGroupMarkerAction(
-                new MarkerIdentifier(
-                        x,
-                        y,
-                        z,
-                        markerSetIdentifierCollection.getIdentifier(mapId, oldMarkerGroup)),
-                new MarkerIdentifier(
-                        x,
-                        y,
-                        z,
-                        markerSetIdentifierCollection.getIdentifier(mapId, newMarkerGroup)),
+        var oldIdentifier = new MarkerIdentifier(
+                x,
+                y,
+                z,
+                markerSetIdentifierCollection.getIdentifier(mapId, oldMarkerGroup));
+        var newIdentifier = new MarkerIdentifier(
+                x,
+                y,
+                z,
+                markerSetIdentifierCollection.getIdentifier(mapId, newMarkerGroup));
+
+        return new GroupTransitionMarkerAction(List.of(
+                new RemoveMarkerAction(oldIdentifier),
+                new AddMarkerAction(newIdentifier, label, detail)));
+    }
+
+    public SetLineMarkerAction createSetLineAction(
+            String mapId,
+            MarkerGroup markerGroup,
+            String label,
+            String detail,
+            List<LinePoint> points,
+            boolean isFirstAppearance) {
+        return new SetLineMarkerAction(
+                new LineMarkerIdentifier(label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
                 label,
-                detail);
+                detail,
+                points,
+                markerGroup.lineWidth(),
+                markerGroup.lineColor(),
+                isFirstAppearance);
+    }
+
+    public RemoveLineMarkerAction createRemoveLineAction(String mapId, MarkerGroup markerGroup, String label) {
+        return new RemoveLineMarkerAction(
+                new LineMarkerIdentifier(label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)));
     }
 
     public UpdateMarkerAction createUpdatePOIAction(

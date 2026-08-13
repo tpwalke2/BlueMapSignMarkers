@@ -30,14 +30,14 @@
 - `core/bluemap/actions/ActionFactory.java` — add `createSetLineAction(mapId, markerGroup, label, detail, points, isFirstAppearance)` and `createRemoveLineAction(mapId, markerGroup, label)`, following the existing `create*POIAction`
   pattern; `createChangeGroupPOIAction` → builds a `GroupTransitionMarkerAction`.
 
-**Status:** open
+**Status:** done
 
-- [ ] `LinePoint`, `DispatchedMarkerIdentifier`, `LineMarkerIdentifier` added
-- [ ] `MarkerAction` widened to `DispatchedMarkerIdentifier`, `getX/Y/Z()` removed, existing subtypes compile
+- [x] `LinePoint`, `DispatchedMarkerIdentifier`, `LineMarkerIdentifier` added
+- [x] `MarkerAction` widened to `DispatchedMarkerIdentifier`, `getX/Y/Z()` removed, existing subtypes compile
       unchanged
-- [ ] `SetLineMarkerAction`, `RemoveLineMarkerAction` added
-- [ ] `ChangeGroupMarkerAction` replaced by `GroupTransitionMarkerAction`; all call sites updated
-- [ ] `ActionFactory` gains `createSetLineAction`/`createRemoveLineAction`; `createChangeGroupPOIAction` updated
-- [ ] `./gradlew test` and `./gradlew build` pass (note: `BlueMapAPIConnector`'s switch statements won't have cases
+- [x] `SetLineMarkerAction`, `RemoveLineMarkerAction` added
+- [x] `ChangeGroupMarkerAction` replaced by `GroupTransitionMarkerAction`; all call sites updated
+- [x] `ActionFactory` gains `createSetLineAction`/`createRemoveLineAction`; `createChangeGroupPOIAction` updated
+- [x] `./gradlew test` and `./gradlew build` pass (note: `BlueMapAPIConnector`'s switch statements won't have cases
       for the new action types yet — that's ticket 05; confirm they still compile via the existing `default`
       fallthrough, not a compile error, per `AGENTS.md`'s note that `MarkerAction` isn't sealed)

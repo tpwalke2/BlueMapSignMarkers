@@ -4,10 +4,11 @@ import com.tpwalke2.bluemapsignmarkers.Constants;
 import com.tpwalke2.bluemapsignmarkers.common.HtmlUtils;
 import com.tpwalke2.bluemapsignmarkers.common.LogUtils;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.AddMarkerAction;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.ChangeGroupMarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.GroupTransitionMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.MarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.UpdateMarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.markers.DispatchedMarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifier;
@@ -113,6 +114,18 @@ public class BlueMapAPIConnector {
             return;
         }
 
+        if (markerAction instanceof GroupTransitionMarkerAction transitionAction) {
+            // Each effect runs here, inside the single synchronized processMarkerAction() call that
+            // dispatched the transition, so it's never observable half-applied (e.g. present in both the
+            // old and new marker group, or missing from both).
+            transitionAction.effects().forEach(this::applySingleAction);
+            return;
+        }
+
+        applySingleAction(markerAction);
+    }
+
+    private void applySingleAction(MarkerAction markerAction) {
         logProcessingMessage(markerAction);
 
         switch (markerAction) {
@@ -122,23 +135,11 @@ public class BlueMapAPIConnector {
                     applyToMarkerSets(removeAction.getMarkerIdentifier(), markerSetMaps -> removeMarker(removeAction, markerSetMaps));
             case UpdateMarkerAction updateAction ->
                     applyToMarkerSets(updateAction.getMarkerIdentifier(), markerSetMaps -> updateMarker(updateAction, markerSetMaps));
-            case ChangeGroupMarkerAction changeAction -> processChangeGroupAction(changeAction);
             default -> LOGGER.warn("Unknown marker action: {}", markerAction);
         }
     }
 
-    // Both halves run here, inside the single synchronized processMarkerAction() call that dispatched
-    // this action, so a prefix change is never observable half-applied (e.g. present in both the old
-    // and new marker group, or missing from both).
-    private void processChangeGroupAction(ChangeGroupMarkerAction changeAction) {
-        var removeAction = new RemoveMarkerAction(changeAction.getOldMarkerIdentifier());
-        applyToMarkerSets(removeAction.getMarkerIdentifier(), markerSetMaps -> removeMarker(removeAction, markerSetMaps));
-
-        var addAction = new AddMarkerAction(changeAction.getNewMarkerIdentifier(), changeAction.getLabel(), changeAction.getDetail());
-        applyToMarkerSets(addAction.getMarkerIdentifier(), markerSetMaps -> addMarker(addAction, markerSetMaps));
-    }
-
-    private void applyToMarkerSets(MarkerIdentifier markerIdentifier, Consumer<Stream<Map<String, Marker>>> consumer) {
+    private void applyToMarkerSets(DispatchedMarkerIdentifier markerIdentifier, Consumer<Stream<Map<String, Marker>>> consumer) {
         var markerSets = getMarkerSets(markerIdentifier.parentSet());
 
         if (markerSets.isEmpty()) {
@@ -155,7 +156,6 @@ public class BlueMapAPIConnector {
             case AddMarkerAction ignored -> "Adding";
             case RemoveMarkerAction ignored -> "Removing";
             case UpdateMarkerAction ignored -> "Updating";
-            case ChangeGroupMarkerAction ignored -> "Moving";
             default -> "Processing";
         };
 
@@ -164,21 +164,19 @@ public class BlueMapAPIConnector {
             detail = " with detail='" + LogUtils.sanitizeForLog(addAction.getDetail()) + "'";
         } else if (action instanceof UpdateMarkerAction updateAction) {
             detail = " to detail='" + LogUtils.sanitizeForLog(updateAction.getNewDetails()) + "'";
-        } else if (action instanceof ChangeGroupMarkerAction changeAction) {
-            detail = " from group '"
-                    + LogUtils.sanitizeForLog(changeAction.getOldMarkerIdentifier().parentSet().markerGroup().name())
-                    + "' to group '"
-                    + LogUtils.sanitizeForLog(changeAction.getNewMarkerIdentifier().parentSet().markerGroup().name())
-                    + "' with detail='" + LogUtils.sanitizeForLog(changeAction.getDetail()) + "'";
         }
 
-        LOGGER.info("{} {} type marker in {} at x={} y={} z={}{}",
+        var identifier = action.getMarkerIdentifier();
+        var position = "";
+        if (identifier instanceof MarkerIdentifier markerIdentifier) {
+            position = String.format(" at x=%d y=%d z=%d", markerIdentifier.x(), markerIdentifier.y(), markerIdentifier.z());
+        }
+
+        LOGGER.info("{} {} type marker in {}{}{}",
                 operation,
-                action.getMarkerIdentifier().parentSet().markerGroup().type(),
-                action.getMarkerIdentifier().parentSet().mapId(),
-                action.getX(),
-                action.getY(),
-                action.getZ(),
+                identifier.parentSet().markerGroup().type(),
+                identifier.parentSet().mapId(),
+                position,
                 detail);
     }
 
@@ -202,11 +200,12 @@ public class BlueMapAPIConnector {
 
     private static void addMarker(AddMarkerAction addAction, Stream<Map<String, Marker>> markerSetMaps) {
         LOGGER.debug("Adding marker...");
-        var markerGroup = addAction.getMarkerIdentifier().parentSet().markerGroup();
+        var identifier = (MarkerIdentifier) addAction.getMarkerIdentifier();
+        var markerGroup = identifier.parentSet().markerGroup();
         if (markerGroup.type() == MarkerGroupType.POI) {
             LOGGER.debug("Adding POI marker...");
             var markerBuilder = POIMarker.builder()
-                    .position(addAction.getX(), addAction.getY(), addAction.getZ())
+                    .position(identifier.x(), identifier.y(), identifier.z())
                     .label(addAction.getLabel())
                     .detail(HtmlUtils.toHtmlDetail(addAction.getDetail()));
 
@@ -214,12 +213,12 @@ public class BlueMapAPIConnector {
                 markerBuilder.icon(markerGroup.icon(), markerGroup.offsetX(), markerGroup.offsetY());
             }
 
-            LOGGER.debug("Adding marker (id {}) to marker set: {}", addAction.getMarkerIdentifier().getId(), markerSetMaps);
+            LOGGER.debug("Adding marker (id {}) to marker set: {}", identifier.getId(), markerSetMaps);
             markerSetMaps.forEach(stringMarkerMap -> {
                 var marker = markerBuilder.build();
                 marker.setMinDistance(markerGroup.minDistance());
                 marker.setMaxDistance(markerGroup.maxDistance());
-                stringMarkerMap.put(addAction.getMarkerIdentifier().getId(), marker);
+                stringMarkerMap.put(identifier.getId(), marker);
             });
         }
     }

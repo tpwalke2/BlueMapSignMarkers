@@ -3,10 +3,12 @@ package com.tpwalke2.bluemapsignmarkers.core.bluemap.actions;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupMatchType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifierCollection;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 class ActionFactoryTest {
@@ -17,12 +19,13 @@ class ActionFactoryTest {
         var group = markerGroup("[poi]");
 
         var action = factory.createAddPOIAction(1, 2, 3, "world", "label", "detail", group);
+        var identifier = (MarkerIdentifier) action.getMarkerIdentifier();
 
-        assertEquals(1, action.getMarkerIdentifier().x());
-        assertEquals(2, action.getMarkerIdentifier().y());
-        assertEquals(3, action.getMarkerIdentifier().z());
-        assertEquals("world", action.getMarkerIdentifier().parentSet().mapId());
-        assertEquals(group, action.getMarkerIdentifier().parentSet().markerGroup());
+        assertEquals(1, identifier.x());
+        assertEquals(2, identifier.y());
+        assertEquals(3, identifier.z());
+        assertEquals("world", identifier.parentSet().mapId());
+        assertEquals(group, identifier.parentSet().markerGroup());
         assertEquals("label", action.getLabel());
         assertEquals("detail", action.getDetail());
     }
@@ -33,12 +36,13 @@ class ActionFactoryTest {
         var group = markerGroup("[poi]");
 
         var action = factory.createRemovePOIAction(1, 2, 3, "world", group);
+        var identifier = (MarkerIdentifier) action.getMarkerIdentifier();
 
-        assertEquals(1, action.getMarkerIdentifier().x());
-        assertEquals(2, action.getMarkerIdentifier().y());
-        assertEquals(3, action.getMarkerIdentifier().z());
-        assertEquals("world", action.getMarkerIdentifier().parentSet().mapId());
-        assertEquals(group, action.getMarkerIdentifier().parentSet().markerGroup());
+        assertEquals(1, identifier.x());
+        assertEquals(2, identifier.y());
+        assertEquals(3, identifier.z());
+        assertEquals("world", identifier.parentSet().mapId());
+        assertEquals(group, identifier.parentSet().markerGroup());
     }
 
     @Test
@@ -47,32 +51,40 @@ class ActionFactoryTest {
         var group = markerGroup("[poi]");
 
         var action = factory.createUpdatePOIAction(1, 2, 3, "world", "new label", "new detail", group);
+        var identifier = (MarkerIdentifier) action.getMarkerIdentifier();
 
-        assertEquals(1, action.getMarkerIdentifier().x());
-        assertEquals(2, action.getMarkerIdentifier().y());
-        assertEquals(3, action.getMarkerIdentifier().z());
-        assertEquals("world", action.getMarkerIdentifier().parentSet().mapId());
-        assertEquals(group, action.getMarkerIdentifier().parentSet().markerGroup());
+        assertEquals(1, identifier.x());
+        assertEquals(2, identifier.y());
+        assertEquals(3, identifier.z());
+        assertEquals("world", identifier.parentSet().mapId());
+        assertEquals(group, identifier.parentSet().markerGroup());
         assertEquals("new label", action.getNewLabel());
         assertEquals("new detail", action.getNewDetails());
     }
 
     @Test
-    void createChangeGroupPOIActionBuildsBothMarkerIdentifiersAndActionFields() {
+    void createChangeGroupPOIActionBuildsARemoveAndAddEffectPair() {
         var factory = new ActionFactory(new MarkerSetIdentifierCollection());
         var oldGroup = markerGroup("[event]");
         var newGroup = markerGroup("[poi]");
 
         var action = factory.createChangeGroupPOIAction(1, 2, 3, "world", "label", "detail", oldGroup, newGroup);
 
-        assertEquals(oldGroup, action.getOldMarkerIdentifier().parentSet().markerGroup());
-        assertEquals(newGroup, action.getNewMarkerIdentifier().parentSet().markerGroup());
-        assertEquals(1, action.getNewMarkerIdentifier().x());
-        assertEquals(2, action.getNewMarkerIdentifier().y());
-        assertEquals(3, action.getNewMarkerIdentifier().z());
-        assertEquals("world", action.getOldMarkerIdentifier().parentSet().mapId());
-        assertEquals("label", action.getLabel());
-        assertEquals("detail", action.getDetail());
+        assertEquals(2, action.effects().size());
+        var removeAction = assertInstanceOf(RemoveMarkerAction.class, action.effects().get(0));
+        var addAction = assertInstanceOf(AddMarkerAction.class, action.effects().get(1));
+
+        var oldIdentifier = (MarkerIdentifier) removeAction.getMarkerIdentifier();
+        var newIdentifier = (MarkerIdentifier) addAction.getMarkerIdentifier();
+
+        assertEquals(oldGroup, oldIdentifier.parentSet().markerGroup());
+        assertEquals(newGroup, newIdentifier.parentSet().markerGroup());
+        assertEquals(1, newIdentifier.x());
+        assertEquals(2, newIdentifier.y());
+        assertEquals(3, newIdentifier.z());
+        assertEquals("world", oldIdentifier.parentSet().mapId());
+        assertEquals("label", addAction.getLabel());
+        assertEquals("detail", addAction.getDetail());
     }
 
     @Test
