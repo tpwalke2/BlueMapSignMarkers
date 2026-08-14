@@ -52,6 +52,16 @@ public class BlueMapAPIConnector {
     private volatile ReactiveQueue<MarkerAction> markerActionQueue;
     private volatile Map<MarkerSetIdentifier, List<MarkerSet>> markerSetsCache;
     private volatile BlueMapAPI blueMapAPI;
+    // Tracks whether onDisable() has actually run since the last onEnable(), so onEnable() can tell a
+    // genuine BlueMap disable/re-enable cycle (a real reload, which must resetQueue()/fireReset() to
+    // re-diff signCache against the reloaded config) apart from the very first onEnable() a server ever
+    // sees. markerActionQueue.isShutdown() used to be used for this instead, but it also reports true for
+    // a brand-new queue whose executor was never lazily created - which is exactly what happens when
+    // SERVER_STARTING dispatches actions for every migrated/loaded sign before BlueMap is available:
+    // process() returns early (shouldRun() false) without ever creating an executor, so the first onEnable()
+    // saw isShutdown()==true and mistook startup for a reload, replacing markerActionQueue with an empty one
+    // and discarding every action enqueued during sign load before a single one was ever processed.
+    private volatile boolean disabledSinceLastEnable;
     private final List<IResetHandler> resetHandlers = new ArrayList<>();
     // BlueMapAPI.unregisterListener(Consumer) removes by equals/hashCode, and a method reference has no
     // custom equals - two `this::onEnable` expressions are distinct objects under default identity equality.
@@ -269,7 +279,8 @@ public class BlueMapAPIConnector {
     private void onEnable(BlueMapAPI api) {
         this.blueMapAPI = api;
 
-        if (markerActionQueue.isShutdown()) {
+        if (disabledSinceLastEnable) {
+            disabledSinceLastEnable = false;
             resetQueue();
 
             fireReset();
@@ -279,6 +290,7 @@ public class BlueMapAPIConnector {
     }
 
     private void onDisable(BlueMapAPI api) {
+        disabledSinceLastEnable = true;
         markerActionQueue.shutdown();
     }
 
