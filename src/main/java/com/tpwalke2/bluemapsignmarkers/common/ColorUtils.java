@@ -8,11 +8,11 @@ public class ColorUtils {
     // Accepts "#RRGGBB" or "#RRGGBBAA" (leading '#' optional). Falls back to opaque red on any
     // malformed input rather than throwing - a bad config value must not crash the server.
     public static int[] parseHex(String hex) {
-        if (hex == null) return DEFAULT_COLOR;
+        if (hex == null) return defaultColor();
 
         var stripped = hex.startsWith("#") ? hex.substring(1) : hex;
 
-        if (stripped.length() != 6 && stripped.length() != 8) return DEFAULT_COLOR;
+        if (stripped.length() != 6 && stripped.length() != 8) return defaultColor();
 
         try {
             var r = Integer.parseInt(stripped.substring(0, 2), 16);
@@ -21,8 +21,12 @@ public class ColorUtils {
             var a = stripped.length() == 8 ? Integer.parseInt(stripped.substring(6, 8), 16) : 255;
             return new int[]{r, g, b, a};
         } catch (NumberFormatException e) {
-            return DEFAULT_COLOR;
+            return defaultColor();
         }
+    }
+
+    private static int[] defaultColor() {
+        return DEFAULT_COLOR.clone();
     }
 
     // True for "#RRGGBB"/"#RRGGBBAA" (leading '#' optional), same shape parseHex accepts.

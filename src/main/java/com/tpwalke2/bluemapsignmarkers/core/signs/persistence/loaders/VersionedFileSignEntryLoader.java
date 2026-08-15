@@ -51,9 +51,8 @@ public class VersionedFileSignEntryLoader {
 
                 if (!FileUtils.createBackup(path, ".v2.bak", "markers file")) {
                     LOGGER.error(
-                            "Failed to back up markers file {} before v2-to-v4 migration; aborting migration to "
-                                    + "avoid overwriting the original with no recoverable backup", path);
-                    return null;
+                            "Failed to back up markers file {} before v2-to-v4 migration; continuing to load the "
+                                    + "entries in-memory without a backup", path);
                 }
 
                 return convertV3EntriesToV4(signEntriesV3, path);
@@ -63,9 +62,8 @@ public class VersionedFileSignEntryLoader {
 
                 if (!FileUtils.createBackup(path, ".v3.bak", "markers file")) {
                     LOGGER.error(
-                            "Failed to back up markers file {} before v3-to-v4 migration; aborting migration to "
-                                    + "avoid overwriting the original with no recoverable backup", path);
-                    return null;
+                            "Failed to back up markers file {} before v3-to-v4 migration; continuing to load the "
+                                    + "entries in-memory without a backup", path);
                 }
 
                 return convertV3EntriesToV4(signEntriesV3, path);
