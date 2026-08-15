@@ -1,6 +1,6 @@
 # Plan: fix findings #1 and #2 from adversarial review (2026-08-14)
 
-Source: `agent-context/plans/adversarial-review-feature-tpwalke2-7-line-markers-2026-08-14.md`
+Source: `../reviews/adversarial-review-feature-tpwalke2-7-line-markers-2026-08-14.md`
 
 ## Finding #1 — LINE/LINE no-op edits always redispatch
 

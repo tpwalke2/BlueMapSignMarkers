@@ -158,12 +158,12 @@ should stay thin glue around the testable core, since it can only be verified ma
 
 `BlueMapAPIConnector` escapes sign text (`HtmlUtils.toHtmlDetail`, in `common`) before it reaches BlueMap's POI
 marker `detail` field — BlueMap renders `detail` as raw HTML (unlike `label`, which BlueMap escapes itself), and
-sign text is player-controlled, so this closes a live XSS vector. See `plans/html-detail-escaping-plan.md` for the
+sign text is player-controlled, so this closes a live XSS vector. See `agent-context/plans/html-detail-escaping-plan.md` for the
 design. Persisted sign data stays raw/unescaped; escaping happens only at this BlueMap API call site.
 
 ## Planning documents
 
-Design/implementation plans for larger pieces of work are written to the `plans/` folder before being implemented,
+Design/implementation plans for larger pieces of work are written to the `agent-context/plans/` folder before being implemented,
 so they can be reviewed independently of the eventual code change.
 
 ## Agent skills

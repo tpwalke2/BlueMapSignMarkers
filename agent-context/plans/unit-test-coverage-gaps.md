@@ -3,7 +3,7 @@
 ## Context
 
 Prior to a planned concurrency-hardening pass on `ReactiveQueue` / `MarkerSetIdentifierCollection` /
-`BlueMapAPIConnector` (tracked separately — see `plans/codebase-review-2026-07-11.md` findings #5, #10, #11, #12,
+`BlueMapAPIConnector` (tracked separately — see `codebase-review-2026-07-11.md` findings #5, #10, #11, #12,
 #16), we want confidence that current behavior across the testable core is already locked in by tests. This is an
 inventory of every class that qualifies as unit-testable per AGENTS.md's "Testable vs. game-coupled code" section
 (plain Java, no Minecraft/Fabric/BlueMap API types in its signature) and currently has no test coverage, or only
@@ -51,7 +51,7 @@ partial coverage, plus a few items that look like test gaps but aren't.
   #16), so concurrent first-time callers can each construct and return their own instance instead of converging on
   one. Left `@Disabled` at the time, pointing at finding #16, so `./gradlew test` stayed green; re-enabled
   2026-07-22 once the concurrency-hardening pass made `getIdentifier()` `synchronized`, making that check-then-act
-  sequence atomic — see finding #16's Resolved note in `plans/codebase-review-2026-07-11.md`.
+  sequence atomic — see finding #16's Resolved note in `ase-review-2026-07-11.md`.
 - **`ActionFactory`** (`core/bluemap/actions/ActionFactory.java`) — DONE. `ActionFactoryTest` (5 cases, no production
   changes needed — already plain Java) covers: `createAddPOIAction`/`createRemovePOIAction`/`createUpdatePOIAction`
   each build the right `MarkerIdentifier` (x/y/z, `parentSet` carrying the given mapId/markerGroup) and action-specific
@@ -156,7 +156,7 @@ partial coverage, plus a few items that look like test gaps but aren't.
 
 ## Not test gaps — flagged for a different disposition
 
-- **`ServerPathProvider`** — confirmed dead code (no implementers, no callers anywhere in `src/`). Consider removing
+- **`ServerPathProvider`** — confirmed dead code (no implementers, no callers anywhere in `../../src`). Consider removing
   rather than testing, per the existing review finding.
 - **`SignManager`, `BlueMapAPIConnector`, `SignHelper`, `BlueMapSignMarkersMod`, the two Mixins** — game-coupled per
   AGENTS.md; no automated coverage possible without a bootstrapped Minecraft/Fabric/BlueMap environment. Remain

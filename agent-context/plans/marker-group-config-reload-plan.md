@@ -2,7 +2,7 @@
 
 ## Context
 
-Today, per `agent-context/context/config-and-persistence.md`: "Config is not hot-reloadable — a config file edit
+Today, per `../context/config-and-persistence.md`: "Config is not hot-reloadable — a config file edit
 requires a server restart." Three independent snapshots of marker-group config are taken once and never refreshed:
 
 1. `ConfigManager.coreConfig` (`config/ConfigManager.java:10`) — `static final`, loaded once at class-init.
@@ -117,7 +117,7 @@ private void reloadConfig() {
 `reloadConfig()` runs before `reloadSigns()` so the replay dispatches with the fresh group values.
 
 Rebuilding `actionFactory`/`MarkerSetIdentifierCollection` (rather than reusing the existing one) closes the "cache-key
-growth risk" flagged in `plans/codebase-review-2026-07-11.md:248-250`: `MarkerSetIdentifier`/`markerSetsCache` key on
+growth risk" flagged in `/codebase-review-2026-07-11.md:248-250`: `MarkerSetIdentifier`/`markerSetsCache` key on
 the *entire* `MarkerGroup` record by value, so a changed icon/offset/distance produces a new, never-evicted entry in
 a long-lived cache — starting a fresh `MarkerSetIdentifierCollection` on every reload means it never accumulates
 entries for group values from before the last reload. This pairs with `BlueMapAPIConnector.resetQueue()`, which
@@ -163,7 +163,7 @@ on reload," the case this plan targets.
 ## Out of scope
 
 - Fixing `SignManager`'s non-`volatile` singleton `instance` field (double-checked locking bug flagged separately in
-  `plans/codebase-review-2026-07-11.md`) — pre-existing, unrelated to config reload.
+  `ase-review-2026-07-11.md`) — pre-existing, unrelated to config reload.
 - A config file watcher / auto-reload without `/bluemap reload` — not requested; this rides the existing
   `IResetHandler` reset signal, the only reload trigger the mod has.
 - Fully resolving the group-rename duplicate-marker-set edge case above.

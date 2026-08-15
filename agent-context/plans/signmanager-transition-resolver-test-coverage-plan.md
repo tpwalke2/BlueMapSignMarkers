@@ -1,6 +1,6 @@
 # Plan: Extract & test `SignManager`'s transition table
 
-Addresses finding #4 from `agent-context/plans/adversarial-review-feature-tpwalke2-7-line-markers-2026-08-14.md`:
+Addresses finding #4 from `../reviews/adversarial-review-feature-tpwalke2-7-line-markers-2026-08-14.md`:
 `computeTransitionAction` (the "decision point" per AGENTS.md) has zero automated test coverage. Findings #1-3 from
 that same review were regressions this table's logic already caused once; a table-driven test is the safety net
 that would have caught them before merge.
@@ -40,7 +40,7 @@ behavior change.
 
 ### 3. New test: `src/test/java/.../core/signs/SignTransitionResolverTest.java`
 
-Table-driven, one test per row/sub-branch of the transition table in `.scratch/line-markers/spec.md` §6. Build
+Table-driven, one test per row/sub-branch of the transition table in `../../.scratch/line-markers/spec.md` §6. Build
 `Representation`s only via `computeRepresentation(SignEntry, Map<String, MarkerGroup>)` (mirrors how `SignManager`
 itself gets them) rather than reaching into the private record. Reuse the `signEntry(...)` test-helper pattern
 from `LineGroupResolverTest`.
@@ -76,7 +76,7 @@ effects) — no `equals()`/`hashCode()` added to `MarkerAction` subclasses just 
   refactor, left for its own pass.
 - No behavior change: this is a mechanical extraction plus new tests. If a test fails, it means the *existing*
   logic doesn't do what the spec says — fix the test to match intended behavior only after confirming against
-  `.scratch/line-markers/spec.md` §6, not by loosening the assertion.
+  `../../.scratch/line-markers/spec.md` §6, not by loosening the assertion.
 
 ## Verification
 

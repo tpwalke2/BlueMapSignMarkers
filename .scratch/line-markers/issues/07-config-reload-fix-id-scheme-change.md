@@ -36,7 +36,7 @@ calling `reloadSigns()`.
 - [x] `reloadConfig()` no longer calls `signCache.clear()`/`chunkIndex.clear()`; diffs old-vs-new representation
       per cached sign instead
 - [x] Existing reload behavior (icon/offset/distance/visibility changes, same id scheme) has no regression — still
-      covered by `plans/marker-group-config-reload-plan.md`'s verification checklist
+      covered by `../../../agent-context/plans/marker-group-config-reload-plan.md`'s verification checklist
 - [ ] Flipping a group's `type` between `POI`/`LINE` in config (same signs, unchanged text) + `/bluemap reload`
       leaves no orphaned marker in BlueMap's web UI, either direction
 - [x] `./gradlew build` passes; manual verification via `runServer` (this path is game/API-coupled, no automated

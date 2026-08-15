@@ -38,7 +38,13 @@ File: `config/bluemapsignmarkers/BMSM-Core.json`. Path is fixed (not per-world) 
      runtime `MarkerGroup` via `convertToLoadedMarkerGroup`, which applies defaults per-field (`matchType` →
      `STARTS_WITH`, `type` → `POI`, `offsetX`/`offsetY` → `0`, `defaultHidden` → `false`, `minDistance` → `0.0`,
      `maxDistance` → `10000000.0`, `lineWidth` → `2`, `lineColor` → `"#FF0000FF"` — the last two are the line-markers
-     addition, mirroring BlueMap's own `LineMarker` defaults). This two-model split (`LoadingMarkerGroupV2`
+     addition, mirroring BlueMap's own `LineMarker` defaults). `lineWidth`/`lineColor` go through their own
+     validating resolvers (`resolveLineWidth`/`resolveLineColor`) rather than a plain null-check default: a
+     non-positive `lineWidth` (`<= 0`) or a `lineColor` that fails `ColorUtils.isValidHex` (accepts `#RRGGBB`/
+     `#RRGGBBAA`, leading `#` optional — the same shape `ColorUtils.parseHex` accepts) logs a warning naming the
+     group and falls back to the default, instead of the malformed value reaching `ActionFactory`/BlueMap's
+     `LineMarker` unnoticed (silently caught later only at dispatch time by `ColorUtils.parseHex`'s own fallback).
+     This two-model split (`LoadingMarkerGroupV2`
      boxed/nullable vs. `MarkerGroup` primitive) exists so a partially-specified group in user JSON gets these
      explicit defaults rather than Gson silently zeroing missing primitive fields. `validateMarkerGroups` then fails
      fast (`IllegalArgumentException`, caught by the catch-all below) on an empty prefix, a `REGEX` prefix that
@@ -62,7 +68,7 @@ Storage root is **per-world, region-sharded**: `{server_root}/bluemapsignmarkers
 {dimension_path}/r.{regionX}.{regionZ}.json` — one JSON file per (dimension, 32x32-chunk region), e.g.
 `{server_root}/bluemapsignmarkers/world/minecraft/overworld/r.0.0.json`. Design rationale, rejected alternatives
 (SQLite, H2, LMDB/MapDB, store-by-player, in-memory-only chunk index), and migration considerations are in
-`plans/region-sharded-sign-persistence-plan.md`. This replaced the prior single-file-per-world layout
+`../plans/region-sharded-sign-persistence-plan.md`. This replaced the prior single-file-per-world layout
 (`config/bluemapsignmarkers/<name>/signs.json`) so a future reconciliation feature (detecting signs whose chunk was
 externally deleted/regenerated — GitHub issue #109) can query "signs known in this region" cheaply instead of
 scanning every cached sign; that reconciliation logic itself is not yet implemented.
@@ -73,7 +79,7 @@ scanning every cached sign; that reconciliation logic itself is not yet implemen
 `LevelResource.ROOT`'s relative path is literally `"."`, which `Path.resolve()` doesn't collapse on its own —
 skipping it shifts `getParent()`/`getFileName()` by one level and lands the storage root inside the world save
 folder instead of beside it. This also fixed a pre-existing bug where the old path formula's extra `.getParent()`
-resolved to the *run directory's* name, not the level name (`plans/codebase-review-2026-07-11.md` finding #1).
+resolved to the *run directory's* name, not the level name (`../plans/codebase-review-2026-07-11.md` finding #1).
 `BlueMapSignMarkersMod.getLegacyMarkerFilePath` intentionally keeps the old (buggy) formula unchanged — migration
 must locate files at the path they were actually written to, not the corrected one.
 
@@ -195,5 +201,5 @@ in place. Old region files (or a not-yet-migrated legacy `signs.json`) on live s
 the version they were written with.
 
 ---
-*Last updated: 2026-08-13 | Verified against: main (374d6db)*
+*Last updated: 2026-08-15 | Verified against: feature/tpwalke2/7-line-markers (c8e58ca)*
 

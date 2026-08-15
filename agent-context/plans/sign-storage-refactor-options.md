@@ -2,7 +2,7 @@
 
 ## Context
 
-`SignManager` (`src/main/java/com/tpwalke2/bluemapsignmarkers/core/signs/SignManager.java`, `signCache` field) holds
+`SignManager` (`../../src/main/java/com/tpwalke2/bluemapsignmarkers/core/signs/SignManager.java`, `signCache` field) holds
 the only in-memory copy of known signs: a single flat `ConcurrentHashMap<SignEntryKey, SignEntry>` (`signCache`). Each
 `SignEntry` (`core/signs/SignEntry.java`) carries `playerId` plus parsed front/back text
 (`SignLinesParseResult`: prefix/label/detail, `core/signs/SignLinesParseResult.java`). BlueMap itself only ever
@@ -36,7 +36,7 @@ is the only source of truth for three things a marker-only view can't provide:
    There is no "ask BlueMap for current markers" path — the mod must be able to resend everything from its own
    state.
 3. **Persistence.** `signs.json` (region-sharded per
-   `plans/region-sharded-sign-persistence-plan.md`) is written from `SignManager.getAll()`. Nothing about BlueMap
+   `n-sharded-sign-persistence-plan.md`) is written from `SignManager.getAll()`. Nothing about BlueMap
    survives a server restart for this mod's purposes; this cache is what does.
 
 Removing the original copy isn't on the table. The only real question is whether its *layout* is worth changing.
@@ -60,7 +60,7 @@ Removing the original copy isn't on the table. The only real question is whether
 - Pros: conceptually matches the disk layout; would let reset/save scope to a single dimension if that ever became
   a requirement.
 - Cons: adds a second map hop to every lookup for a capability nothing currently uses — `reset()` and save/load are
-  whole-world operations today, not per-dimension. `plans/region-sharded-sign-persistence-plan.md` explicitly chose
+  whole-world operations today, not per-dimension. `n-sharded-sign-persistence-plan.md` explicitly chose
   to leave the in-memory map as-is for this reason, deferring a region-indexed in-memory view to whichever future
   feature (chunk-reset reconciliation) actually consumes it. Speculative generality with no current caller.
 

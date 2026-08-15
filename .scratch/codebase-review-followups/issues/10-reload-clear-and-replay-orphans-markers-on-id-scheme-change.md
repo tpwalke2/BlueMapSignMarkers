@@ -18,7 +18,7 @@ entries inside a `MarkerSet` BlueMap already returned and populated.
 
 Not yet user-visible: today every marker this mod creates is a POI marker with a position-based id, so no code path
 can actually trigger this. It becomes live the moment a second marker id scheme is introduced —
-`plans/line-markers-plan.md` (§7 "Config reload") hits this directly, since a line marker's id is
+`../../../agent-context/plans/line-markers-plan.md` (§7 "Config reload") hits this directly, since a line marker's id is
 `"line:" + label` (content-keyed, not position-keyed), and a marker group's `type` flipping between `POI` and
 `LINE` in config (existing signs, unchanged sign text) is exactly the scenario that orphans a marker under the plan
 as originally scoped.
@@ -33,7 +33,7 @@ unnecessary `chunkIndex.clear()`/rebuild, since no sign keys actually change dur
 **Blocked by:** None. The fix itself doesn't require `LINE` markers to exist — it can be built today using only
 `POI` representations (`null` or `POI(group, label, detail)`): `reloadConfig()` dispatches an explicit remove-old +
 add-new only when a sign's representation actually changes between reloads, instead of blindly clearing and
-replaying. What *does* require a second id scheme (i.e. `plans/line-markers-plan.md` landing) is **verifying** the
+replaying. What *does* require a second id scheme (i.e. `../../../agent-context/plans/line-markers-plan.md` landing) is **verifying** the
 fix — there's no way to trigger an id-scheme change today, since every marker this mod creates is POI,
 position-keyed, always, so there's nothing to repro against yet. Landing this standalone now would be defensively
 correct but untestable until then; landing it alongside the line-markers work makes it verifiable immediately, since
@@ -43,7 +43,7 @@ works — this ticket doesn't gate the plan, and the plan doesn't gate this tick
 **Status:** resolved
 
 - [x] `reloadConfig()` no longer calls `signCache.clear()`/`chunkIndex.clear()`; it diffs old-vs-new representation per cached sign instead
-- [x] Existing reload behavior (icon/offset/distance/visibility changes, same id scheme) has no regression — still covered by the scenarios in `plans/marker-group-config-reload-plan.md`'s verification checklist
+- [x] Existing reload behavior (icon/offset/distance/visibility changes, same id scheme) has no regression — still covered by the scenarios in `../../../agent-context/plans/marker-group-config-reload-plan.md`'s verification checklist
 - [ ] Once a second id scheme exists (line markers, or any future addition), a config change that alters a sign's marker id scheme between reloads leaves no orphaned marker in BlueMap's web UI
 - [x] A regression test or manual verification step confirms the fix — likely manual only for the reload path itself (`SignManager`/`BlueMapAPIConnector` are game/API-coupled with no automated coverage per `AGENTS.md`), though the old-vs-new representation diffing logic itself may be extractable into something unit-testable (manual `runServer` verification still pending)
 
@@ -55,7 +55,7 @@ the implementation description.
 
 ## Comments
 
-Found while writing `plans/line-markers-plan.md` — tracing the reload path in detail to work out how a marker
+Found while writing `../../../agent-context/plans/line-markers-plan.md` — tracing the reload path in detail to work out how a marker
 group's `type` flip (`POI`↔`LINE`) should behave on `/bluemap reload` surfaced this as a pre-existing structural
 fragility in `reloadSigns()`, not something new to the line-markers feature itself. Filing separately from the plan
 so it's visible/trackable and fixable on its own schedule, rather than implying it can only be addressed as part of
