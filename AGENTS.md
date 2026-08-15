@@ -74,17 +74,22 @@ Two Mixins (`src/main/resources/bluemapsignmarkers.mixins.json`) catch the event
 2. **`SignManager`** (singleton, holds a `ConcurrentMap<SignEntryKey, SignEntry>` cache of all known signs) is the
    decision point. For a given sign it computes a `Representation` (group, label, detail; `null` if no group
    matches) both before and after the change, then looks up the (old, new) `Representation` pair in a transition
-   table (`computeTransitionAction`) to get the single `MarkerAction` to dispatch — covering plain add/update/remove,
+   table (`SignTransitionResolver.computeTransitionAction`) to get the single `MarkerAction` to dispatch — covering
+   plain add/update/remove,
    a prefix change moving a sign between groups, and a `POI`↔`LINE` group `type` flip, all as the same kind of
    representation diff. `LINE` groups additionally dispatch `SetLineMarkerAction`/`RemoveLineMarkerAction`/
    `GroupTransitionMarkerAction` (built via `ActionFactory`) when a sign joins/leaves a line (see
    `LineGroupResolver` below). It also implements `IResetHandler.reset()`, which BlueMap fires on `/bluemap reload`:
    reloads config (`ConfigManager.reload()`, `SignHelper.reloadParser()`, rebuilding its prefix→group lookup and
    `ActionFactory`), captures the prefix→group map as it was before the swap, then for each cached `SignEntry` runs
-   the same old-vs-new `Representation` diff through `computeTransitionAction` — so an edited marker-group's
+   the same old-vs-new `Representation` diff through `SignTransitionResolver.computeTransitionAction` — so an edited marker-group's
    icon/offset/visibility/prefix/type takes effect without a server restart, and without leaving an orphaned marker
    behind when a sign's marker id scheme changes between reloads. `signCache`/`chunkIndex` are never cleared for a
-   reload since no sign keys change.
+   reload since no sign keys change. The `Representation` record and the transition table itself live in
+   `SignTransitionResolver` (a static-utility class, same shape as `LineGroupResolver`), not on `SignManager` —
+   `SignManager` can't be unit tested directly (its constructor builds a `BlueMapAPIConnector`, which touches live
+   `BlueMapAPI` static state), but the transition table has no Minecraft/Fabric/BlueMap types in its signature, so
+   extracting it makes it directly testable (`SignTransitionResolverTest`).
 3. **`BlueMapAPIConnector`** owns the `ReactiveQueue<MarkerAction>` and all actual BlueMap API calls. Because the
    BlueMap API is only available while BlueMap itself is enabled, actions are queued and only drained
    (`markerActionQueue.process()`) while `BlueMapAPI.getInstance().isPresent()`; `BlueMapAPI.onEnable`/`onDisable`
@@ -145,7 +150,7 @@ When adding logic, prefer keeping it in plain Java classes with no Minecraft/Fab
 signature (like `SignLinesParser`/`ParsingContext`, `SignEntry`/`SignEntryHelper`, `SignChunkKey`/`SignChunkIndex`,
 `MarkerGroup`/`MarkerGroupMatchType`, `ConfigManager`/`ConfigProvider`, `ReactiveQueue`, `HtmlUtils`, `FileUtils`,
 the persistence loaders/converters (including `Version1SignEntryLoader`, `Version4Converter`),
-`ActionFactory`/`MarkerSetIdentifierCollection`, `LineGroupResolver`, `ColorUtils`,
+`ActionFactory`/`MarkerSetIdentifierCollection`, `LineGroupResolver`, `SignTransitionResolver`, `ColorUtils`,
 `DispatchedMarkerIdentifier`/`LineMarkerIdentifier`/`LinePoint`) — these can be unit tested directly (see
 `src/test/java/.../core/signs/SignLinesParserTest.java` for the pattern).
 Code that must reference game types (`SignHelper`, the mixins, `BlueMapSignMarkersMod`, `BlueMapAPIConnector`)
