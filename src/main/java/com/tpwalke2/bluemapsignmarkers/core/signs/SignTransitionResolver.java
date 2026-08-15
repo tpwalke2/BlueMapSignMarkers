@@ -54,7 +54,8 @@ public class SignTransitionResolver {
             SignEntryKey key,
             Representation oldRep,
             Representation newRep,
-            ActionFactory actionFactory) {
+            ActionFactory actionFactory,
+            boolean isReload) {
         if (oldRep == null && newRep == null) return null;
 
         if (oldRep == null) {
@@ -75,17 +76,19 @@ public class SignTransitionResolver {
         if (oldType == MarkerGroupType.POI && newType == MarkerGroupType.POI) {
             if (oldRep.group().prefix().equals(newRep.group().prefix())) {
                 var unchanged = oldRep.label().equals(newRep.label()) && oldRep.detail().equals(newRep.detail());
-                return unchanged
-                        ? null
-                        : actionFactory.createUpdatePOIAction(key.x(), key.y(), key.z(), key.parentMap(), newRep.label(), newRep.detail(), newRep.group());
+                if (unchanged) {
+                    return isReload
+                            ? actionFactory.createAddPOIAction(key.x(), key.y(), key.z(), key.parentMap(), newRep.label(), newRep.detail(), newRep.group())
+                            : null;
+                }
+                return actionFactory.createUpdatePOIAction(key.x(), key.y(), key.z(), key.parentMap(), newRep.label(), newRep.detail(), newRep.group());
             }
             return actionFactory.createChangeGroupPOIAction(key.x(), key.y(), key.z(), key.parentMap(), newRep.label(), newRep.detail(), oldRep.group(), newRep.group());
         }
 
         if (oldType == MarkerGroupType.LINE && newType == MarkerGroupType.LINE && sameGroupAndLabel(oldRep, newRep)) {
-            return oldRep.detail().equals(newRep.detail())
-                    ? null
-                    : lineJoinAction(allSigns, key.parentMap(), newRep, actionFactory, true);
+            if (oldRep.detail().equals(newRep.detail()) && !isReload) return null;
+            return lineJoinAction(allSigns, key.parentMap(), newRep, actionFactory, true);
         }
 
         var effects = new ArrayList<MarkerAction>(2);

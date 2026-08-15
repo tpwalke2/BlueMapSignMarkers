@@ -129,7 +129,7 @@ public class SignManager implements IResetHandler {
             }
         }
 
-        var action = SignTransitionResolver.computeTransitionAction(getAllSigns(), key, oldRep, newRep, actionFactory);
+        var action = SignTransitionResolver.computeTransitionAction(getAllSigns(), key, oldRep, newRep, actionFactory, false);
         if (action != null) {
             LOGGER.debug("Dispatching marker action for {}: {}", key, action);
             blueMapAPIConnector.dispatch(action);
@@ -148,7 +148,7 @@ public class SignManager implements IResetHandler {
 
         var config = runtimeConfig;
         var oldRep = SignTransitionResolver.computeRepresentation(removed, config.prefixGroupMap());
-        var action = SignTransitionResolver.computeTransitionAction(getAllSigns(), key, oldRep, null, config.actionFactory());
+        var action = SignTransitionResolver.computeTransitionAction(getAllSigns(), key, oldRep, null, config.actionFactory(), false);
         if (action != null) {
             LOGGER.debug("Dispatching marker action for {}: {}", key, action);
             blueMapAPIConnector.dispatch(action);
@@ -189,7 +189,7 @@ public class SignManager implements IResetHandler {
         for (SignEntry entry : allSigns) {
             var oldRep = SignTransitionResolver.computeRepresentation(entry, oldPrefixGroupMap);
             var newRep = SignTransitionResolver.computeRepresentation(entry, newConfig.prefixGroupMap());
-            var action = SignTransitionResolver.computeTransitionAction(allSigns, entry.key(), oldRep, newRep, newConfig.actionFactory());
+            var action = SignTransitionResolver.computeTransitionAction(allSigns, entry.key(), oldRep, newRep, newConfig.actionFactory(), true);
             if (action != null) {
                 LOGGER.debug("Dispatching marker action for {}: {}", entry.key(), action);
                 blueMapAPIConnector.dispatch(action);
