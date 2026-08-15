@@ -205,9 +205,14 @@ public class ConfigProvider {
 
     // Falls back to the default width on a non-positive value rather than throwing - a bad config value
     // must not crash the server (same treatment as ColorUtils.parseHex's fallback on a malformed color).
+    // Only validated for LINE groups - lineWidth is ignored for POI groups (warnOnTypeFieldMismatches already
+    // warns about it being set), so validating it here too would just be a second, confusing warning.
     private static int resolveLineWidth(LoadingMarkerGroupV2 markerGroup) {
         var lineWidth = markerGroup.lineWidth();
         if (lineWidth == null) return DEFAULT_LINE_WIDTH;
+
+        var type = markerGroup.type() == null ? MarkerGroupType.POI : markerGroup.type();
+        if (type != MarkerGroupType.LINE) return lineWidth;
 
         if (lineWidth <= 0) {
             LOGGER.warn("Marker group '{}' has a non-positive 'lineWidth' ({}); falling back to default {}",
@@ -220,11 +225,15 @@ public class ConfigProvider {
 
     // Warns and falls back to the default color at load time (rather than silently at dispatch time via
     // ColorUtils.parseHex's fallback) so a malformed color gets a clear, attributable log message.
+    // Only validated for LINE groups - see resolveLineWidth above.
     private static final String DEFAULT_LINE_COLOR = "#FF0000FF";
 
     private static String resolveLineColor(LoadingMarkerGroupV2 markerGroup) {
         var lineColor = markerGroup.lineColor();
         if (lineColor == null) return DEFAULT_LINE_COLOR;
+
+        var type = markerGroup.type() == null ? MarkerGroupType.POI : markerGroup.type();
+        if (type != MarkerGroupType.LINE) return lineColor;
 
         if (!ColorUtils.isValidHex(lineColor)) {
             LOGGER.warn("Marker group '{}' has a malformed 'lineColor' ({}); falling back to default {}",

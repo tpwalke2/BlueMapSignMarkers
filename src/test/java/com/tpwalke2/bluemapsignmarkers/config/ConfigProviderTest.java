@@ -273,6 +273,26 @@ class ConfigProviderTest {
     }
 
     @Test
+    void loadConfigDoesNotValidateLineWidthOrLineColorForAPOIGroup(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group", "type": "POI", "lineWidth": -5, "lineColor": "notacolor" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(MarkerGroupType.POI, group.type());
+        assertEquals(-5, group.lineWidth());
+        assertEquals("notacolor", group.lineColor());
+    }
+
+    @Test
     void saveAndLoadConfigRoundTripNonAsciiMarkerGroupNamesThroughUtf8(@TempDir Path tempDir) throws IOException {
         var path = tempDir.resolve("BMSM-Core.json");
         var original = new com.tpwalke2.bluemapsignmarkers.config.models.BMSMConfigV2(
