@@ -72,7 +72,7 @@ public class VersionedFileSignEntryLoader {
                 return gson.fromJson(versionedSignFile.data(), SignEntry[].class);
             }
         } catch (Exception e) {
-            LOGGER.warn("Failed to load versioned sign file, falling back to version 1");
+            LOGGER.warn("Failed to load versioned sign file {}, falling back to version 1", path, e);
         }
         return null;
     }

@@ -195,9 +195,9 @@ public class BlueMapAPIConnector {
         if (identifier instanceof MarkerIdentifier markerIdentifier) {
             position = String.format(" at x=%d y=%d z=%d", markerIdentifier.x(), markerIdentifier.y(), markerIdentifier.z());
         } else if (identifier instanceof LineMarkerIdentifier && action instanceof SetLineMarkerAction setAction) {
-            position = String.format(" label='%s' with %d point(s)", setAction.getLabel(), setAction.getPoints().size());
+            position = String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
         } else if (identifier instanceof LineMarkerIdentifier lineMarkerIdentifier) {
-            position = String.format(" label='%s'", lineMarkerIdentifier.label());
+            position = String.format(" label='%s'", LogUtils.sanitizeForLog(lineMarkerIdentifier.label()));
         }
 
         LOGGER.info("{} {} type marker in {}{}{}",
