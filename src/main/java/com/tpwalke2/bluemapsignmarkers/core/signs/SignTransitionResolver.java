@@ -111,7 +111,9 @@ public class SignTransitionResolver {
     // Recomputes a line group including the current sign (it must already be in signCache under this
     // group/label by the time this is called). Dispatches Set once ≥2 members exist; below that the line
     // is still incomplete and nothing is dispatched. sameGroupRecompute forces isFirstAppearance=false,
-    // since a same-group/label recompute can only reach ≥2 members if a marker already existed.
+    // since it's used both for same-group/label recomputes (only reachable at ≥2 members if a marker
+    // already existed) and for reload-forced recreates (isFirstAppearance is log-only there, so the
+    // false value is harmless either way).
     private static MarkerAction lineJoinAction(List<SignEntry> allSigns, String parentMap, Representation rep, ActionFactory actionFactory, boolean sameGroupRecompute) {
         var members = LineGroupResolver.members(allSigns, parentMap, rep.group().prefix(), rep.label());
         if (members.size() < 2) return null;
@@ -143,6 +145,6 @@ public class SignTransitionResolver {
     }
 
     private static String joinLineDetail(List<SignEntry> members) {
-        return members.stream().map(SignEntryHelper::getDetail).collect(Collectors.joining(System.lineSeparator()));
+        return members.stream().map(SignEntryHelper::getDetail).collect(Collectors.joining("\n"));
     }
 }

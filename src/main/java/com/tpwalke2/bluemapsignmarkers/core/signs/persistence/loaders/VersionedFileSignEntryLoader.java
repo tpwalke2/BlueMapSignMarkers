@@ -95,7 +95,7 @@ public class VersionedFileSignEntryLoader {
         }
     }
 
-    // Isolates one bad entry so it doesn't abort the whole file's v2-to-v3 conversion - the same
+    // Isolates one bad entry so it doesn't abort the whole file's v2-to-v3-to-v4 conversion - the same
     // log-and-skip pattern SignProvider.loadSigns already applies per entry after loading.
     private static SignEntryV3 convertV2EntrySafely(SignEntryV2 entry, MarkerGroup[] markerGroups) {
         try {
