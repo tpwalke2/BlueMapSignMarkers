@@ -100,6 +100,7 @@ class SignTransitionResolverTest {
         var set = assertInstanceOf(SetLineMarkerAction.class, action);
         assertTrue(set.isFirstAppearance());
         assertEquals(2, set.getPoints().size());
+        assertEquals("Ridge", set.getDetail());
     }
 
     @Test
@@ -114,6 +115,7 @@ class SignTransitionResolverTest {
 
         var set = assertInstanceOf(SetLineMarkerAction.class, action);
         assertTrue(!set.isFirstAppearance());
+        assertEquals("Ridge", set.getDetail());
         assertEquals(3, set.getPoints().size());
     }
 
@@ -220,6 +222,7 @@ class SignTransitionResolverTest {
 
         var set = assertInstanceOf(SetLineMarkerAction.class, action);
         assertEquals(2, set.getPoints().size());
+        assertEquals("Ridge", set.getDetail());
     }
 
     @Test
@@ -262,6 +265,7 @@ class SignTransitionResolverTest {
 
         var set = assertInstanceOf(SetLineMarkerAction.class, action);
         assertEquals(2, set.getPoints().size());
+        assertEquals("Ridge", set.getDetail());
     }
 
     @Test

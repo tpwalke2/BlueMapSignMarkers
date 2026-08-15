@@ -14,7 +14,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 
 public class SignTransitionResolver {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
@@ -124,7 +123,7 @@ public class SignTransitionResolver {
         if (members.size() < 2) return null;
 
         var isFirstAppearance = !sameGroupRecompute && members.size() == 2;
-        return actionFactory.createSetLineAction(parentMap, rep.group(), rep.label(), joinLineDetail(members), toPoints(members), isFirstAppearance);
+        return actionFactory.createSetLineAction(parentMap, rep.group(), rep.label(), rep.label(), toPoints(members), isFirstAppearance);
     }
 
     // Recomputes a line group excluding the current sign (it must already be removed from/no longer
@@ -135,7 +134,7 @@ public class SignTransitionResolver {
         var members = LineGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
 
         if (members.size() >= 2) {
-            return actionFactory.createSetLineAction(parentMap, rep.group(), rep.label(), joinLineDetail(members), toPoints(members), false);
+            return actionFactory.createSetLineAction(parentMap, rep.group(), rep.label(), rep.label(), toPoints(members), false);
         }
 
         if (members.size() == 1) {
@@ -147,9 +146,5 @@ public class SignTransitionResolver {
 
     private static List<LinePoint> toPoints(List<SignEntry> members) {
         return members.stream().map(e -> new LinePoint(e.key().x(), e.key().y(), e.key().z())).toList();
-    }
-
-    private static String joinLineDetail(List<SignEntry> members) {
-        return members.stream().map(SignEntryHelper::getDetail).collect(Collectors.joining("\n"));
     }
 }
