@@ -129,11 +129,7 @@ public class SignManager implements IResetHandler {
             }
         }
 
-        var action = SignTransitionResolver.computeTransitionAction(getAllSigns(), key, oldRep, newRep, actionFactory, false);
-        if (action != null) {
-            LOGGER.debug("Dispatching marker action for {}: {}", key, action);
-            blueMapAPIConnector.dispatch(action);
-        }
+        dispatchTransition(getAllSigns(), key, oldRep, newRep, actionFactory, false);
     }
 
     private synchronized void removeByKey(SignEntryKey key) {
@@ -148,10 +144,29 @@ public class SignManager implements IResetHandler {
 
         var config = runtimeConfig;
         var oldRep = SignTransitionResolver.computeRepresentation(removed, config.prefixGroupMap());
-        var action = SignTransitionResolver.computeTransitionAction(getAllSigns(), key, oldRep, null, config.actionFactory(), false);
-        if (action != null) {
-            LOGGER.debug("Dispatching marker action for {}: {}", key, action);
-            blueMapAPIConnector.dispatch(action);
+        dispatchTransition(getAllSigns(), key, oldRep, null, config.actionFactory(), false);
+    }
+
+    // Both call sites (live sign edits/removals from the mixins, and the reload loop below) run on their
+    // own thread with no caller-side try/catch: a mixin injection or the CHUNK_LOAD handler propagating an
+    // uncaught exception straight into live Minecraft server code would violate this mod's "never crash the
+    // server" rule (AGENTS.md), so failures computing/dispatching a single sign's transition are caught,
+    // logged, and skipped rather than allowed to escape.
+    private void dispatchTransition(
+            List<SignEntry> allSigns,
+            SignEntryKey key,
+            SignTransitionResolver.Representation oldRep,
+            SignTransitionResolver.Representation newRep,
+            ActionFactory actionFactory,
+            boolean isReload) {
+        try {
+            var action = SignTransitionResolver.computeTransitionAction(allSigns, key, oldRep, newRep, actionFactory, isReload);
+            if (action != null) {
+                LOGGER.debug("Dispatching marker action for {}: {}", key, action);
+                blueMapAPIConnector.dispatch(action);
+            }
+        } catch (Exception e) {
+            LOGGER.error("Failed to compute/dispatch marker transition for {}; skipping.", key, e);
         }
     }
 
@@ -189,11 +204,7 @@ public class SignManager implements IResetHandler {
         for (SignEntry entry : allSigns) {
             var oldRep = SignTransitionResolver.computeRepresentation(entry, oldPrefixGroupMap);
             var newRep = SignTransitionResolver.computeRepresentation(entry, newConfig.prefixGroupMap());
-            var action = SignTransitionResolver.computeTransitionAction(allSigns, entry.key(), oldRep, newRep, newConfig.actionFactory(), true);
-            if (action != null) {
-                LOGGER.debug("Dispatching marker action for {}: {}", entry.key(), action);
-                blueMapAPIConnector.dispatch(action);
-            }
+            dispatchTransition(allSigns, entry.key(), oldRep, newRep, newConfig.actionFactory(), true);
         }
     }
 }
