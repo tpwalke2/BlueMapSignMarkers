@@ -35,8 +35,8 @@ public record SignEntry(
         return "SignEntry{" +
                 "key=" + key +
                 ", playerId='" + playerId + "'" +
-                ", frontText=" + frontText.toString() +
-                ", backText=" + backText.toString() +
+                ", frontText=" + frontText +
+                ", backText=" + backText +
                 ", createdAtMillis=" + createdAtMillis +
                 '}';
     }

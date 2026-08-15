@@ -107,7 +107,7 @@ private static void setLineMarker(SetLineMarkerAction action, Stream<Map<String,
 
 `ColorUtils.parseHex(String hex) -> int[]{r,g,b,a}` stays plain Java (no BlueMap types) so it's unit-testable; only `BlueMapAPIConnector` converts the result into `de.bluecolored.bluemap.api.math.Color`, same "escape/convert at the point of use" pattern `HtmlUtils` already follows for `detail`.
 
-Line detail text: each member sign contributes its own detail (via `SignEntryHelper.getDetail`); the line's `detail` is those joined in point order, same `FRONT:`/`BACK:`-style multi-part join `SignEntryHelper.getDetail` already uses for front/back text.
+Line detail text: the line's `detail` is the group label, shown once regardless of member count. (Originally spec'd as each member's own detail joined in point order - reverted because members sharing a line typically share the same bare label text, which duplicated the label once per member in the rendered popup. See `SignTransitionResolverTest`'s line-transition tests, which assert `detail == label`.)
 
 ### 6. Sign-role transitions: a lookup table, not a class hierarchy
 

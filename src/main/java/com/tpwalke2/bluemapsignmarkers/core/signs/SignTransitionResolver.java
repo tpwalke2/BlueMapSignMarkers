@@ -29,8 +29,18 @@ public class SignTransitionResolver {
     static Representation computeRepresentation(SignEntry entry, Map<String, MarkerGroup> prefixGroupMap) {
         if (entry == null) return null;
 
-        var prefix = SignEntryHelper.getPrefix(entry);
-        if (prefix == null) return null;
+        String prefix;
+        String label;
+        String detail;
+        try {
+            prefix = SignEntryHelper.getPrefix(entry);
+            if (prefix == null) return null;
+            label = SignEntryHelper.getLabel(entry);
+            detail = SignEntryHelper.getDetail(entry);
+        } catch (Exception e) {
+            LOGGER.error("Failed to compute representation for malformed sign entry {}; skipping.", entry, e);
+            return null;
+        }
 
         var group = prefixGroupMap.get(prefix);
         if (group == null) {
@@ -38,7 +48,7 @@ public class SignTransitionResolver {
             return null;
         }
 
-        return new Representation(group, SignEntryHelper.getLabel(entry), SignEntryHelper.getDetail(entry));
+        return new Representation(group, label, detail);
     }
 
     static boolean sameGroupAndLabel(Representation a, Representation b) {

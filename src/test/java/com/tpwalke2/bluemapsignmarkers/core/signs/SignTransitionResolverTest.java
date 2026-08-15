@@ -65,6 +65,16 @@ class SignTransitionResolverTest {
     }
 
     @Test
+    void computeRepresentationOnMalformedEntryWithNullFrontTextReturnsNullInsteadOfThrowing() {
+        var group = poiGroup("[poi]");
+        var malformed = new SignEntry(new SignEntryKey(0, 64, 0, MAP), "unknown", null, null, 1000L);
+
+        var rep = SignTransitionResolver.computeRepresentation(malformed, Map.of(group.prefix(), group));
+
+        assertNull(rep);
+    }
+
+    @Test
     void noneToPoiDispatchesAdd() {
         var group = poiGroup("[poi]");
         var entry = signEntry(0, 64, 0, "[poi]", "Shop", "detail", 1000L);
