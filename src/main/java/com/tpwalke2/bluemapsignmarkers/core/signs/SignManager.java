@@ -131,6 +131,7 @@ public class SignManager implements IResetHandler {
     // effect applies, or a GroupTransitionMarkerAction bundling a leave-effect + join-effect so
     // ReactiveQueue's lack of ordering guarantees can't transiently show a sign in two places.
     private MarkerAction computeTransitionAction(
+            List<SignEntry> allSigns,
             SignEntryKey key,
             Representation oldRep,
             Representation newRep,
@@ -140,13 +141,13 @@ public class SignManager implements IResetHandler {
         if (oldRep == null) {
             return newRep.group().type() == MarkerGroupType.POI
                     ? actionFactory.createAddPOIAction(key.x(), key.y(), key.z(), key.parentMap(), newRep.label(), newRep.detail(), newRep.group())
-                    : lineJoinAction(key.parentMap(), newRep, actionFactory, false);
+                    : lineJoinAction(allSigns, key.parentMap(), newRep, actionFactory, false);
         }
 
         if (newRep == null) {
             return oldRep.group().type() == MarkerGroupType.POI
                     ? actionFactory.createRemovePOIAction(key.x(), key.y(), key.z(), key.parentMap(), oldRep.group())
-                    : lineLeaveAction(key.parentMap(), oldRep, actionFactory);
+                    : lineLeaveAction(allSigns, key.parentMap(), oldRep, actionFactory);
         }
 
         var oldType = oldRep.group().type();
@@ -162,19 +163,21 @@ public class SignManager implements IResetHandler {
         }
 
         if (oldType == MarkerGroupType.LINE && newType == MarkerGroupType.LINE && sameGroupAndLabel(oldRep, newRep)) {
-            return lineJoinAction(key.parentMap(), newRep, actionFactory, true);
+            return oldRep.detail().equals(newRep.detail())
+                    ? null
+                    : lineJoinAction(allSigns, key.parentMap(), newRep, actionFactory, true);
         }
 
         var effects = new ArrayList<MarkerAction>(2);
 
         var leave = oldType == MarkerGroupType.POI
                 ? actionFactory.createRemovePOIAction(key.x(), key.y(), key.z(), key.parentMap(), oldRep.group())
-                : lineLeaveAction(key.parentMap(), oldRep, actionFactory);
+                : lineLeaveAction(allSigns, key.parentMap(), oldRep, actionFactory);
         if (leave != null) effects.add(leave);
 
         var join = newType == MarkerGroupType.POI
                 ? actionFactory.createAddPOIAction(key.x(), key.y(), key.z(), key.parentMap(), newRep.label(), newRep.detail(), newRep.group())
-                : lineJoinAction(key.parentMap(), newRep, actionFactory, false);
+                : lineJoinAction(allSigns, key.parentMap(), newRep, actionFactory, false);
         if (join != null) effects.add(join);
 
         if (effects.isEmpty()) return null;
@@ -186,8 +189,8 @@ public class SignManager implements IResetHandler {
     // group/label by the time this is called). Dispatches Set once ≥2 members exist; below that the line
     // is still incomplete and nothing is dispatched. sameGroupRecompute forces isFirstAppearance=false,
     // since a same-group/label recompute can only reach ≥2 members if a marker already existed.
-    private MarkerAction lineJoinAction(String parentMap, Representation rep, ActionFactory actionFactory, boolean sameGroupRecompute) {
-        var members = LineGroupResolver.members(getAllSigns(), parentMap, rep.group().prefix(), rep.label());
+    private MarkerAction lineJoinAction(List<SignEntry> allSigns, String parentMap, Representation rep, ActionFactory actionFactory, boolean sameGroupRecompute) {
+        var members = LineGroupResolver.members(allSigns, parentMap, rep.group().prefix(), rep.label());
         if (members.size() < 2) return null;
 
         var isFirstAppearance = !sameGroupRecompute && members.size() == 2;
@@ -198,8 +201,8 @@ public class SignManager implements IResetHandler {
     // present in signCache under this group/label by the time this is called). Dispatches Set if ≥2
     // members remain, Remove if it drops below 2 and a marker existed before (i.e. exactly 1 remains -
     // meaning there were 2 before), or nothing if there was never a marker to begin with (0 remain).
-    private MarkerAction lineLeaveAction(String parentMap, Representation rep, ActionFactory actionFactory) {
-        var members = LineGroupResolver.members(getAllSigns(), parentMap, rep.group().prefix(), rep.label());
+    private MarkerAction lineLeaveAction(List<SignEntry> allSigns, String parentMap, Representation rep, ActionFactory actionFactory) {
+        var members = LineGroupResolver.members(allSigns, parentMap, rep.group().prefix(), rep.label());
 
         if (members.size() >= 2) {
             return actionFactory.createSetLineAction(parentMap, rep.group(), rep.label(), joinLineDetail(members), toPoints(members), false);
@@ -252,7 +255,7 @@ public class SignManager implements IResetHandler {
             }
         }
 
-        var action = computeTransitionAction(key, oldRep, newRep, actionFactory);
+        var action = computeTransitionAction(getAllSigns(), key, oldRep, newRep, actionFactory);
         if (action != null) {
             LOGGER.debug("Dispatching marker action for {}: {}", key, action);
             blueMapAPIConnector.dispatch(action);
@@ -271,7 +274,7 @@ public class SignManager implements IResetHandler {
 
         var config = runtimeConfig;
         var oldRep = computeRepresentation(removed, config.prefixGroupMap());
-        var action = computeTransitionAction(key, oldRep, null, config.actionFactory());
+        var action = computeTransitionAction(getAllSigns(), key, oldRep, null, config.actionFactory());
         if (action != null) {
             LOGGER.debug("Dispatching marker action for {}: {}", key, action);
             blueMapAPIConnector.dispatch(action);
@@ -308,10 +311,11 @@ public class SignManager implements IResetHandler {
         blueMapAPIConnector.clearMarkerSetsCache();
 
         var newConfig = runtimeConfig;
-        for (SignEntry entry : getAllSigns()) {
+        var allSigns = getAllSigns();
+        for (SignEntry entry : allSigns) {
             var oldRep = computeRepresentation(entry, oldPrefixGroupMap);
             var newRep = computeRepresentation(entry, newConfig.prefixGroupMap());
-            var action = computeTransitionAction(entry.key(), oldRep, newRep, newConfig.actionFactory());
+            var action = computeTransitionAction(allSigns, entry.key(), oldRep, newRep, newConfig.actionFactory());
             if (action != null) {
                 LOGGER.debug("Dispatching marker action for {}: {}", entry.key(), action);
                 blueMapAPIConnector.dispatch(action);
