@@ -15,8 +15,9 @@ in `build.gradle`.
 Only plain-Java classes with **no Minecraft/Fabric/BlueMap API types in their method signatures** are unit tested.
 Qualifying today: `SignLinesParser`/`ParsingContext`/`SignLinesParseResult`, `SignEntry`, `SignEntryHelper`,
 `SignChunkKey`/`SignChunkIndex`, `MarkerGroup`/`MarkerGroupMatchType`/`MarkerGroupType`, `ConfigManager`/`ConfigProvider`,
-`ReactiveQueue`, `HtmlUtils`, `FileUtils`, the sign-persistence loaders/converters/writer (`VersionedFileSignEntryLoader`,
-`Version1SignEntryLoader`, `Version3Converter`, `RegionShardedSignEntryLoader`, `RegionShardedSignEntryWriter`,
+`ReactiveQueue`, `HtmlUtils`, `FileUtils`, `ColorUtils`, `LineGroupResolver`, `SignTransitionResolver`, the
+sign-persistence loaders/converters/writer (`VersionedFileSignEntryLoader`, `Version1SignEntryLoader`,
+`Version3Converter`, `Version4Converter`, `RegionShardedSignEntryLoader`, `RegionShardedSignEntryWriter`,
 `SignRegionKey`, `SignRegionPartitioner`, `LegacySignFileMigrator`), `ActionFactory`/`MarkerSetIdentifierCollection`.
 
 `Version1SignEntryLoader` used to be a partial exception — its legacy-shorthand (`"nether"`/`"end"`/`"overworld"`)
@@ -34,7 +35,7 @@ region file to force a regen — then reloading that chunk), watching the BlueMa
 
 ## Current coverage
 
-As of `main` (`a62aaf1`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
+As of `main` (`374d6db`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
 - `core/signs/SignLinesParserTest.java` — 12 `@Test` methods covering `SignLinesParser`: label-on-prefix-line vs.
   label-on-following-line, multi-line detail joining/trimming, leading/interstitial blank-line handling, no-match
   and all-blank sign results, `REGEX` match type's whole-line-match requirement (contrasted with `STARTS_WITH`),
@@ -62,21 +63,22 @@ As of `main` (`a62aaf1`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   removed, or moved to a different region) quarantined with a `.stale` suffix on re-save, not deleted.
 - `core/signs/persistence/RegionShardedSignEntryLoaderTest.java` — `hasSignData` true/false cases, round-trip
   load of entries written across multiple regions and dimensions.
-- `core/signs/persistence/LegacySignFileMigratorTest.java` — no-legacy-file case, migrating a V3-shaped legacy file
-  (entries land in the right region files, legacy file renamed to `.migrated` rather than deleted), migrating a
-  V1-shaped legacy file (prefix fabricated from the configured POI group, per `Version3Converter`'s existing
-  behavior).
+- `core/signs/persistence/LegacySignFileMigratorTest.java` — no-legacy-file case, migrating a V4-shaped legacy file
+  (`migratesAV4LegacyFileAndBacksItUpWithoutDeletingIt`, renamed from the pre-line-markers V3 version — entries
+  land in the right region files, legacy file renamed to `.migrated` rather than deleted), migrating a V1-shaped
+  legacy file (prefix fabricated from the configured POI group, per `Version3Converter`'s existing behavior).
 - `core/signs/SignEntryHelperTest.java` — `getPrefix` (front-text preferred, back-text fallback, `null` when
   neither side matches); `isMarkerType` (`true` on a matching POI prefix, `false` on a `null` prefix, and `false`
   rather than throwing when the prefix isn't in `prefixGroupMap` at all — the config-reload case from
-  `plans/marker-group-config-reload-plan.md`) — takes the already-resolved prefix `String` directly rather than a
+  `../plans/marker-group-config-reload-plan.md`) — takes the already-resolved prefix `String` directly rather than a
   `SignEntry` (ticket 08, so callers that already have the prefix don't make `isMarkerType` re-derive it);
   `getLabel`/`getDetail` front/back precedence and combining, plus `getDetail`'s ticket-07 fix
   (`getDetailUsesOnlyFrontWhenSidesMatchDifferentGroups`): when front and back match *different* marker groups,
   only the front's detail is used rather than merging both — see `core-pipeline.md`'s `SignEntryHelper` paragraph.
 - `core/signs/SignEntryTest.java` — standard `equals`/`hashCode` contract on the hand-written implementation
-  (reflexive, symmetric, per-field inequality, not equal to `null`/another type), `withKey` returning a new instance
-  with only the key changed; `equalsAndHashCodeToleratesNullFields` (ticket 08) confirms `equals`/`hashCode` no
+  (reflexive, symmetric, per-field inequality including the added `createdAtMillis` field, not equal to
+  `null`/another type), `withKey` returning a new instance with only the key changed (`createdAtMillis` carried
+  through unchanged); `equalsAndHashCodeToleratesNullFields` (ticket 08) confirms `equals`/`hashCode` no
   longer `NPE` if the entry's own `key` (or `playerId`/`frontText`/`backText`) is `null` — now backed by
   `Objects.equals`/`Objects.hash` instead of unguarded field-level `.equals()`/`.hashCode()` calls.
 - `core/signs/ParsingContextTest.java` — the `(null, "", "")` sentinel when no marker group is ever set,
@@ -95,6 +97,27 @@ As of `main` (`a62aaf1`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   private-mode sequences) and normalizes `\r\n`/`\n`/`\r` to literal `\n`/`\r` text, closing a log-injection/log-noise
   vector in player-controlled sign text logged at INFO by `BlueMapAPIConnector.logProcessingMessage` — previously
   only `\n` was escaped.
+- `common/ColorUtilsTest.java` — `parseHex` on the 8-digit (`#RRGGBBAA`) and 6-digit (`#RRGGBB`, alpha defaults to
+  opaque) forms, mixed-case hex digits, an optional leading `#`, and falling back to opaque red (never throwing)
+  for `null`, wrong-length, or non-hex-character input; `isValidHex` accepting the same 6/8-digit forms (with or
+  without a leading `#`) and rejecting `null`, wrong length, and non-hex characters (ticket 12 follow-up — used by
+  `ConfigProvider`'s `lineColor` validation, see `config-and-persistence.md`).
+- `core/signs/SignTransitionResolverTest.java` — `computeTransitionAction`'s full `(oldRep, newRep)` transition
+  table (`core-pipeline.md` §3): NONE→NONE no-op; NONE→POI dispatches Add; NONE→LINE with fewer than two members is
+  a no-op, dispatches `Set` with `isFirstAppearance=true` at exactly two members, `isFirstAppearance=false` joining
+  a third; POI→NONE dispatches Remove; POI→POI on the same group with label/detail both unchanged is a no-op,
+  either changed dispatches `UpdateMarkerAction`, a different group dispatches `GroupTransitionMarkerAction`;
+  LINE→NONE dropping to one remaining member dispatches `RemoveLineMarkerAction`, to zero is a no-op, to ≥2 dispatches
+  a refreshed `Set`; LINE→LINE on the same group+label with detail unchanged is a no-op, changed dispatches `Set`
+  with `isFirstAppearance=false`, a different group bundles a leave+join `GroupTransitionMarkerAction`; POI→LINE and
+  LINE→POI each bundle the appropriate remove/set + add/set pair. Confirms the POI/POI cell keys only on
+  `group().prefix()`, not label — a label-only edit on an unchanged group dispatches a direct update, not a
+  bundled remove+add (fixed alongside the `allSigns`-snapshot performance change, both same commit series).
+- `core/signs/LineGroupResolverTest.java` — `members` filters to signs sharing `(parentMap, prefix, label)` exactly
+  (a different map, prefix, or label is excluded), orders results by `createdAtMillis` ascending, breaks ties on a
+  duplicate `createdAtMillis` deterministically by position (`x`, then `y`, then `z` — the cross-region-file
+  migration-tie scenario the persistence section's `Version4Converter` paragraph describes), and returns an empty
+  list for empty input.
 - `config/ConfigProviderTest.java` — `loadConfig` creating and persisting defaults when the file is absent; missing
   optional V2 fields defaulted per-field in `convertToLoadedMarkerGroup`; malformed JSON returning `null`; V1→V2
   migration producing one POI group plus a `.v1.bak` backup (aborting via `IllegalStateException`, caught by the
@@ -103,14 +126,26 @@ As of `main` (`a62aaf1`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   `poiPrefix` is no longer misdetected as V1; and `validateMarkerGroups` failing fast (ticket 01) on an empty
   prefix, a non-compiling `REGEX` prefix, or a prefix duplicated across groups, each surfacing as `loadConfig`
   returning `null` (caught by the same catch-all) rather than corrupting silently or deferring to a later NPE/skip.
+  `lineWidth`/`lineColor` defaulting to `2`/`"#FF0000FF"` for a `LINE` group when omitted, preservation of explicit
+  values on a `LINE` group, and a `POI` group with `lineWidth`/`lineColor` set still loading (the
+  `warnOnTypeFieldMismatches` path is warning-only, not a load failure) each have a dedicated test (ticket 12).
+  `loadConfigFallsBackToDefaultLineWidthWhenNonPositive`/`...WhenNegative` and
+  `loadConfigFallsBackToDefaultLineColorWhenMalformed` (ticket 12 follow-up) confirm a non-positive `lineWidth` or a
+  `lineColor` failing `ColorUtils.isValidHex` falls back to the default rather than loading the invalid value
+  as-is — see `resolveLineWidth`/`resolveLineColor` in `config-and-persistence.md`.
 - `config/ConfigManagerTest.java` — `get()` returns the config from the most recent `reload`; falls back to
   `new BMSMConfigV2()` defaults when the configured path fails to load; a second `reload()` replaces (not merges
   with) what an earlier `reload` cached.
 - `core/bluemap/actions/ActionFactoryTest.java` — each of `createAddPOIAction`/`createRemovePOIAction`/
-  `createUpdatePOIAction`/`createChangeGroupPOIAction` (ticket 09) builds the right `MarkerIdentifier`(s) and
-  action-specific fields — `createChangeGroupPOIAction` builds two, one per group; repeated calls for the same
-  map/group (same or different action type) reuse the same `MarkerSetIdentifier` instance via
-  `MarkerSetIdentifierCollection`.
+  `createUpdatePOIAction` builds the right `MarkerIdentifier` and action-specific fields;
+  `createChangeGroupPOIActionBuildsARemoveAndAddEffectPair` (ticket 09, updated for the line-markers rewrite) now
+  asserts `createChangeGroupPOIAction` returns a `GroupTransitionMarkerAction` with exactly two `effects` — a
+  `RemoveMarkerAction` for the old group then an `AddMarkerAction` for the new one — rather than the older single
+  action type carrying two identifiers directly; repeated calls for the same map/group (same or different action
+  type) reuse the same `MarkerSetIdentifier` instance via `MarkerSetIdentifierCollection`. `createSetLineAction`/
+  `createRemoveLineAction` each have a dedicated test asserting the built `SetLineMarkerAction`/`RemoveLineMarkerAction`
+  fields and `LineMarkerIdentifier`, plus a reuse test confirming line and POI actions for the same map/group share
+  one `MarkerSetIdentifier` (ticket 11).
 - `core/markers/MarkerSetIdentifierCollectionTest.java` — `getIdentifier` returns the same instance for a repeated
   `(mapId, markerGroup)` pair (case-insensitive on `mapId`), distinct pairs get distinct identifiers. Also includes
   `concurrentFirstTimeCallersForTheSameComboConvergeOnOneIdentifierInstance`, an active (not `@Disabled`) regression
@@ -120,7 +155,7 @@ As of `main` (`a62aaf1`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
 - `core/reactive/ReactiveQueueTest.java` — enqueue → processor callback delivery (single and multiple messages,
   each exactly once); `shouldRun` gating (queued while false, resumes once true, a mid-drain false leaves the rest
   queued); a submission failure for one message reaching the error callback without affecting later messages.
-  Concurrency-hardening regression coverage (`plans/codebase-review-2026-07-11.md`, resolved 2026-07-22):
+  Concurrency-hardening regression coverage (`../plans/codebase-review-2026-07-11.md`, resolved 2026-07-22):
   `shutdownBlocksUntilAnInFlightTaskFinishesBeforeReturning` (finding #10 — `shutdown()` now blocks on
   `awaitTermination` rather than returning while a task is still mid-flight), `shutdownPermanentlyStopsTheQueueFromProcessingLaterEnqueues`
   and `shutdownRacingMidDrainStopsTheLoopWithoutSpawningAReplacementExecutor` (finding #2 — a shut-down queue never
@@ -134,22 +169,31 @@ As of `main` (`a62aaf1`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   reproduces that two independently-`enqueue()`d messages have no relative execution-order guarantee once the
   executor has more than one worker thread (blocks the first message's processing on a real 2-thread pool and
   shows the second can finish first) — see `core-pipeline.md` §7 for why this is left as-is rather than fixed in
-  `ReactiveQueue` itself.
+  `ReactiveQueue` itself; its doc comment now points at `GroupTransitionMarkerAction`/`applySingleAction` (renamed
+  from `ChangeGroupMarkerAction`/`processChangeGroupAction`) as the caller relying on bundled-message ordering.
 - `core/signs/persistence/loaders/Version3ConverterTest.java` — basic V2→V3 conversion (both sides matched, POI
-  group's prefix assumed for both); `aNonMatchingSideStaysNonMatching` and
+  group's prefix assumed for both, output is the frozen `SignEntryV3` shape); `aNonMatchingSideStaysNonMatching` and
   `treatsAMatchedSideAsNonMatchingWhenNoPoiGroupIsConfigured` (GitHub issue #138/review finding #6, parts a and c,
   resolved 2026-07-23 — a `markerType null` side stays non-matching, and a matched side is treated as non-matching
   rather than throwing when zero POI-type groups are configured); `whenMultiplePoiGroupsAreConfiguredTheFirstInArrayOrderWins`
   documents the still-open part of finding #6: with multiple POI-type groups configured, `convertToV3` can't
   recover which one a V2 entry actually matched, so the first one in array order always wins.
-- `core/signs/persistence/loaders/VersionedFileSignEntryLoaderTest.java` — V3-passthrough (no backup written);
-  V2 branch (converts via `Version3Converter`, backs up to `.v2.bak`, and per-entry-isolated: one malformed V2
-  entry is skipped rather than losing the whole file — ticket 05); the catch-all fallback returning `null` rather
-  than throwing, for both malformed JSON and empty content (which parses to `null` and NPEs on `.version()`,
-  caught by the same generic `catch`); a structurally-valid document missing `version`/`data` (e.g. `"{}"`)
-  explicitly falling back to V1 rather than relying on Gson's nulls to coincidentally route there (ticket 05); and
-  the V2 branch returning `null` (falls through to the V1 loader) rather than proceeding, if backing up to
-  `.v2.bak` fails (ticket 02).
+- `core/signs/persistence/loaders/Version4ConverterTest.java` — `convertToV4` copies every `SignEntryV3` field
+  unchanged into the current `SignEntry` shape; `createdAtMillisIsFileLastModifiedPlusIndexInFile` and
+  `differentIndicesInTheSameFileProduceDifferentButStableTimestamps` confirm the arbitrary-but-stable
+  `fileLastModifiedMillis + indexInFile` formula (no real placement history exists for pre-existing signs, see the
+  persistence-doc `Version4Converter` paragraph).
+- `core/signs/persistence/loaders/VersionedFileSignEntryLoaderTest.java` — `v4ContentIsParsedDirectlyWithoutCreatingABackup`
+  (renamed from the pre-line-markers V3-passthrough test — no backup written for a file already at the current
+  version); `v3ContentIsConvertedThroughVersion4ConverterAndBackedUp` (new — a `V3` file converts via
+  `Version4Converter`, backs up to `.v3.bak`); the `V2` branch converts via `Version3Converter` **then**
+  `Version4Converter` in the same pass, backs up to `.v2.bak`, and is per-entry-isolated: one malformed V2 entry is
+  skipped rather than losing the whole file (ticket 05); the catch-all fallback returning `null` rather than
+  throwing, for both malformed JSON and empty content (which parses to `null` and NPEs on `.version()`, caught by
+  the same generic `catch`); a structurally-valid document missing `version`/`data` (e.g. `"{}"`) explicitly falling
+  back to V1 rather than relying on Gson's nulls to coincidentally route there (ticket 05); and the `V2`/`V3`
+  branches returning `null` (falls through to the V1 loader) rather than proceeding, if backing up to `.v2.bak`/
+  `.v3.bak` fails (ticket 02).
 - `core/signs/persistence/loaders/Version1SignEntryLoaderTest.java` — the three recognized legacy shorthand
   strings (`"nether"`/`"end"`/`"overworld"`) *and* the canonical-but-unnamespaced resource paths
   (`"the_nether"`/`"the_end"`, ticket 05) normalizing to their canonical namespaced identifiers, case-insensitively,
@@ -173,5 +217,5 @@ JUnit reporter action** — those actions don't get `checks: write` permission o
 public repo, so the summary step was written to need no extra permissions.
 
 ---
-*Last updated: 2026-08-08 | Verified against: main (a62aaf1)*
+*Last updated: 2026-08-15 | Verified against: feature/tpwalke2/7-line-markers (c8e58ca)*
 

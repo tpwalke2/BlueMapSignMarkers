@@ -7,9 +7,13 @@ import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignEntry;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignEntryKey;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV2;
+import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Objects;
 
@@ -25,10 +29,16 @@ public class Version1SignEntryLoader {
             MarkerGroup[] markerGroups,
             Gson gson) {
         LOGGER.info("Loading version 1 markers file...");
+        var fileLastModifiedMillis = getLastModifiedMillis(path);
         var signEntries = Arrays.stream(gson.fromJson(signsContent, SignEntryV2[].class))
                 .map(entry -> loadEntry(entry, markerGroups))
                 .filter(Objects::nonNull)
-                .toArray(SignEntry[]::new);
+                .toList();
+
+        var result = new SignEntry[signEntries.size()];
+        for (var i = 0; i < signEntries.size(); i++) {
+            result[i] = Version4Converter.convertToV4(signEntries.get(i), i, fileLastModifiedMillis);
+        }
 
         if (!FileUtils.createBackup(path, ".v1.bak", "markers file")) {
             throw new IllegalStateException(
@@ -36,7 +46,16 @@ public class Version1SignEntryLoader {
                             + "avoid overwriting the original with no recoverable backup");
         }
 
-        return signEntries;
+        return result;
+    }
+
+    private static long getLastModifiedMillis(String path) {
+        try {
+            return Files.getLastModifiedTime(Path.of(path)).toMillis();
+        } catch (IOException e) {
+            LOGGER.warn("Failed to read last-modified time of {}, defaulting to 0 for createdAtMillis", path, e);
+            return 0L;
+        }
     }
 
     private static final String NAMESPACE_PREFIX = "minecraft:";
@@ -49,7 +68,7 @@ public class Version1SignEntryLoader {
     // Isolates one bad entry (malformed key, unexpected null field, etc.) so it doesn't abort the
     // whole file's migration - the same log-and-skip pattern SignProvider.loadSigns already applies
     // per entry after loading.
-    private static SignEntry loadEntry(SignEntryV2 entry, MarkerGroup[] markerGroups) {
+    private static SignEntryV3 loadEntry(SignEntryV2 entry, MarkerGroup[] markerGroups) {
         try {
             return Version3Converter.convertToV3(withNormalizedKey(entry), markerGroups);
         } catch (Exception e) {

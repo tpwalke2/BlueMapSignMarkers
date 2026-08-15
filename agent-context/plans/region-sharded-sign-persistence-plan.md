@@ -24,7 +24,7 @@ loaded into) that question costs a full scan per chunk load, which doesn't scale
 groundwork: reorganize on-disk storage by location so the actual reconciliation logic (separate follow-up issue) has
 something cheap to query. It does not implement that reconciliation logic itself.
 
-This also folds in an adjacent fix already on record: `plans/codebase-review-2026-07-11.md` (finding #1) flags that
+This also folds in an adjacent fix already on record: `codebase-review-2026-07-11.md` (finding #1) flags that
 `getWorldPath(LevelResource.ROOT)` already resolves to the level-save directory, so the extra `.getParent()` walks
 up to the server root and `.getFileName()` grabs the *run directory's* name, not the level name. Rewriting path
 construction to relocate storage out of `config/` is the natural place to fix this too.
@@ -90,7 +90,7 @@ filesystem-safe on Windows/Linux/macOS. `unknown` (no colon) becomes a single fo
 
 ## Changes
 
-1. **`src/main/java/com/tpwalke2/bluemapsignmarkers/ServerPathProvider.java`** — currently a dead, unimplemented
+1. **`../../src/main/java/com/tpwalke2/bluemapsignmarkers/ServerPathProvider.java`** — currently a dead, unimplemented
    interface (`Path getConfigFolder()`, no implementers, no callers). Repurpose it to own the new base-directory
    resolution instead of adding a parallel abstraction:
    ```java
@@ -109,7 +109,7 @@ filesystem-safe on Windows/Linux/macOS. `unknown` (no colon) becomes a single fo
    int regionZ`) plus a small partitioning helper (e.g. a static method on `SignProvider` or a new
    `SignRegionPartitioner`) implementing the region-coordinate math and dimension split above, grouping a
    `List<SignEntry>` into `Map<SignRegionKey, List<SignEntry>>`. Pure logic, no Minecraft types — unit-testable
-   per the existing `SignLinesParser`/`SignEntryHelper` convention in `AGENTS.md`.
+   per the existing `SignLinesParser`/`SignEntryHelper` convention in `../../AGENTS.md`.
 3. **New loader, `core/signs/persistence/loaders/RegionShardedSignEntryLoader.java`** — given the storage root,
    walks the `{namespace}/{path}/r.{x}.{z}.json` tree, reads each region file with the same Gson/
    `VersionedFileSignEntryLoader` deserialization `SignProvider` already uses per-file today, flattens into one
@@ -122,7 +122,7 @@ filesystem-safe on Windows/Linux/macOS. `unknown` (no colon) becomes a single fo
      once per region. Then quarantine (rename to `*.json.stale`) any region file already on disk under the tree that isn't in this save's
      partition set (a region that's now empty), so potentially-unloaded data isn't deleted (at the cost of leaving `.stale` files behind).
 5. **Migration** (see dedicated section below) — one-time, triggered when the new storage root doesn't exist yet.
-6. **New tests**, `src/test/java/com/tpwalke2/bluemapsignmarkers/core/signs/persistence/`:
+6. **New tests**, `../../src/test/java/com/tpwalke2/bluemapsignmarkers/core/signs/persistence`:
    - Region-key math: `floorDiv`-based region assignment is correct for negative coordinates and region boundaries
      (e.g. `x = -1` vs `x = 0` vs `x = 511` vs `x = 512` land in the expected/different regions).
    - Dimension-string splitting, including the no-colon `WorldMap.UNKNOWN` case.
@@ -130,7 +130,7 @@ filesystem-safe on Windows/Linux/macOS. `unknown` (no colon) becomes a single fo
      #3, assert the same entries come back.
    - Migration: a legacy single-file fixture (V1, V2, and V3 shapes) in the old buggy-path layout migrates to the
      correct new-layout files, and the legacy file is renamed/backed up rather than deleted.
-7. **`gradle.properties`** — minor `mod_version` bump (`26.2-0.16.1` → `26.2-0.17.0`): default storage location and
+7. **`../../gradle.properties`** — minor `mod_version` bump (`26.2-0.16.1` → `26.2-0.17.0`): default storage location and
    on-disk layout change for every install (auto-migrated, but a real behavior/location change, not just a bug fix
    — e.g. any external backup tooling pointed at `config/bluemapsignmarkers/` needs to be repointed).
 
@@ -161,7 +161,7 @@ filesystem-safe on Windows/Linux/macOS. `unknown` (no colon) becomes a single fo
 - `./gradlew build` — full build, including jar packaging, still succeeds.
 - Manual, via `./gradlew runServer`: place signs across multiple regions and at least two dimensions
   (overworld + nether), restart the server, confirm markers still appear correctly in BlueMap after reload.
-- Manual migration check: start from a dev `run/` directory containing a pre-existing
+- Manual migration check: start from a dev `../../run` directory containing a pre-existing
   `config/bluemapsignmarkers/<name>/signs.json` fixture (V1, V2, and V3 shaped, in separate test runs), boot the
   server, confirm the new `bluemapsignmarkers/{level}/...` region files appear with correct contents and the
   legacy file is backed up in place rather than removed.

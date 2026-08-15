@@ -78,9 +78,10 @@ side's group). If only one side matched anything, that side's detail is used reg
 Singleton (double-checked locking), holds:
 - `ConcurrentMap<SignEntryKey, SignEntry> signCache` — every known sign, keyed by position+dimension.
 - `SignChunkIndex chunkIndex` — secondary lookup from chunk to the sign keys cached in it, kept in sync with
-  `signCache` (populated on add, cleared on remove, wiped and rebuilt in `reloadSigns()`) purely so chunk-load
-  reconciliation (§4) doesn't have to scan the whole cache. Never touched on the update branch — a `SignEntry`'s
-  position is immutable once cached, only ever a different key entirely.
+  `signCache` (populated on add, cleared on remove) purely so chunk-load reconciliation (§4) doesn't have to scan
+  the whole cache. Never touched on the update branch — a `SignEntry`'s position is immutable once cached, only
+  ever a different key entirely. **Not** cleared/rebuilt on a config reload (see below) — no sign keys actually
+  change during a reload, only their representation under the config.
 - `volatile RuntimeConfig runtimeConfig` — a private record `RuntimeConfig(Map<String, MarkerGroup> prefixGroupMap,
   ActionFactory actionFactory)` built by static `buildRuntimeConfig()`/`buildPrefixGroupMap()` from
   `ConfigManager.get().getMarkerGroups()` (duplicate prefixes are logged and skipped, first one wins). Bundling both
@@ -92,87 +93,113 @@ Singleton (double-checked locking), holds:
   re-reading the volatile field twice.
 - One `BlueMapAPIConnector`; `SignManager` registers itself as an `IResetHandler` on it.
 
-`addOrUpdateSign`, `removeByKey`, and `reloadSigns` are all `synchronized` on the same monitor (finding #17,
-`plans/codebase-review-2026-07-11.md`, resolved 2026-07-23) — `reset()`'s snapshot-clear-replay sequence in
-`reloadSigns()` (below) runs on whatever thread `BlueMapAPI.onEnable` fires on, not necessarily the server thread,
-so without this a live sign edit/removal arriving from the mixins mid-replay could be clobbered by a stale
-replayed value, or a sign removed mid-replay could be silently re-added from the pre-removal snapshot. `dispatch()`
+`addOrUpdateSign`, `removeByKey`, and `reloadConfig` are all `synchronized` on the same monitor (finding #17,
+`../plans/codebase-review-2026-07-11.md`, resolved 2026-07-23) — `reset()`'s config-swap-then-diff sequence in
+`reloadConfig()` (below) runs on whatever thread `BlueMapAPI.onEnable` fires on, not necessarily the server thread,
+so without this a live sign edit/removal arriving from the mixins mid-diff could be clobbered by a stale
+dispatch, or a sign removed mid-diff could be silently re-added. `dispatch()`
 only enqueues onto `ReactiveQueue` under this lock (no blocking BlueMap API work), so it doesn't add hot-path
 contention the way locking around `processMarkerAction` would.
 
+### Representation and the transition table (`.scratch/line-markers/spec.md` §6)
+
+A private record `Representation(MarkerGroup group, String label, String detail)` captures what a sign currently
+*is* to the marker layer: `null` means the sign matches no configured group (NONE); a non-null `Representation`
+whose `group.type()` is `POI` or `LINE` says which kind. `computeRepresentation(SignEntry, prefixGroupMap)` derives
+it from `SignEntryHelper.getPrefix`/`getLabel`/`getDetail`, returning `null` if the entry has no resolvable prefix
+or the prefix isn't in `prefixGroupMap` (an operator removed/renamed that group's prefix since this sign was last
+dispatched — logged as a warning, not thrown).
+
+Every sign change — edit, removal, or a config reload (§ below) — reduces to a single lookup: compute the sign's
+`Representation` under the *old* state and under the *new* state, then pass the `(oldRep, newRep)` pair to
+`SignTransitionResolver.computeTransitionAction(allSigns, key, oldRep, newRep, actionFactory)`. This replaced the
+old `(existing entry, isPOIMarker)` 2x2 table entirely — the old table had no way to express a POI↔LINE type flip
+or route a change through anything but position-keyed add/remove. The transition table itself lives in
+`SignTransitionResolver` (a static-utility class, plain Java, `core.signs`) rather than on `SignManager` —
+`SignManager` can't be unit tested directly (its constructor builds a `BlueMapAPIConnector`), but
+`SignTransitionResolver` has no Minecraft/Fabric/BlueMap types in its signature, so extracting it makes the
+transition logic directly testable (`SignTransitionResolverTest`, see `testing.md`). Callers (`SignManager`) pass
+their own `getAllSigns()` snapshot in as the `allSigns` parameter rather than the resolver fetching it itself, so a
+single already-taken snapshot can be reused across every sign's diff during a config reload (§ below) instead of
+re-querying the cache once per sign.
+
+`computeTransitionAction`'s logic (mirrors the table in the spec):
+
+| Old ＼ New | NONE | POI | LINE |
+|---|---|---|---|
+| **NONE** | no-op (`null`) | dispatch `createAddPOIAction` | `lineJoinAction` (recompute group *including* this sign; dispatch `SetLineMarkerAction` if ≥2 members, else no-op) |
+| **POI** | dispatch `createRemovePOIAction` | same group (prefix unchanged): label/detail both unchanged is a no-op, either changed dispatches `createUpdatePOIAction`. Different group (prefix changed): leave-effect + join-effect, bundled | leave-effect (Remove POI) + join-effect (`lineJoinAction`) |
+| **LINE** | `lineLeaveAction` (recompute group *excluding* this sign; `SetLineMarkerAction` if ≥2 remain, `RemoveLineMarkerAction` if exactly 1 remains, no-op if 0) | leave-effect (as above) + join-effect (Add POI) | same group+label: `lineJoinAction` with `sameGroupRecompute=true` (refreshes detail/points — always dispatches `Set` since ≥2 members necessarily already existed); different group/label: leave-effect + join-effect |
+
+The POI/POI cell deliberately compares only `group().prefix()`, not label — a label-only edit on an unchanged group
+used to fall through to the different-group (leave+join) branch, because the older check compared
+`sameGroupAndLabel` (group *and* label) before deciding whether to update-in-place; that made an ordinary label
+edit dispatch a bundled remove+add instead of a single `UpdateMarkerAction`. The LINE/LINE cell still uses
+`sameGroupAndLabel(a, b)` (compares `group().prefix()` and `label()`), since a `LINE` group's identity (and marker
+id, §5) is keyed on both. When a transition needs both a leave-effect and a join-effect (a group/label/type
+change), each effect is computed independently (`null` if that half is a no-op, e.g. leaving a `LINE` group that
+still has ≥2 members after removal dispatches a `Set`, not a leave at all) and both are collected into a
+`List<MarkerAction>`: zero effects → `null`, one effect → dispatch it directly, two → bundle into a
+`GroupTransitionMarkerAction` (see §5/§6) so `ReactiveQueue`'s lack of message-ordering guarantees (§7) can't
+transiently show a sign in two places.
+
+`lineJoinAction(allSigns, parentMap, rep, actionFactory, sameGroupRecompute)` and `lineLeaveAction(allSigns,
+parentMap, rep, actionFactory)` both call `LineGroupResolver.members(allSigns, parentMap, rep.group().prefix(),
+rep.label())` against the caller-supplied snapshot — because `signCache` is a full, live snapshot (never cleared
+for a config reload, see below), a snapshot taken once per dispatch always scans every sign currently known, so a
+`LINE` group recompute is always complete and order-independent regardless of which member triggered it.
+`lineJoinAction`'s `isFirstAppearance` flag (`!sameGroupRecompute && members.size() == 2`) is log-only — see §6 —
+not a distinct dispatch type.
+
 `addOrUpdateSign(signEntry)` (called for every add/update event, from entry points 1-3 above — not §1.4's chunk-load
-reconciliation, which only ever calls `removeByKey` directly):
+reconciliation, which only ever calls `removeByKey` directly): looks up `existing` from `signCache`, computes
+`oldRep`/`newRep` from `existing`/`signEntry` respectively, updates `signCache`/`chunkIndex` (removing the key if
+`newRep == null` and something was cached, else caching the merged entry — the merge preserves the *existing*
+cached `playerId` when the incoming entry's is the `WorldMap.UNKNOWN` chunk-load sentinel, and preserves the
+existing entry's `createdAtMillis` rather than ever recomputing it), then dispatches whatever
+`computeTransitionAction` returns (if non-`null`), passing a fresh `getAllSigns()` snapshot as `allSigns`.
 
-`newPrefix` (`SignEntryHelper.getPrefix`, preferring front-text prefix, falling back to back-text) `null` is handled
-*before* the decision table below: if `existing != null`, dispatches a remove via `removeEntry` — this is how a sign
-edited away from every configured prefix (e.g. `[poi] Town Hall` → `Town Hall`) gets its marker cleaned up, not the
-table's `false` row. If `existing == null` too, it's a no-op (an unrecognized sign that was never tracked). Both
-branches return immediately, skipping the table entirely.
+`removeByKey(key)` removes from `signCache`/`chunkIndex`; if nothing was cached for that key, it logs and returns.
+Otherwise it computes `oldRep` from the removed entry, `computeTransitionAction(getAllSigns(), key, oldRep, null,
+...)`, and dispatches the result — the same NONE-target column of the table above, so removal reuses no separate
+code path.
 
-For every other case (`newPrefix != null`), decision table on `(existing entry in cache, whether the new entry is
-currently a POI-type match)`:
+### Config reload (`/bluemap reload`) — `reset()`/`reloadConfig()`
 
-| existing | isPOIMarker | Action |
-|----------|-------------|--------|
-| `null` | `true` | **Add**: cache the entry, dispatch `AddMarkerAction` |
-| non-null | `false` | **Remove**: dispatch `RemoveMarkerAction` via `removeEntry` |
-| non-null | `true` | **Update** (see below) |
-| `null` | `false` | no-op |
+`reset()` (from `IResetHandler`) calls `reloadConfig()`, which:
+1. Captures `oldPrefixGroupMap = runtimeConfig.prefixGroupMap()` **before** touching anything else.
+2. `ConfigManager.reload()` (re-reads `BMSM-Core.json` from disk), `SignHelper.reloadParser()`, then replaces
+   `runtimeConfig` wholesale via `buildRuntimeConfig()` — a freshly rebuilt `prefixGroupMap` paired with a
+   brand-new `ActionFactory` backed by a new `MarkerSetIdentifierCollection` — and calls
+   `blueMapAPIConnector.clearMarkerSetsCache()` (see §6), so neither identifier cache accumulates entries keyed on
+   a `MarkerGroup` value from before the last reload (`MarkerSetIdentifier` keys on the whole record by value, so
+   a changed icon/offset/distance would otherwise be a new, never-evicted cache entry).
+3. Takes one `getAllSigns()` snapshot (`allSigns`) up front, then for every currently-cached `SignEntry` (the cache
+   is **not** cleared): computes `oldRep` under `oldPrefixGroupMap`, `newRep` under the just-rebuilt
+   `prefixGroupMap`, and dispatches `computeTransitionAction(allSigns, entry.key(), oldRep, newRep, ...)` if
+   non-`null` — the exact same transition table a live sign edit uses, just fed a before/after diff against the
+   *config* instead of the *sign text*. Reusing one snapshot across the whole loop (rather than each sign's
+   `LINE`-group recompute re-querying `getAllSigns()` independently) avoids an O(n²) re-scan of the cache when a
+   config reload touches many signs at once.
 
-`isPOIMarker` comes from `SignEntryHelper.isMarkerType(newPrefix, prefixGroupMap, POI)` — it takes the
-already-resolved prefix `String` (not the `SignEntry`) so `addOrUpdateSign` computes `newPrefix` once and passes
-it in, rather than `isMarkerType` re-deriving it via its own internal `getPrefix` call right before the caller
-computes it again a few lines later (ticket 08). It null-guards `prefixGroupMap.get(prefix)` — returns `false`
-rather than throwing `NPE` if the entry's prefix isn't in the current map at all (an operator removed/renamed
-that group's prefix in a config reload since this sign was last dispatched). Every subsequent `prefixGroupMap.get(prefix)` call used to build the actual `MarkerGroup` for a
-dispatch (in the Add branch, the same-prefix Update branch, and both sides of the prefix-changed
-remove-then-add branch, plus `removeByKey`) is null-guarded the same way: if the prefix isn't in the map, that
-specific dispatch is skipped and a warning logged, rather than passing a `null` `MarkerGroup` into `ActionFactory`.
-In `reset()`'s replay (below), `existing` is always `null` post-clear, so an entry whose prefix maps to nothing
-that reload falls into the `null`/`false` no-op row (or the Add branch's own null-guard) — its marker is neither
-re-added nor removed, and stays orphaned in BlueMap until the physical sign is edited or removed. See the
-config-reload known limitation in `plans/marker-group-config-reload-plan.md`.
-
-**Update branch detail:** the cache is refreshed unconditionally (note: if the incoming entry's `playerId` is
-`"unknown"` — i.e. came from a chunk-load event, not a player edit — the *existing* cached `playerId` is preserved
-rather than overwritten, so a chunk reload never erases the last player known to have edited a sign). Then:
-- If the marker's prefix is unchanged (`existingPrefix.equals(newPrefix)`): only dispatch `UpdateMarkerAction` if
-  label or detail actually changed (`isTextDifferent`) — avoids redundant BlueMap API calls on every chunk reload.
-- If the prefix changed (sign text edited to match a *different* marker group) and **both** the old and new
-  prefix resolve to a configured group: dispatch a single `ChangeGroupMarkerAction` (ticket 09,
-  `.scratch/codebase-review-followups/issues/09-reactivequeue-message-ordering.md`) rather than a separate
-  `RemoveMarkerAction` dispatch followed by a separate `AddMarkerAction` dispatch. `ReactiveQueue` (§7) gives no
-  ordering guarantee between independently-submitted messages once its executor has more than one worker thread,
-  so two separate dispatches could have the add run before the remove under load, leaving the marker duplicated
-  across both groups for a window (or permanently, if the remove then silently no-ops against a `MarkerSet` the
-  add already touched). Bundling both halves into one message means they run back-to-back inside the same
-  `synchronized BlueMapAPIConnector.processMarkerAction()` call that dispatched it (see §6) — the pair can never
-  be observed half-applied. If only one side resolves to a configured group (the other prefix was removed/renamed
-  out of the config since this sign was cached), the existing single-sided remove-only or add-only dispatch (with
-  a warning logged for the unresolvable side) is unchanged.
-
-`removeByKey(key)` looks up and removes from `signCache`; if nothing was cached for that key, or the removed
-entry had no resolvable prefix, it logs and returns without dispatching anything.
-
-`reset()` (from `IResetHandler`, called when BlueMap fires a reset — i.e. `/bluemap reload`) calls
-`reloadConfig()` then `reloadSigns()`, in that order:
-- `reloadConfig()`: `ConfigManager.reload()` (re-reads `BMSM-Core.json` from disk), `SignHelper.reloadParser()`,
-  then replaces `runtimeConfig` wholesale via `buildRuntimeConfig()` — a freshly rebuilt `prefixGroupMap` paired
-  with a brand-new `ActionFactory` backed by a new `MarkerSetIdentifierCollection` — starting that cache clean on
-  every reload, paired with `BlueMapAPIConnector.resetQueue()` clearing `markerSetsCache` (see §6), means neither
-  identifier cache accumulates entries keyed on a `MarkerGroup` value from before the last reload (`MarkerSetIdentifier`
-  keys on the whole record by value, so a changed icon/offset/distance would otherwise be a new, never-evicted cache
-  entry).
-- `reloadSigns()`: snapshots the current cache, clears it, then replays every entry back through `addOrUpdateSign`
-  — since `existing` is always `null` post-clear, every replayed entry takes the **Add** row above, re-dispatching
-  against the just-rebuilt `prefixGroupMap`/`actionFactory` so an edited icon/offset/visibility/distance/name takes
-  effect without a server restart. Full design and known limitations (group-rename leaves a duplicate marker under
-  the old `MarkerSet` name; a prefix rename alone, with no in-game re-edit, isn't reclassified) are in
-  `plans/marker-group-config-reload-plan.md` and `plans/marker-group-reload-followups-todo.md`.
+This replaced the previous behavior (`reloadSigns()`: snapshot the cache, clear it, replay every entry through
+`addOrUpdateSign` so every entry always took the Add branch) for a concrete bug fix documented in
+`.scratch/codebase-review-followups/issues/10-reload-clear-and-replay-orphans-markers-on-id-scheme-change.md` and
+`.scratch/line-markers/issues/07-config-reload-fix-id-scheme-change.md`: a replayed "add" only ever puts a marker
+under the *new* id, it never explicitly removes an old one. That was silently safe only because a POI marker's id
+is always the position-based `x_y_z`, unchanged across reloads. A `LINE` marker's id (`"line:" + label`) is
+content-keyed, not position-keyed — so the first config change that flips a group's `type` between `POI` and
+`LINE` (same signs, only the config changed) left the old id's marker entry behind in BlueMap's `MarkerSet` map
+forever, since `clearMarkerSetsCache()` only evicts this mod's own `MarkerSetIdentifier`→`MarkerSet` lookup cache,
+not the marker entries inside a `MarkerSet` BlueMap itself owns. Diffing old-vs-new representation and running it
+through the transition table dispatches an explicit leave-effect whenever the id scheme changes, closing that gap
+for both `LINE` groups and any future non-position-keyed marker type. Known limitation carried over unchanged: a
+prefix *rename* alone (no in-game re-edit) still isn't reclassified, since reload re-resolves already-parsed
+prefixes against the new config rather than re-parsing sign text (`../plans/marker-group-config-reload-plan.md`).
 
 ## 4. Chunk-load reconciliation — `SignChunkKey` / `SignChunkIndex`
 
-Addresses GitHub issue #110 (plan: `plans/chunk-load-sign-reconciliation-plan.md`). Nothing else detects a sign
+Addresses GitHub issue #110 (plan: `../plans/chunk-load-sign-reconciliation-plan.md`). Nothing else detects a sign
 that vanished while its chunk was unloaded (external region-file deletion/regen, backup restore, manual NBT
 surgery) — the removal mixin (§1.3) only fires for an in-game block change on a *loaded* chunk.
 
@@ -184,7 +211,8 @@ surgery) — the removal mixin (§1.3) only fires for an in-game block change on
   `add`/`remove` keep it in sync with a key's presence in `signCache`; `remove` also drops the chunk's map entry
   once its key set empties, so long-emptied areas don't leak entries. `keysInChunk(parentMap, chunkX, chunkZ)`
   returns a snapshot list (empty if nothing tracked there) — the query the reconciliation handler uses. `clear()`
-  is called alongside `signCache.clear()` in `reloadSigns()`.
+  is available but no longer called on a config reload (§3) — `signCache`/`chunkIndex` are never cleared for a
+  reload since no sign keys change, only their computed representation.
 - `SignManager.getKeysInChunk(parentMap, chunkX, chunkZ)` — static, delegates to `chunkIndex.keysInChunk(...)`.
   Pure data query, but `SignManager` itself stays outside unit-test coverage regardless (constructs a
   `BlueMapAPIConnector`); `SignChunkKey`/`SignChunkIndex` are unit-tested on their own
@@ -199,18 +227,32 @@ surgery) — the removal mixin (§1.3) only fires for an in-game block change on
   feature targets — so skipping reconciliation there would defeat the main use case. No performance reason to
   skip it either: `keysInChunk` is one hashmap `get` returning empty for the overwhelming majority of chunk loads.
 
-## 5. Marker identity — `MarkerIdentifier` / `MarkerSetIdentifier` / `MarkerSetIdentifierCollection`
+## 5. Marker identity — `DispatchedMarkerIdentifier` / `MarkerIdentifier` / `LineMarkerIdentifier` / `MarkerSetIdentifier` / `MarkerSetIdentifierCollection`
 
-- `MarkerIdentifier(x, y, z, parentSet)` — its `getId()` is `"x%d_y%d_z%d"`, the literal key used inside a BlueMap
-  `MarkerSet`'s marker map. **No dimension component** — uniqueness across dimensions is guaranteed only because
-  each dimension maps to a separate `MarkerSetIdentifier`/`MarkerSet`, not because the id string itself is unique.
-- `MarkerSetIdentifier(mapId, markerGroup)` — one BlueMap marker-set per (map, marker-group) pair.
-- `ActionFactory.createChangeGroupPOIAction(x, y, z, mapId, label, detail, oldMarkerGroup, newMarkerGroup)`
-  (ticket 09) builds a `ChangeGroupMarkerAction` carrying **two** `MarkerIdentifier`s — one per group, both via
-  `MarkerSetIdentifierCollection.getIdentifier` like every other factory method — rather than the single
-  identifier the other three action types carry. The base `MarkerAction`'s identifier is the *new* group's (used
-  by `logProcessingMessage` for the map/type it logs); `getOldMarkerIdentifier()` exposes the old group's
-  separately.
+Two id schemes now exist side by side, unified behind one interface:
+
+- `DispatchedMarkerIdentifier` (`core.markers`) — `{ MarkerSetIdentifier parentSet(); String getId(); }`. `MarkerAction`
+  holds one of these (widened from the concrete `MarkerIdentifier` it used to hold) so a single dispatch hierarchy
+  covers both id schemes below.
+- `MarkerIdentifier(x, y, z, parentSet)` implements it — its `getId()` is `"x%d_y%d_z%d"`, **position-keyed**, the
+  literal key used inside a BlueMap `MarkerSet`'s marker map for POI markers. **No dimension component** —
+  uniqueness across dimensions is guaranteed only because each dimension maps to a separate
+  `MarkerSetIdentifier`/`MarkerSet`, not because the id string itself is unique.
+- `LineMarkerIdentifier(label, parentSet)` (record) also implements it — its `getId()` is `"line:" + label`,
+  **content-keyed**, not position-keyed: a line's points move as members join/leave, but its id stays stable as
+  long as the (group, label) key doesn't change. This is exactly the id-scheme difference that motivated
+  `SignManager.reloadConfig()`'s rewrite (§3) — a naive replay only ever adds under a marker's *current* id, so an
+  id scheme changing between reloads (e.g. a group's `type` flipping `POI`↔`LINE`) needs an explicit dispatch
+  removing the *old* id, not just adding the new one.
+- `MarkerSetIdentifier(mapId, markerGroup)` — one BlueMap marker-set per (map, marker-group) pair, unchanged by the
+  line-markers work.
+- `ActionFactory.createChangeGroupPOIAction(x, y, z, mapId, label, detail, oldMarkerGroup, newMarkerGroup)` now
+  builds a `GroupTransitionMarkerAction` wrapping `List.of(new RemoveMarkerAction(oldIdentifier), new
+  AddMarkerAction(newIdentifier, label, detail))` — two full `MarkerAction`s, not the older single action carrying
+  two identifiers. `createSetLineAction(mapId, markerGroup, label, detail, points, isFirstAppearance)` and
+  `createRemoveLineAction(mapId, markerGroup, label)` are the `LINE`-side counterparts, following the same
+  `MarkerSetIdentifierCollection.getIdentifier` pattern as every other factory method; `createSetLineAction` builds
+  a `LineMarkerIdentifier(label, ...)` and carries `markerGroup.lineWidth()`/`lineColor()` through unchanged.
 - `MarkerSetIdentifierCollection` is a per-`SignManager`-instance cache that guarantees the *same*
   `MarkerSetIdentifier` object is returned for a given `(mapId, markerGroup)` pair (indexed both by map and by
   marker group, intersected) — `ActionFactory` always goes through this rather than constructing
@@ -236,7 +278,7 @@ surgery) — the removal mixin (§1.3) only fires for an in-game block change on
   cache, `getMaps()` for `blueMapAPI`) ever needs a joint snapshot of more than one of these fields at once, so
   per-field visibility is enough — a shared lock would additionally serialize `dispatch()` (hot path, every sign
   event) behind `processMarkerAction()`'s BlueMap API calls, an unrelated critical section. This resolves finding
-  #12 (`plans/codebase-review-2026-07-11.md`, resolved 2026-07-22) and the field-visibility half of #11.
+  #12 (`../plans/codebase-review-2026-07-11.md`, resolved 2026-07-22) and the field-visibility half of #11.
 - **Listener detach (finding #7, GitHub issue #140, resolved 2026-07-23):** the constructor registers
   `BlueMapAPI.onEnable(...)`/`onDisable(...)` with two `final Consumer<BlueMapAPI>` fields
   (`onEnableListener`/`onDisableListener` — each built once as `this::onEnable`/`this::onDisable`), and
@@ -247,11 +289,23 @@ surgery) — the removal mixin (§1.3) only fires for an in-game block change on
   `bluemap-api` 2.8.0's source that `onEnable`/`onDisable` do store the `Consumer` and `unregisterListener` does
   remove it correctly once the same instance is passed both ways — this class is excluded from unit-test coverage
   (game-coupled, see `testing.md`), so this was verified by reading the dependency's source, not by a test.
+- **Startup sign-load bugfix:** `onEnable`/`onDisable` used to gate the reload-vs-first-boot decision on
+  `markerActionQueue.isShutdown()`, but a brand-new `ReactiveQueue` whose executor was never lazily created also
+  reports `isShutdown() == true` — exactly what happens at server startup, when `SERVER_STARTING` dispatches an
+  action for every migrated/loaded sign before BlueMap is available: `process()` returns early (`shouldRun()` is
+  `false`) without ever creating an executor. That made the *first* `onEnable()` a server ever sees mistake startup
+  for a reload, call `resetQueue()`, and discard every action enqueued during sign load before a single one was
+  processed. Fixed with an explicit `volatile boolean disabledSinceLastEnable` field: `onDisable()` sets it `true`;
+  `onEnable()` only treats the cycle as a genuine reload (and calls `resetQueue()`/`fireReset()`) `if
+  (disabledSinceLastEnable)`, resetting the flag to `false` immediately after. A freshly constructed connector
+  starts with the flag `false`, so the very first `onEnable()` always resumes draining the queue that startup
+  already populated instead of replacing it.
 - `BlueMapAPI.onEnable`/`onDisable` are registered in the constructor. `onDisable` shuts the queue down (actions
-  keep enqueuing but stop draining). `onEnable(api)`: assigns `this.blueMapAPI = api` **first**, then, if the queue
-  was shut down, calls `resetQueue()` (fresh queue + fresh `markerSetsCache`) and `fireReset()` (→ every registered
-  `IResetHandler`, i.e. `SignManager.reset()`) before resuming draining — this is why a BlueMap reload replays the
-  entire sign cache rather than assuming stale `MarkerSet` state is still valid. The `blueMapAPI` assignment must
+  keep enqueuing but stop draining) and sets `disabledSinceLastEnable = true`. `onEnable(api)`: assigns
+  `this.blueMapAPI = api` **first**, then, if `disabledSinceLastEnable`, calls `resetQueue()` (fresh queue + fresh
+  `markerSetsCache`) and `fireReset()` (→ every registered
+  `IResetHandler`, i.e. `SignManager.reset()`) before resuming draining — this is why a BlueMap reload re-diffs the
+  entire sign cache against the reloaded config rather than assuming stale `MarkerSet` state is still valid. The `blueMapAPI` assignment must
   come before `fireReset()`, not after: `fireReset()`'s replay dispatches `MarkerAction`s that `ReactiveQueue`
   starts draining on background threads immediately (`enqueue()` calls `process()` synchronously, which submits
   to the executor right away — it doesn't wait for the enqueuing loop, let alone `onEnable`, to finish), and those
@@ -272,31 +326,44 @@ surgery) — the removal mixin (§1.3) only fires for an in-game block change on
 - `logProcessingMessage` sanitizes sign-derived detail text via `LogUtils.sanitizeForLog` (`common`, ticket 06)
   before logging it at INFO — strips ANSI CSI escape sequences and normalizes `\r\n`/`\n`/`\r` to literal `\n`
   and `\r`, closing a log-injection/log-noise vector where only `\n` was previously escaped.
-- `processMarkerAction` is now `synchronized` (finding #5, resolved 2026-07-22): `addMarker`/`updateMarker`/
-  `removeMarker` mutate a `MarkerSet`'s marker `Map` (thread-safety of which is BlueMap's concern, not this mod's),
-  and `ReactiveQueue`'s executor is sized to `availableProcessors()`, so without this lock two actions dispatched
-  close together (e.g. many signs loading at server startup) could race on the same underlying map. Because
-  `ReactiveQueue.shutdown()` only stops *new* submissions (already-submitted tasks still run — see §7), several
-  such tasks can end up queued behind this monitor for a while after a shutdown is requested; `processMarkerAction`
-  re-checks `BlueMapAPI.getInstance().isEmpty()` itself on entry so one of those queued tasks can't mutate a
-  `MarkerSet` after BlueMap has actually disabled in the meantime. It then dispatches on the concrete `MarkerAction`
-  subtype via a `switch` pattern-match; **`MarkerAction` is a plain abstract class, not `sealed`**, so adding a new
-  subtype without adding a `case` here (and in `logProcessingMessage`'s switch) silently falls through to `default`
-  instead of failing to compile — see `AGENTS.md`'s "Adding a new marker/BlueMap action" section. The three
-  single-`MarkerIdentifier` cases (`AddMarkerAction`/`RemoveMarkerAction`/`UpdateMarkerAction`) each resolve their
-  marker sets via a shared `applyToMarkerSets(markerIdentifier, consumer)` helper (looks up via `getMarkerSets`,
-  no-ops with a debug log if none found, otherwise hands the consumer a `Stream<Map<String, Marker>>`). A fourth
-  case, `ChangeGroupMarkerAction` (ticket 09, see §3's prefix-changed paragraph and §5), routes to
-  `processChangeGroupAction`, which calls `applyToMarkerSets` **twice** — once for the old group's identifier
-  (building a throwaway `RemoveMarkerAction` to reuse `removeMarker`), once for the new group's (a throwaway
-  `AddMarkerAction`) — both within the same `processMarkerAction` call, so the remove and the add can't be
-  observed independently by another thread.
-- `addMarker` only actually builds a marker `if (markerGroup.type() == MarkerGroupType.POI)` — non-POI marker
-  groups are a no-op today (only `POI` exists in `MarkerGroupType`, so this is future-proofing, not a live branch).
+- `processMarkerAction` is `synchronized` (finding #5, resolved 2026-07-22): `addMarker`/`updateMarker`/
+  `removeMarker`/`setLineMarker` mutate a `MarkerSet`'s marker `Map` (thread-safety of which is BlueMap's concern,
+  not this mod's), and `ReactiveQueue`'s executor is sized to `availableProcessors()`, so without this lock two
+  actions dispatched close together (e.g. many signs loading at server startup) could race on the same underlying
+  map. Because `ReactiveQueue.shutdown()` only stops *new* submissions (already-submitted tasks still run — see
+  §7), several such tasks can end up queued behind this monitor for a while after a shutdown is requested;
+  `processMarkerAction` re-checks `BlueMapAPI.getInstance().isEmpty()` itself on entry so one of those queued tasks
+  can't mutate a `MarkerSet` after BlueMap has actually disabled in the meantime. If the dispatched action is a
+  `GroupTransitionMarkerAction`, it iterates `transitionAction.effects()` (a `List<MarkerAction>`, 0-2 entries —
+  see §3/§5) calling `applySingleAction` on each **inside** the same synchronized call, so a bundled leave+join
+  pair (or POI↔LINE swap) can never be observed half-applied by another thread; otherwise it calls
+  `applySingleAction` directly on the one action. `applySingleAction` logs (`logProcessingMessage`) then dispatches
+  on the concrete `MarkerAction` subtype via a `switch` pattern-match: `AddMarkerAction`/`RemoveMarkerAction`/
+  `UpdateMarkerAction`/`SetLineMarkerAction`/`RemoveLineMarkerAction` each have a `case` arm — **`MarkerAction` is a
+  plain abstract class, not `sealed`**, so adding a new subtype without adding a `case` here (and in
+  `logProcessingMessage`'s switch) silently falls through to `default` instead of failing to compile — see
+  `AGENTS.md`'s "Adding a new marker/BlueMap action" section. All five cases resolve their marker sets via a shared
+  `applyToMarkerSets(markerIdentifier, consumer)` helper (parameter type `DispatchedMarkerIdentifier`, needs only
+  `.parentSet()` — looks up via `getMarkerSets`, no-ops with a debug log if none found, otherwise hands the
+  consumer a `Stream<Map<String, Marker>>`); `RemoveMarkerAction` and `RemoveLineMarkerAction` both route through
+  an id-based `removeMarkerById(String id, Stream<...>)` helper extracted out of the old `removeMarker` body.
+- `setLineMarker(SetLineMarkerAction, Stream<Map<String, Marker>>)` builds/replaces a BlueMap `LineMarker`: bails
+  (defensively — `SignManager` should never dispatch below 2 points) if `action.getPoints().size() < 2`, otherwise
+  builds a `de.bluecolored.bluemap.api.math.Line` from the action's `LinePoint`s (via `Vector3d`), parses
+  `action.getLineColor()` through `ColorUtils.parseHex` (`common`, plain Java) into `de.bluecolored.bluemap.api.math.Color`,
+  and `put`s a `LineMarker.builder().label(...).detail(HtmlUtils.toHtmlDetail(...)).line(line).lineWidth(...).lineColor(...).build()`
+  into each marker set's map, keyed by `action.getMarkerIdentifier().getId()` (the content-keyed `"line:" + label`
+  id, §5). `ColorUtils.parseHex` is the only conversion point from the persisted hex string to a real color object,
+  mirroring how `HtmlUtils` is the only conversion point for HTML-escaped `detail` — both convert at the BlueMap-API
+  call site, keeping the rest of the pipeline in plain-Java, unescaped/unconverted form.
+- `addMarker` only actually builds a marker `if (markerGroup.type() == MarkerGroupType.POI)` — this is a real,
+  live branch now that `MarkerGroupType.LINE` exists (no longer future-proofing for a value that didn't exist): a
+  `LINE`-typed group's signs never reach `addMarker` at all, since `SignManager`'s transition table (§3) routes
+  `LINE` representations to `SetLineMarkerAction`/`RemoveLineMarkerAction` instead of `AddMarkerAction`.
 - **HTML escaping (fixed)**: `addMarker`/`updateMarker` wrap `detail` with `HtmlUtils.toHtmlDetail(...)` (`common`
   package) before it reaches `POIMarker.builder().detail(...)` / `poiMarker.setDetail(...)` — BlueMap renders
   `detail` as raw HTML (unlike `label`, which BlueMap's own `Marker.setLabel()` escapes), and sign text is
-  player-controlled, so this closed a live XSS vector (`plans/html-detail-escaping-plan.md`). `toHtmlDetail` escapes
+  player-controlled, so this closed a live XSS vector (`../plans/html-detail-escaping-plan.md`). `toHtmlDetail` escapes
   first, then converts `\n` to `<br>` so multi-line detail renders line breaks correctly — escaping before the `<br>`
   substitution matters, otherwise the inserted tags would themselves get escaped. `SignEntry`/persisted `signs.json`
   data stays raw/unescaped; escaping happens only at this BlueMap-API call site.
@@ -325,8 +392,8 @@ unavailable, drain once it's back."
   deterministically (blocks the first message's processing, shows the second can complete first on a 2-thread
   pool). This is left as-is rather than changed — `ReactiveQueue` is a generic reusable primitive with no
   ordering requirement of its own; a caller needing two dispatches to apply in order must bundle them into a
-  single message instead (see `BlueMapAPIConnector`'s `ChangeGroupMarkerAction`/`processChangeGroupAction`, §5/§6,
-  and §3's prefix-changed paragraph, for the one place this mod actually needed that guarantee).
+  single message instead (see `BlueMapAPIConnector`'s `GroupTransitionMarkerAction`/`applySingleAction`, §5/§6, and
+  §3's transition-table section, for the places this mod actually needs that guarantee).
 - `shutdown()` (finding #2 and #10, both resolved 2026-07-22) is no longer a same-thread-only best-effort call:
   under a `synchronized` block it sets a `volatile shutdownRequested` flag and calls `executor.shutdown()`
   together (paired with `getExecutor()` sharing the same monitor, so a `shutdown()` racing a lazy executor
@@ -349,5 +416,5 @@ unavailable, drain once it's back."
   `messageProcessorErrorCallback`) — only a submission-time failure reaches that callback.
 
 ---
-*Last updated: 2026-08-08 | Verified against: main (a62aaf1)*
+*Last updated: 2026-08-15 | Verified against: feature/tpwalke2/7-line-markers (c8e58ca)*
 

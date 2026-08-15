@@ -2,7 +2,7 @@
 
 ## Context
 
-The mod depends on the full Fabric API bundle (`build.gradle`: `implementation
+The mod depends on the full Fabric API bundle (`../../build.gradle`: `implementation
 "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"`, and `fabric.mod.json`: `"fabric-api": "*"`),
 but only uses one Fabric API package. Reducing this to the specific module actually needed is general best-practice
 surface-area reduction, not a response to any bug or user report.
@@ -12,7 +12,7 @@ A full-project grep of `net.fabricmc.fabric.(api|impl)` imports turns up exactly
 `ServerLifecycleEvents` (`SERVER_STARTING`/`SERVER_STOPPING`), `ServerBlockEntityEvents` (`BLOCK_ENTITY_LOAD`), and
 `ServerChunkEvents` (`CHUNK_LOAD`). No mixin or other source file touches Fabric API. That package belongs to a
 single Fabric API subproject: `fabric-lifecycle-events-v1` — already namedropped (but never wired into the build) in
-`plans/chunk-load-sign-reconciliation-plan.md`.
+`-load-sign-reconciliation-plan.md`.
 
 ## Goal
 
@@ -21,7 +21,7 @@ with no behavior change.
 
 ## Design
 
-### `build.gradle`
+### `../../build.gradle`
 
 Replace:
 ```groovy
@@ -54,13 +54,13 @@ Kept as a bare wildcard, matching the existing style for `bluemap` (external mod
 
 - Any change to the mod's actual event usage/logic — this is a dependency-declaration change only.
 - Constraining the new `depends` entry to a specific version — matches existing bare-wildcard style for mod deps.
-- A formal tracked issue in `.scratch/` — scope is self-contained (two files) and low-risk.
+- A formal tracked issue in `../../.scratch` — scope is self-contained (two files) and low-risk.
 
 ## Changes (files)
 
-1. **`build.gradle`** — swap the full `fabric-api` dependency for `fabricApi.module("fabric-lifecycle-events-v1",
+1. **`../../build.gradle`** — swap the full `fabric-api` dependency for `fabricApi.module("fabric-lifecycle-events-v1",
    project.fabric_api_version)`.
-2. **`src/main/resources/fabric.mod.json`** — swap `"fabric-api": "*"` for `"fabric-lifecycle-events-v1": "*"` in
+2. **`../../src/main/resources/fabric.mod.json`** — swap `"fabric-api": "*"` for `"fabric-lifecycle-events-v1": "*"` in
    `depends`.
 
 No source code changes — the three imported classes live in the same package either way.

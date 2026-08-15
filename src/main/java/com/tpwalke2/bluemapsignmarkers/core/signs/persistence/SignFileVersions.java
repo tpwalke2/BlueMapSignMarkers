@@ -3,5 +3,6 @@ package com.tpwalke2.bluemapsignmarkers.core.signs.persistence;
 public enum SignFileVersions {
     V1,
     V2,
-    V3
+    V3,
+    V4
 }

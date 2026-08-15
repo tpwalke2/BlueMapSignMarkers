@@ -35,12 +35,19 @@ configuration contains the following options:
   - `REGEX` - line must match the regular expression (uses [Java regex engine](https://docs.oracle.com/javase/8/docs/api/java/util/regex/Pattern.html));
 - `name` - the name of the marker group; required;
 - `type` - the type of marker to display; optional; default is `POI`
-- `icon` - the icon path or URL to display for the marker; optional; default is `null` (BlueMap default POI icon)
-- `offsetX` - the x offset of the marker; optional; default is `0` (corresponds with `anchor.x` in BlueMap base configuration)
-- `offsetY` - the y offset of the marker; optional; default is `0` (corresponds with `anchor.y` in BlueMap base configuration)
+  - `POI` - a single point marker per sign;
+  - `LINE` - signs sharing this group's prefix and the same first-line label become ordered points of one line marker (points ordered by placement time); requires at least 2 signs to appear;
+- `icon` - the icon path or URL to display for the marker; optional; default is `null` (BlueMap default POI icon); `POI` only
+- `offsetX` - the x offset of the marker; optional; default is `0` (corresponds with `anchor.x` in BlueMap base configuration); `POI` only
+- `offsetY` - the y offset of the marker; optional; default is `0` (corresponds with `anchor.y` in BlueMap base configuration); `POI` only
 - `defaultHidden` - If this is true, the marker-set will be hidden by default and can be enabled by the user; optional; default is `false`
 - `minDistance` - the minimum distance from the camera at which the marker will be displayed; optional; default is `0.0` (floating point, double precision)
 - `maxDistance` - the maximum distance from the camera at which the marker will be displayed; optional; default is `10000000.0` (floating point, double precision)
+- `lineWidth` - the width in pixels of the line; optional; default is `2`; `LINE` only
+- `lineColor` - the hex color (with alpha) of the line, e.g. `#FF0000FF`; optional; default is `#FF0000FF`; `LINE` only
+
+Setting a `POI`-only field on a `LINE` group (or vice versa) is not an error; the mod logs a warning and ignores the
+field.
 
 ## Example
 
@@ -60,18 +67,26 @@ configuration contains the following options:
       "prefix": "\\[[vV][iI][lL][lL][aA][gG][eE]\\]",
       "matchType": "REGEX",
       "name": "Villages"
+    },
+    {
+      "prefix": "[trail]",
+      "name": "Trails",
+      "type": "LINE",
+      "lineWidth": 3,
+      "lineColor": "#00A2FFFF"
     }
   ]
 }
 ```
 
-This example configuration creates 3 marker groups: one for `[poi]` signs, one for `[store]` signs, and one for signs
-where the prefix is a regex match for villages (e.g. `[Village]` or `[VILLAGE]`).
+This example configuration creates 4 marker groups: one for `[poi]` signs, one for `[store]` signs, one for signs
+where the prefix is a regex match for villages (e.g. `[Village]` or `[VILLAGE]`), and one for `[trail]` signs.
 
 The `[poi]` and `Villages` marker groups use the default POI icon, while the `[store]` marker group uses a custom icon
 located at `assets/store.png`.
 
 Signs with the `[poi]` prefix will be displayed in the "Points of Interest" marker group. Signs with the `[store]`
 prefix will be displayed in the "Stores" marker group. Signs that match the villages regex will be displayed in the
-'Villages' marker group.
+'Villages' marker group. Signs with the `[trail]` prefix, sharing the same description line, will be connected in
+placement order into a line in the "Trails" marker group once 2 or more such signs exist.
 

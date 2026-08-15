@@ -28,7 +28,7 @@ own `label` escaping.
 
 ## Changes
 
-1. **New utility: `src/main/java/com/tpwalke2/bluemapsignmarkers/common/HtmlUtils.java`**
+1. **New utility: `../../src/main/java/com/tpwalke2/bluemapsignmarkers/common/HtmlUtils.java`**
    - `escape(String text)` — escape HTML metacharacters: `&` → `&amp;`, `<` → `&lt;`, `>` → `&gt;`, `"` → `&quot;`,
      `'` → `&#39;`. (Same characters BlueMap's own `Marker.setLabel()` escapes, plus quotes for defense-in-depth
      since this mod controls the exact rendering context, not just label text.)
@@ -38,7 +38,7 @@ own `label` escaping.
    - Follows the same plain-Java, no-Minecraft-types style as `SignLinesParser`, so it's trivially unit-testable
      (see `FileUtils` in the same `common` package for the existing style/location convention).
 
-2. **`src/main/java/com/tpwalke2/bluemapsignmarkers/core/bluemap/BlueMapAPIConnector.java`** — apply escaping at
+2. **`../../src/main/java/com/tpwalke2/bluemapsignmarkers/core/bluemap/BlueMapAPIConnector.java`** — apply escaping at
    the boundary where text is handed to the BlueMap API (the actual rendering sink), not earlier in the pipeline:
    - In `addMarker(...)`: wrap `addAction.getDetail()` with `HtmlUtils.toHtmlDetail(...)` before
      `.detail(...)` on the `POIMarker.builder()`.
@@ -56,7 +56,7 @@ own `label` escaping.
    "encode at the point of use" — if another consumer of label/detail is ever added that isn't rendering HTML,
    it won't have to un-escape anything.
 
-4. **New test file: `src/test/java/com/tpwalke2/bluemapsignmarkers/common/HtmlUtilsTest.java`**
+4. **New test file: `../../src/test/java/com/tpwalke2/bluemapsignmarkers/common/HtmlUtilsTest.java`**
    Following the `SignLinesParserTest` pattern (plain JUnit 5, no mocking needed). Planned cases:
    - `escape` neutralizes `&`, `<`, `>`, `"`, `'` individually and in combination (e.g. a full `<script>` payload).
    - `escape` leaves ordinary text untouched (no spurious changes to plain sign text).
@@ -66,7 +66,7 @@ own `label` escaping.
    - `toHtmlDetail` converts `\n` to `<br>`, including multiple consecutive newlines and text with no newlines at
      all (no-op on the line-break front).
 
-5. **`gradle.properties`** — bump `mod_version` patch segment (`26.2-0.16.0` → `26.2-0.16.1`): a user-facing bug
+5. **`../../gradle.properties`** — bump `mod_version` patch segment (`26.2-0.16.0` → `26.2-0.16.1`): a user-facing bug
    fix, not a new feature or breaking change. No sign-persistence version bump is needed (raw text on disk is
    unaffected), and no changes to `SignLinesParser`, `SignEntryHelper`, `SignManager`, or the mixins — this is
    purely a rendering/output-safety fix at the BlueMap API boundary.

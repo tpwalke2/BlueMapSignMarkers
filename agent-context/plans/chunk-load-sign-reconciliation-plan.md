@@ -2,8 +2,8 @@
 
 ## Context
 
-Addresses GitHub issue #110, the follow-up `plans/region-sharded-sign-persistence-plan.md` and
-`plans/sign-storage-refactor-options.md` both flagged but deferred: nothing today detects a sign that vanished while
+Addresses GitHub issue #110, the follow-up `region-sharded-sign-persistence-plan.md` and
+`sign-storage-refactor-options.md` both flagged but deferred: nothing today detects a sign that vanished while
 its chunk was unloaded (external region-file deletion/regen, backup restore, manual NBT surgery). The removal path
 that exists (`AbstractBlockInject` mixin on `BlockBehaviour.affectNeighborsAfterRemoval`) only fires for an in-game
 block change on a loaded chunk — it can't see a sign that disappeared by any other means. `SignManager`'s cache
@@ -16,7 +16,7 @@ SignEntry>` untouched, deferring "a region-indexed in-memory view" to whichever 
 plan is that caller.
 
 Fabric API already exposes the event needed, no new dependency: `ServerChunkEvents.CHUNK_LOAD`
-(`fabric-lifecycle-events-v1`, part of `fabric_api_version` already in `gradle.properties`) —
+(`fabric-lifecycle-events-v1`, part of `fabric_api_version` already in `../../gradle.properties`) —
 `Load.onChunkLoad(ServerLevel level, LevelChunk chunk, boolean generated)`, fired once a chunk is already loaded into
 a `ServerLevel`.
 

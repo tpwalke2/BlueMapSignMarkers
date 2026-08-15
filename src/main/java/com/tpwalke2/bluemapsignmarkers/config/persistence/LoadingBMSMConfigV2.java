@@ -28,7 +28,9 @@ public final class LoadingBMSMConfigV2 {
                 defaultGroup.offsetY(),
                 defaultGroup.defaultHidden(),
                 defaultGroup.minDistance(),
-                defaultGroup.maxDistance());
+                defaultGroup.maxDistance(),
+                defaultGroup.lineWidth(),
+                defaultGroup.lineColor());
     }
 
     public LoadingMarkerGroupV2[] getMarkerGroups() {

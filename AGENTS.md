@@ -72,13 +72,24 @@ Two Mixins (`src/main/resources/bluemapsignmarkers.mixins.json`) catch the event
    `MarkerGroup`s. `SignHelper.reloadParser()` rebuilds that parser from the current config; it's called on every
    config reload (see below) so a sign parsed after `/bluemap reload` picks up an edited prefix/matchType.
 2. **`SignManager`** (singleton, holds a `ConcurrentMap<SignEntryKey, SignEntry>` cache of all known signs) is the
-   decision point: given a new/updated `SignEntry`, it figures out whether this is an add, update, remove, or
-   prefix-change (remove-then-add into a different marker group) relative to what's cached, then dispatches the
-   corresponding `MarkerAction` (`AddMarkerAction`/`UpdateMarkerAction`/`RemoveMarkerAction`, built via
-   `ActionFactory`) to the BlueMap connector. It also implements `IResetHandler.reset()`, which BlueMap fires on
-   `/bluemap reload`: reloads config (`ConfigManager.reload()`, `SignHelper.reloadParser()`, rebuilding its
-   prefix→group lookup and `ActionFactory`) then replays the whole sign cache through the same add/update/remove
-   logic, so an edited marker-group's icon/offset/visibility/prefix takes effect without a server restart.
+   decision point. For a given sign it computes a `Representation` (group, label, detail; `null` if no group
+   matches) both before and after the change, then looks up the (old, new) `Representation` pair in a transition
+   table (`SignTransitionResolver.computeTransitionAction`) to get the single `MarkerAction` to dispatch — covering
+   plain add/update/remove,
+   a prefix change moving a sign between groups, and a `POI`↔`LINE` group `type` flip, all as the same kind of
+   representation diff. `LINE` groups additionally dispatch `SetLineMarkerAction`/`RemoveLineMarkerAction`/
+   `GroupTransitionMarkerAction` (built via `ActionFactory`) when a sign joins/leaves a line (see
+   `LineGroupResolver` below). It also implements `IResetHandler.reset()`, which BlueMap fires on `/bluemap reload`:
+   reloads config (`ConfigManager.reload()`, `SignHelper.reloadParser()`, rebuilding its prefix→group lookup and
+   `ActionFactory`), captures the prefix→group map as it was before the swap, then for each cached `SignEntry` runs
+   the same old-vs-new `Representation` diff through `SignTransitionResolver.computeTransitionAction` — so an edited marker-group's
+   icon/offset/visibility/prefix/type takes effect without a server restart, and without leaving an orphaned marker
+   behind when a sign's marker id scheme changes between reloads. `signCache`/`chunkIndex` are never cleared for a
+   reload since no sign keys change. The `Representation` record and the transition table itself live in
+   `SignTransitionResolver` (a static-utility class, same shape as `LineGroupResolver`), not on `SignManager` —
+   `SignManager` can't be unit tested directly (its constructor builds a `BlueMapAPIConnector`, which touches live
+   `BlueMapAPI` static state), but the transition table has no Minecraft/Fabric/BlueMap types in its signature, so
+   extracting it makes it directly testable (`SignTransitionResolverTest`).
 3. **`BlueMapAPIConnector`** owns the `ReactiveQueue<MarkerAction>` and all actual BlueMap API calls. Because the
    BlueMap API is only available while BlueMap itself is enabled, actions are queued and only drained
    (`markerActionQueue.process()`) while `BlueMapAPI.getInstance().isPresent()`; `BlueMapAPI.onEnable`/`onDisable`
@@ -91,12 +102,20 @@ it if another part of the mod needs the same "buffer while a dependency is unava
 
 ### Marker groups and config
 
-`MarkerGroup` (record: prefix, matchType, type, name, icon, offsetX/Y, defaultHidden, minDistance/maxDistance) is the
-unit of configuration described in `README.md`. `ConfigManager` lazily loads a singleton `BMSMConfigV2` via
-`ConfigProvider` from `config/bluemapsignmarkers/BMSM-Core.json`, creating sane defaults (a single `[poi]` group) if
-the file is missing or fails to load. `SignLinesParser` matches sign text against groups using either `STARTS_WITH`
-or `REGEX` (see `MarkerGroupMatchType`) — note that `REGEX` uses `String.matches(...)`, which requires the *entire*
-line to match the pattern (unlike `STARTS_WITH`, a regex prefix can't share its line with label text).
+`MarkerGroup` (record: prefix, matchType, type, name, icon, offsetX/Y, defaultHidden, minDistance/maxDistance,
+lineWidth, lineColor) is the unit of configuration described in `README.md`. `type` (`MarkerGroupType`: `POI` or
+`LINE`) picks which kind of marker the group's signs produce; `lineWidth`/`lineColor` only apply to `LINE` groups
+(setting them on a `POI` group is a warning, not an error). `ConfigManager` lazily loads a singleton `BMSMConfigV2`
+via `ConfigProvider` from `config/bluemapsignmarkers/BMSM-Core.json`, creating sane defaults (a single `[poi]` group)
+if the file is missing or fails to load. `SignLinesParser` matches sign text against groups using either
+`STARTS_WITH` or `REGEX` (see `MarkerGroupMatchType`) — note that `REGEX` uses `String.matches(...)`, which requires
+the *entire* line to match the pattern (unlike `STARTS_WITH`, a regex prefix can't share its line with label text).
+
+For `LINE` groups, `LineGroupResolver` finds all signs sharing a group's prefix and the same label (the rest of the
+sign text after the prefix) — that shared (group, label) is a line's membership key. A line marker only appears once
+2+ members exist; it's removed once membership drops back to 1 or 0. Point ordering within a line follows
+`SignEntry.createdAtMillis` (insertion order, not spatial order — see "Known limitations" in
+`.scratch/line-markers/spec.md`).
 
 ### Sign persistence and versioning
 
@@ -105,9 +124,11 @@ above), with each region file wrapped in a `VersionedSignFile` envelope (`{versi
 without breaking old saves. `SignProvider.loadSigns` checks whether the storage root already has region files
 (`RegionShardedSignEntryLoader.hasSignData`); if so, it loads every region file the same version-aware way as
 before sharding — the versioned-file loader (`VersionedFileSignEntryLoader`, handling V2→V3 migration via
-`Version3Converter`, and current V3 files directly), falling back to `Version1SignEntryLoader` for pre-versioning
-files. If no region files exist yet, `LegacySignFileMigrator` reads a pre-sharding single `signs.json` (if present)
-through that same version chain, writes it out region-sharded, and backs up the legacy file (renamed, not deleted)
+`Version3Converter`, V3→V4 migration via `Version4Converter` (adds `createdAtMillis`, needed to order points within
+a line marker; backfilled for pre-V4 entries), and current V4 files directly), falling back to
+`Version1SignEntryLoader` for pre-versioning files. If no region files exist yet, `LegacySignFileMigrator` reads a
+pre-sharding single `signs.json` (if present) through that same version chain, writes it out region-sharded, and
+backs up the legacy file (renamed, not deleted)
 only once every expected region file is confirmed on disk. When adding a new persisted field, bump
 `SignFileVersions` and add a loader/converter rather than changing an existing version's shape in place — old
 region files (or a not-yet-migrated legacy `signs.json`) on live servers must keep loading.
@@ -117,26 +138,32 @@ region files (or a not-yet-migrated legacy `signs.json`) on live servers must ke
 New `MarkerAction` subtypes go through `ActionFactory` (construction) and need a `case` arm added in both
 `BlueMapAPIConnector.processMarkerAction`'s switch and `logProcessingMessage`'s switch — `MarkerAction` is a plain
 abstract class (not sealed), so a missing case silently falls through to the `default` branch instead of failing to
-compile.
+compile. Line markers add `SetLineMarkerAction` (create/update a line's rendered points), `RemoveLineMarkerAction`
+(a line drops back below 2 members), and `GroupTransitionMarkerAction` (a sign's representation changes id scheme
+between reloads, e.g. a group's `type` flipping `POI`↔`LINE` — dispatches an explicit remove of the old marker
+alongside the new one so nothing is orphaned in BlueMap's web UI); `GroupTransitionMarkerAction` replaced the earlier
+`ChangeGroupMarkerAction`.
 
 ### Testable vs. game-coupled code
 
 When adding logic, prefer keeping it in plain Java classes with no Minecraft/Fabric/BlueMap API types in their
 signature (like `SignLinesParser`/`ParsingContext`, `SignEntry`/`SignEntryHelper`, `SignChunkKey`/`SignChunkIndex`,
 `MarkerGroup`/`MarkerGroupMatchType`, `ConfigManager`/`ConfigProvider`, `ReactiveQueue`, `HtmlUtils`, `FileUtils`,
-the persistence loaders/converters (including `Version1SignEntryLoader`), `ActionFactory`/`MarkerSetIdentifierCollection`)
-— these can be unit tested directly (see `src/test/java/.../core/signs/SignLinesParserTest.java` for the pattern).
+the persistence loaders/converters (including `Version1SignEntryLoader`, `Version4Converter`),
+`ActionFactory`/`MarkerSetIdentifierCollection`, `LineGroupResolver`, `SignTransitionResolver`, `ColorUtils`,
+`DispatchedMarkerIdentifier`/`LineMarkerIdentifier`/`LinePoint`) — these can be unit tested directly (see
+`src/test/java/.../core/signs/SignLinesParserTest.java` for the pattern).
 Code that must reference game types (`SignHelper`, the mixins, `BlueMapSignMarkersMod`, `BlueMapAPIConnector`)
 should stay thin glue around the testable core, since it can only be verified manually via `runServer`.
 
 `BlueMapAPIConnector` escapes sign text (`HtmlUtils.toHtmlDetail`, in `common`) before it reaches BlueMap's POI
 marker `detail` field — BlueMap renders `detail` as raw HTML (unlike `label`, which BlueMap escapes itself), and
-sign text is player-controlled, so this closes a live XSS vector. See `plans/html-detail-escaping-plan.md` for the
+sign text is player-controlled, so this closes a live XSS vector. See `agent-context/plans/html-detail-escaping-plan.md` for the
 design. Persisted sign data stays raw/unescaped; escaping happens only at this BlueMap API call site.
 
 ## Planning documents
 
-Design/implementation plans for larger pieces of work are written to the `plans/` folder before being implemented,
+Design/implementation plans for larger pieces of work are written to the `agent-context/plans/` folder before being implemented,
 so they can be reviewed independently of the eventual code change.
 
 ## Agent skills
