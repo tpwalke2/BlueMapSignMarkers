@@ -254,7 +254,7 @@ public class BlueMapAPIConnector {
         if (markerGroup.type() == MarkerGroupType.POI) {
             LOGGER.debug("Adding POI marker...");
             var markerBuilder = POIMarker.builder()
-                    .position(identifier.x(), identifier.y(), identifier.z())
+                    .position((double) identifier.x(), (double) identifier.y(), (double) identifier.z())
                     .label(addAction.getLabel())
                     .detail(HtmlUtils.toHtmlDetail(addAction.getDetail()));
 
