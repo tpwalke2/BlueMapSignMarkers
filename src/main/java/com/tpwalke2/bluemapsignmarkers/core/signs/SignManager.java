@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Supplier;
 
 public class SignManager implements IResetHandler {
     private static volatile SignManager instance;
@@ -129,7 +130,7 @@ public class SignManager implements IResetHandler {
             }
         }
 
-        dispatchTransition(getAllSigns(), key, oldRep, newRep, actionFactory, false);
+        dispatchTransition(this::getAllSigns, key, oldRep, newRep, actionFactory, false);
     }
 
     private synchronized void removeByKey(SignEntryKey key) {
@@ -144,7 +145,7 @@ public class SignManager implements IResetHandler {
 
         var config = runtimeConfig;
         var oldRep = SignTransitionResolver.computeRepresentation(removed, config.prefixGroupMap());
-        dispatchTransition(getAllSigns(), key, oldRep, null, config.actionFactory(), false);
+        dispatchTransition(this::getAllSigns, key, oldRep, null, config.actionFactory(), false);
     }
 
     // Both call sites (live sign edits/removals from the mixins, and the reload loop below) run on their
@@ -153,14 +154,14 @@ public class SignManager implements IResetHandler {
     // server" rule (AGENTS.md), so failures computing/dispatching a single sign's transition are caught,
     // logged, and skipped rather than allowed to escape.
     private void dispatchTransition(
-            List<SignEntry> allSigns,
+            Supplier<List<SignEntry>> allSignsSupplier,
             SignEntryKey key,
             SignTransitionResolver.Representation oldRep,
             SignTransitionResolver.Representation newRep,
             ActionFactory actionFactory,
             boolean isReload) {
         try {
-            var action = SignTransitionResolver.computeTransitionAction(allSigns, key, oldRep, newRep, actionFactory, isReload);
+            var action = SignTransitionResolver.computeTransitionAction(allSignsSupplier, key, oldRep, newRep, actionFactory, isReload);
             if (action != null) {
                 LOGGER.debug("Dispatching marker action for {}: {}", key, action);
                 blueMapAPIConnector.dispatch(action);
@@ -204,7 +205,7 @@ public class SignManager implements IResetHandler {
         for (SignEntry entry : allSigns) {
             var oldRep = SignTransitionResolver.computeRepresentation(entry, oldPrefixGroupMap);
             var newRep = SignTransitionResolver.computeRepresentation(entry, newConfig.prefixGroupMap());
-            dispatchTransition(allSigns, entry.key(), oldRep, newRep, newConfig.actionFactory(), true);
+            dispatchTransition(() -> allSigns, entry.key(), oldRep, newRep, newConfig.actionFactory(), true);
         }
     }
 }

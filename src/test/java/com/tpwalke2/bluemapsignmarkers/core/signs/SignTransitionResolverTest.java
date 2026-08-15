@@ -59,7 +59,7 @@ class SignTransitionResolverTest {
     void noneToNoneIsNoOp() {
         var key = new SignEntryKey(0, 64, 0, MAP);
 
-        var action = SignTransitionResolver.computeTransitionAction(List.of(), key, null, null, actionFactory(), false);
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(), key, null, null, actionFactory(), false);
 
         assertNull(action);
     }
@@ -70,7 +70,7 @@ class SignTransitionResolverTest {
         var entry = signEntry(0, 64, 0, "[poi]", "Shop", "detail", 1000L);
         var newRep = rep(entry, group);
 
-        var action = SignTransitionResolver.computeTransitionAction(List.of(entry), entry.key(), null, newRep, actionFactory(), false);
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(entry), entry.key(), null, newRep, actionFactory(), false);
 
         var add = assertInstanceOf(AddMarkerAction.class, action);
         assertEquals("Shop", add.getLabel());
@@ -83,7 +83,7 @@ class SignTransitionResolverTest {
         var entry = signEntry(0, 64, 0, "[trail]", "Ridge", "detail", 1000L);
         var newRep = rep(entry, group);
 
-        var action = SignTransitionResolver.computeTransitionAction(List.of(entry), entry.key(), null, newRep, actionFactory(), false);
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(entry), entry.key(), null, newRep, actionFactory(), false);
 
         assertNull(action);
     }
@@ -95,7 +95,7 @@ class SignTransitionResolverTest {
         var second = signEntry(1, 64, 0, "[trail]", "Ridge", "d2", 2000L);
         var newRep = rep(second, group);
 
-        var action = SignTransitionResolver.computeTransitionAction(List.of(first, second), second.key(), null, newRep, actionFactory(), false);
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(first, second), second.key(), null, newRep, actionFactory(), false);
 
         var set = assertInstanceOf(SetLineMarkerAction.class, action);
         assertTrue(set.isFirstAppearance());
@@ -110,7 +110,7 @@ class SignTransitionResolverTest {
         var third = signEntry(2, 64, 0, "[trail]", "Ridge", "d3", 3000L);
         var newRep = rep(third, group);
 
-        var action = SignTransitionResolver.computeTransitionAction(List.of(first, second, third), third.key(), null, newRep, actionFactory(), false);
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(first, second, third), third.key(), null, newRep, actionFactory(), false);
 
         var set = assertInstanceOf(SetLineMarkerAction.class, action);
         assertTrue(!set.isFirstAppearance());
@@ -123,7 +123,7 @@ class SignTransitionResolverTest {
         var entry = signEntry(0, 64, 0, "[poi]", "Shop", "detail", 1000L);
         var oldRep = rep(entry, group);
 
-        var action = SignTransitionResolver.computeTransitionAction(List.of(), entry.key(), oldRep, null, actionFactory(), false);
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(), entry.key(), oldRep, null, actionFactory(), false);
 
         assertInstanceOf(RemoveMarkerAction.class, action);
     }
@@ -135,7 +135,7 @@ class SignTransitionResolverTest {
         var oldRep = rep(entry, group);
         var newRep = rep(entry, group);
 
-        var action = SignTransitionResolver.computeTransitionAction(List.of(entry), entry.key(), oldRep, newRep, actionFactory(), false);
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(entry), entry.key(), oldRep, newRep, actionFactory(), false);
 
         assertNull(action);
     }
@@ -147,7 +147,7 @@ class SignTransitionResolverTest {
         var oldRep = rep(entry, group);
         var newRep = rep(entry, group);
 
-        var action = SignTransitionResolver.computeTransitionAction(List.of(entry), entry.key(), oldRep, newRep, actionFactory(), true);
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(entry), entry.key(), oldRep, newRep, actionFactory(), true);
 
         var add = assertInstanceOf(AddMarkerAction.class, action);
         assertEquals("Shop", add.getLabel());
@@ -162,7 +162,7 @@ class SignTransitionResolverTest {
         var oldRep = rep(oldEntry, group);
         var newRep = rep(newEntry, group);
 
-        var action = SignTransitionResolver.computeTransitionAction(List.of(newEntry), newEntry.key(), oldRep, newRep, actionFactory(), false);
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(newEntry), newEntry.key(), oldRep, newRep, actionFactory(), false);
 
         var update = assertInstanceOf(UpdateMarkerAction.class, action);
         assertEquals("new detail", update.getNewDetails());
@@ -177,7 +177,7 @@ class SignTransitionResolverTest {
         var oldRep = rep(oldEntry, oldGroup);
         var newRep = rep(entry, newGroup);
 
-        var action = SignTransitionResolver.computeTransitionAction(List.of(entry), entry.key(), oldRep, newRep, actionFactory(), false);
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(entry), entry.key(), oldRep, newRep, actionFactory(), false);
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
@@ -192,7 +192,7 @@ class SignTransitionResolverTest {
         var remaining = signEntry(1, 64, 0, "[trail]", "Ridge", "d2", 2000L);
         var oldRep = rep(departing, group);
 
-        var action = SignTransitionResolver.computeTransitionAction(List.of(remaining), departing.key(), oldRep, null, actionFactory(), false);
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(remaining), departing.key(), oldRep, null, actionFactory(), false);
 
         assertInstanceOf(RemoveLineMarkerAction.class, action);
     }
@@ -203,7 +203,7 @@ class SignTransitionResolverTest {
         var departing = signEntry(0, 64, 0, "[trail]", "Ridge", "d1", 1000L);
         var oldRep = rep(departing, group);
 
-        var action = SignTransitionResolver.computeTransitionAction(List.of(), departing.key(), oldRep, null, actionFactory(), false);
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(), departing.key(), oldRep, null, actionFactory(), false);
 
         assertNull(action);
     }
@@ -216,7 +216,7 @@ class SignTransitionResolverTest {
         var remaining2 = signEntry(2, 64, 0, "[trail]", "Ridge", "d3", 3000L);
         var oldRep = rep(departing, group);
 
-        var action = SignTransitionResolver.computeTransitionAction(List.of(remaining1, remaining2), departing.key(), oldRep, null, actionFactory(), false);
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(remaining1, remaining2), departing.key(), oldRep, null, actionFactory(), false);
 
         var set = assertInstanceOf(SetLineMarkerAction.class, action);
         assertEquals(2, set.getPoints().size());
@@ -230,7 +230,7 @@ class SignTransitionResolverTest {
         var oldRep = rep(self, group);
         var newRep = rep(self, group);
 
-        var action = SignTransitionResolver.computeTransitionAction(List.of(self, other), self.key(), oldRep, newRep, actionFactory(), false);
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(self, other), self.key(), oldRep, newRep, actionFactory(), false);
 
         assertNull(action);
     }
@@ -244,7 +244,7 @@ class SignTransitionResolverTest {
         var oldRep = rep(oldEntry, group);
         var newRep = rep(newEntry, group);
 
-        var action = SignTransitionResolver.computeTransitionAction(List.of(newEntry, other), newEntry.key(), oldRep, newRep, actionFactory(), false);
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(newEntry, other), newEntry.key(), oldRep, newRep, actionFactory(), false);
 
         var set = assertInstanceOf(SetLineMarkerAction.class, action);
         assertTrue(!set.isFirstAppearance());
@@ -258,7 +258,7 @@ class SignTransitionResolverTest {
         var oldRep = rep(self, group);
         var newRep = rep(self, group);
 
-        var action = SignTransitionResolver.computeTransitionAction(List.of(self, other), self.key(), oldRep, newRep, actionFactory(), true);
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(self, other), self.key(), oldRep, newRep, actionFactory(), true);
 
         var set = assertInstanceOf(SetLineMarkerAction.class, action);
         assertEquals(2, set.getPoints().size());
@@ -275,7 +275,7 @@ class SignTransitionResolverTest {
         var newRep = rep(movedEntry, newGroup);
 
         var allSigns = List.of(otherOldGroupMember, movedEntry, otherNewGroupMember);
-        var action = SignTransitionResolver.computeTransitionAction(allSigns, movedEntry.key(), oldRep, newRep, actionFactory(), false);
+        var action = SignTransitionResolver.computeTransitionAction(() -> allSigns, movedEntry.key(), oldRep, newRep, actionFactory(), false);
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
@@ -293,7 +293,7 @@ class SignTransitionResolverTest {
         var oldRep = rep(signEntry(0, 64, 0, "[poi]", "Shop", "d", 1000L), poi);
         var newRep = rep(movedEntry, line);
 
-        var action = SignTransitionResolver.computeTransitionAction(List.of(movedEntry, otherLineMember), movedEntry.key(), oldRep, newRep, actionFactory(), false);
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(movedEntry, otherLineMember), movedEntry.key(), oldRep, newRep, actionFactory(), false);
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
@@ -312,7 +312,7 @@ class SignTransitionResolverTest {
         var oldRep = rep(departing, line);
         var newRep = rep(movedEntry, poi);
 
-        var action = SignTransitionResolver.computeTransitionAction(List.of(remaining1, remaining2, movedEntry), movedEntry.key(), oldRep, newRep, actionFactory(), false);
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(remaining1, remaining2, movedEntry), movedEntry.key(), oldRep, newRep, actionFactory(), false);
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());

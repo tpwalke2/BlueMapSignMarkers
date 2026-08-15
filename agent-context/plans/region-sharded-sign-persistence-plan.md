@@ -24,7 +24,7 @@ loaded into) that question costs a full scan per chunk load, which doesn't scale
 groundwork: reorganize on-disk storage by location so the actual reconciliation logic (separate follow-up issue) has
 something cheap to query. It does not implement that reconciliation logic itself.
 
-This also folds in an adjacent fix already on record: `ase-review-2026-07-11.md` (finding #1) flags that
+This also folds in an adjacent fix already on record: `codebase-review-2026-07-11.md` (finding #1) flags that
 `getWorldPath(LevelResource.ROOT)` already resolves to the level-save directory, so the extra `.getParent()` walks
 up to the server root and `.getFileName()` grabs the *run directory's* name, not the level name. Rewriting path
 construction to relocate storage out of `config/` is the natural place to fix this too.

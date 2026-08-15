@@ -131,11 +131,11 @@ each entry's `key().parentMap()`/`x()`/`z()` — the shared grouping logic behin
      normalized, so anything else fell through unchanged and permanently mismatched the live dimension key
      post-migration, duplicating markers as "new" signs. `Version1SignEntryLoader`, the `V2` branch, and the `V3`
      branch of `VersionedFileSignEntryLoader` each back up the file before migrating (`.v1.bak`/`.v2.bak`/`.v3.bak`
-     respectively) and **abort the migration if that backup fails** (ticket 02) rather than overwriting the
-     original with no recoverable copy — `Version1SignEntryLoader` throws `IllegalStateException` (uncaught here,
-     isolated instead by `LegacySignFileMigrator`'s own try/catch around the whole chain), while
-     `VersionedFileSignEntryLoader`'s `V2`/`V3` branches log an error and return `null` (falling through to the V1
-     loader, same as any other failure to load at that version).
+     respectively) so the original isn't overwritten with no recoverable copy (ticket 02) — but they don't react the
+     same way to a failed backup: `Version1SignEntryLoader` throws `IllegalStateException`, aborting that migration
+     (uncaught here, isolated instead by `LegacySignFileMigrator`'s own try/catch around the whole chain), while
+     `VersionedFileSignEntryLoader`'s `V2`/`V3` branches log an error and **continue anyway**, still returning the
+     converted V4 entries in-memory without a pre-migration backup on disk.
    - Writes the resulting entries via `RegionShardedSignEntryWriter.write(...)` (see below). Backs up the legacy
      file via `FileUtils.moveToBackup(legacyPath, ".migrated", ...)` — **renamed, not deleted** — only after
      confirming every region file expected from `SignRegionPartitioner.partition(entryList)` actually exists on

@@ -236,15 +236,20 @@ public class BlueMapAPIConnector {
 
         var line = new Line(action.getPoints().stream().map(p -> new Vector3d(p.x(), p.y(), p.z())).toList());
         var color = ColorUtils.parseHex(action.getLineColor());
+        var markerGroup = action.getMarkerIdentifier().parentSet().markerGroup();
 
-        markerSetMaps.forEach(markers -> markers.put(action.getMarkerIdentifier().getId(),
-                LineMarker.builder()
-                        .label(action.getLabel())
-                        .detail(HtmlUtils.toHtmlDetail(action.getDetail()))
-                        .line(line)
-                        .lineWidth(action.getLineWidth())
-                        .lineColor(new Color(color[0], color[1], color[2], color[3]))
-                        .build()));
+        markerSetMaps.forEach(markers -> {
+            var marker = LineMarker.builder()
+                    .label(action.getLabel())
+                    .detail(HtmlUtils.toHtmlDetail(action.getDetail()))
+                    .line(line)
+                    .lineWidth(action.getLineWidth())
+                    .lineColor(new Color(color[0], color[1], color[2], color[3]))
+                    .build();
+            marker.setMinDistance(markerGroup.minDistance());
+            marker.setMaxDistance(markerGroup.maxDistance());
+            markers.put(action.getMarkerIdentifier().getId(), marker);
+        });
     }
 
     private static void addMarker(AddMarkerAction addAction, Stream<Map<String, Marker>> markerSetMaps) {

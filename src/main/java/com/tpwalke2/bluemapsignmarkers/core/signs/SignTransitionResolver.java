@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 public class SignTransitionResolver {
@@ -49,8 +50,12 @@ public class SignTransitionResolver {
     // .scratch/line-markers/spec.md §6. Returns null for a no-op, a single MarkerAction when only one
     // effect applies, or a GroupTransitionMarkerAction bundling a leave-effect + join-effect so
     // ReactiveQueue's lack of ordering guarantees can't transiently show a sign in two places.
+    //
+    // allSignsSupplier is lazy (only POI<->POI transitions never touch it) since callers may hold the
+    // full sign cache, which is expensive to copy on every single-sign event when this is a pure POI
+    // transition (the common case).
     static MarkerAction computeTransitionAction(
-            List<SignEntry> allSigns,
+            Supplier<List<SignEntry>> allSignsSupplier,
             SignEntryKey key,
             Representation oldRep,
             Representation newRep,
@@ -61,13 +66,13 @@ public class SignTransitionResolver {
         if (oldRep == null) {
             return newRep.group().type() == MarkerGroupType.POI
                     ? actionFactory.createAddPOIAction(key.x(), key.y(), key.z(), key.parentMap(), newRep.label(), newRep.detail(), newRep.group())
-                    : lineJoinAction(allSigns, key.parentMap(), newRep, actionFactory, false);
+                    : lineJoinAction(allSignsSupplier, key.parentMap(), newRep, actionFactory, false);
         }
 
         if (newRep == null) {
             return oldRep.group().type() == MarkerGroupType.POI
                     ? actionFactory.createRemovePOIAction(key.x(), key.y(), key.z(), key.parentMap(), oldRep.group())
-                    : lineLeaveAction(allSigns, key.parentMap(), oldRep, actionFactory);
+                    : lineLeaveAction(allSignsSupplier, key.parentMap(), oldRep, actionFactory);
         }
 
         var oldType = oldRep.group().type();
@@ -88,19 +93,19 @@ public class SignTransitionResolver {
 
         if (oldType == MarkerGroupType.LINE && newType == MarkerGroupType.LINE && sameGroupAndLabel(oldRep, newRep)) {
             if (oldRep.detail().equals(newRep.detail()) && !isReload) return null;
-            return lineJoinAction(allSigns, key.parentMap(), newRep, actionFactory, true);
+            return lineJoinAction(allSignsSupplier, key.parentMap(), newRep, actionFactory, true);
         }
 
         var effects = new ArrayList<MarkerAction>(2);
 
         var leave = oldType == MarkerGroupType.POI
                 ? actionFactory.createRemovePOIAction(key.x(), key.y(), key.z(), key.parentMap(), oldRep.group())
-                : lineLeaveAction(allSigns, key.parentMap(), oldRep, actionFactory);
+                : lineLeaveAction(allSignsSupplier, key.parentMap(), oldRep, actionFactory);
         if (leave != null) effects.add(leave);
 
         var join = newType == MarkerGroupType.POI
                 ? actionFactory.createAddPOIAction(key.x(), key.y(), key.z(), key.parentMap(), newRep.label(), newRep.detail(), newRep.group())
-                : lineJoinAction(allSigns, key.parentMap(), newRep, actionFactory, false);
+                : lineJoinAction(allSignsSupplier, key.parentMap(), newRep, actionFactory, false);
         if (join != null) effects.add(join);
 
         if (effects.isEmpty()) return null;
@@ -114,8 +119,8 @@ public class SignTransitionResolver {
     // since it's used both for same-group/label recomputes (only reachable at ≥2 members if a marker
     // already existed) and for reload-forced recreates (isFirstAppearance is log-only there, so the
     // false value is harmless either way).
-    private static MarkerAction lineJoinAction(List<SignEntry> allSigns, String parentMap, Representation rep, ActionFactory actionFactory, boolean sameGroupRecompute) {
-        var members = LineGroupResolver.members(allSigns, parentMap, rep.group().prefix(), rep.label());
+    private static MarkerAction lineJoinAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, boolean sameGroupRecompute) {
+        var members = LineGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
         if (members.size() < 2) return null;
 
         var isFirstAppearance = !sameGroupRecompute && members.size() == 2;
@@ -126,8 +131,8 @@ public class SignTransitionResolver {
     // present in signCache under this group/label by the time this is called). Dispatches Set if ≥2
     // members remain, Remove if it drops below 2 and a marker existed before (i.e. exactly 1 remains -
     // meaning there were 2 before), or nothing if there was never a marker to begin with (0 remain).
-    private static MarkerAction lineLeaveAction(List<SignEntry> allSigns, String parentMap, Representation rep, ActionFactory actionFactory) {
-        var members = LineGroupResolver.members(allSigns, parentMap, rep.group().prefix(), rep.label());
+    private static MarkerAction lineLeaveAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory) {
+        var members = LineGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
 
         if (members.size() >= 2) {
             return actionFactory.createSetLineAction(parentMap, rep.group(), rep.label(), joinLineDetail(members), toPoints(members), false);

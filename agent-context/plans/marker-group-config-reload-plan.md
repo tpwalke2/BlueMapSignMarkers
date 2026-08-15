@@ -163,7 +163,7 @@ on reload," the case this plan targets.
 ## Out of scope
 
 - Fixing `SignManager`'s non-`volatile` singleton `instance` field (double-checked locking bug flagged separately in
-  `ase-review-2026-07-11.md`) — pre-existing, unrelated to config reload.
+  `codebase-review-2026-07-11.md`) — pre-existing, unrelated to config reload.
 - A config file watcher / auto-reload without `/bluemap reload` — not requested; this rides the existing
   `IResetHandler` reset signal, the only reload trigger the mod has.
 - Fully resolving the group-rename duplicate-marker-set edge case above.
