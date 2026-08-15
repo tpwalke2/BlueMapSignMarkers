@@ -98,8 +98,12 @@ class VersionedFileSignEntryLoaderTest {
     // content is already fully read into memory by the caller before this method runs, so deleting the on-disk
     // source file leaves parsing unaffected but makes the backup copy step fail - simulating a disk-full or
     // permissions failure without depending on platform-specific filesystem permission enforcement.
+    //
+    // The loader only migrates in-memory here - it never overwrites the source file itself, so a failed .bak
+    // journal copy is logged but not fatal; the caller (LegacySignFileMigrator) is the one that backs up and
+    // replaces the original, and only after every region file is confirmed written.
     @Test
-    void v2ContentReturnsNullRatherThanOverwritingWhenTheBackupFails(@TempDir Path tempDir) throws IOException {
+    void v2ContentStillMigratesWhenTheBackupFails(@TempDir Path tempDir) throws IOException {
         var path = tempDir.resolve("signs.json").toString();
         var v2Entry = new SignEntryV2(KEY, "player-1",
                 new SignLinesParseResultV2(MarkerTypeV2.POI, "label", "detail"),
@@ -111,7 +115,8 @@ class VersionedFileSignEntryLoaderTest {
         var result = VersionedFileSignEntryLoader.loadSignEntries(
                 path, content, new MarkerGroup[]{poiGroup("[poi]")}, GSON);
 
-        assertNull(result, "a failed backup must abort the migration instead of returning converted entries");
+        assertEquals(1, result.length, "a failed backup must not abort the migration");
+        assertEquals(KEY, result[0].key());
         assertFalse(Files.exists(Path.of(path + ".v2.bak")), "no backup should exist after a failed copy");
     }
 
