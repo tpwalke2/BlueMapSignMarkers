@@ -154,8 +154,9 @@ public class SignManager implements IResetHandler {
         var newType = newRep.group().type();
 
         if (oldType == MarkerGroupType.POI && newType == MarkerGroupType.POI) {
-            if (sameGroupAndLabel(oldRep, newRep)) {
-                return oldRep.detail().equals(newRep.detail())
+            if (oldRep.group().prefix().equals(newRep.group().prefix())) {
+                var unchanged = oldRep.label().equals(newRep.label()) && oldRep.detail().equals(newRep.detail());
+                return unchanged
                         ? null
                         : actionFactory.createUpdatePOIAction(key.x(), key.y(), key.z(), key.parentMap(), newRep.label(), newRep.detail(), newRep.group());
             }
