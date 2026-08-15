@@ -3,6 +3,8 @@ package com.tpwalke2.bluemapsignmarkers.common;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ColorUtilsTest {
 
@@ -39,5 +41,27 @@ class ColorUtilsTest {
     @Test
     void parseHexFallsBackToOpaqueRedForNonHexCharacters() {
         assertArrayEquals(new int[]{255, 0, 0, 255}, ColorUtils.parseHex("#ZZZZZZ"));
+    }
+
+    @Test
+    void isValidHexAcceptsSixAndEightDigitForms() {
+        assertTrue(ColorUtils.isValidHex("#00FF00"));
+        assertTrue(ColorUtils.isValidHex("#FF0000FF"));
+        assertTrue(ColorUtils.isValidHex("FF0000FF"));
+    }
+
+    @Test
+    void isValidHexRejectsNull() {
+        assertFalse(ColorUtils.isValidHex(null));
+    }
+
+    @Test
+    void isValidHexRejectsWrongLength() {
+        assertFalse(ColorUtils.isValidHex("#FFF"));
+    }
+
+    @Test
+    void isValidHexRejectsNonHexCharacters() {
+        assertFalse(ColorUtils.isValidHex("#ZZZZZZ"));
     }
 }

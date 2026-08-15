@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.Strictness;
 import com.tpwalke2.bluemapsignmarkers.Constants;
+import com.tpwalke2.bluemapsignmarkers.common.ColorUtils;
 import com.tpwalke2.bluemapsignmarkers.common.FileUtils;
 import com.tpwalke2.bluemapsignmarkers.config.models.BMSMConfigV1;
 import com.tpwalke2.bluemapsignmarkers.config.models.BMSMConfigV2;
@@ -183,6 +184,8 @@ public class ConfigProvider {
         }
     }
 
+    private static final int DEFAULT_LINE_WIDTH = 2;
+
     private static MarkerGroup convertToLoadedMarkerGroup(LoadingMarkerGroupV2 markerGroup) {
         return new MarkerGroup(
                 markerGroup.prefix(),
@@ -195,9 +198,41 @@ public class ConfigProvider {
                 markerGroup.defaultHidden() != null && markerGroup.defaultHidden(),
                 markerGroup.minDistance() == null ? 0.0 : markerGroup.minDistance(),
                 markerGroup.maxDistance() == null ? 10000000.0 : markerGroup.maxDistance(),
-                markerGroup.lineWidth() == null ? 2 : markerGroup.lineWidth(),
-                markerGroup.lineColor() == null ? "#FF0000FF" : markerGroup.lineColor()
+                resolveLineWidth(markerGroup),
+                resolveLineColor(markerGroup)
         );
+    }
+
+    // Falls back to the default width on a non-positive value rather than throwing - a bad config value
+    // must not crash the server (same treatment as ColorUtils.parseHex's fallback on a malformed color).
+    private static int resolveLineWidth(LoadingMarkerGroupV2 markerGroup) {
+        var lineWidth = markerGroup.lineWidth();
+        if (lineWidth == null) return DEFAULT_LINE_WIDTH;
+
+        if (lineWidth <= 0) {
+            LOGGER.warn("Marker group '{}' has a non-positive 'lineWidth' ({}); falling back to default {}",
+                    markerGroup.name(), lineWidth, DEFAULT_LINE_WIDTH);
+            return DEFAULT_LINE_WIDTH;
+        }
+
+        return lineWidth;
+    }
+
+    // Warns and falls back to the default color at load time (rather than silently at dispatch time via
+    // ColorUtils.parseHex's fallback) so a malformed color gets a clear, attributable log message.
+    private static final String DEFAULT_LINE_COLOR = "#FF0000FF";
+
+    private static String resolveLineColor(LoadingMarkerGroupV2 markerGroup) {
+        var lineColor = markerGroup.lineColor();
+        if (lineColor == null) return DEFAULT_LINE_COLOR;
+
+        if (!ColorUtils.isValidHex(lineColor)) {
+            LOGGER.warn("Marker group '{}' has a malformed 'lineColor' ({}); falling back to default {}",
+                    markerGroup.name(), lineColor, DEFAULT_LINE_COLOR);
+            return DEFAULT_LINE_COLOR;
+        }
+
+        return lineColor;
     }
 
     private static BMSMConfigV2 loadV1Config(File file, BMSMConfigV1 v1Config) {

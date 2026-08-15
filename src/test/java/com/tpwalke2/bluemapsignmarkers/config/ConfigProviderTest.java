@@ -200,6 +200,60 @@ class ConfigProviderTest {
     }
 
     @Test
+    void loadConfigFallsBackToDefaultLineWidthWhenNonPositive(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[line]", "name": "Line Group", "type": "LINE", "lineWidth": 0 }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(2, group.lineWidth());
+    }
+
+    @Test
+    void loadConfigFallsBackToDefaultLineWidthWhenNegative(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[line]", "name": "Line Group", "type": "LINE", "lineWidth": -5 }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(2, group.lineWidth());
+    }
+
+    @Test
+    void loadConfigFallsBackToDefaultLineColorWhenMalformed(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[line]", "name": "Line Group", "type": "LINE", "lineColor": "notacolor" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals("#FF0000FF", group.lineColor());
+    }
+
+    @Test
     void loadConfigStillLoadsAPOIGroupWithLineWidthAndLineColorSet(@TempDir Path tempDir) throws IOException {
         var path = tempDir.resolve("BMSM-Core.json");
         Files.writeString(path, """
