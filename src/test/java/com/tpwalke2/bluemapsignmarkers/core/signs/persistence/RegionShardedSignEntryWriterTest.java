@@ -34,7 +34,7 @@ class RegionShardedSignEntryWriterTest {
         assertTrue(Files.exists(netherFile));
 
         var versionedFile = GSON.fromJson(Files.readString(overworldFile, StandardCharsets.UTF_8), VersionedSignFile.class);
-        assertEquals(SignFileVersions.V4, versionedFile.version());
+        assertEquals(SignFileVersions.V5, versionedFile.version());
 
         var entries = GSON.fromJson(versionedFile.data(), SignEntry[].class);
         assertEquals(1, entries.length);
@@ -77,6 +77,8 @@ class RegionShardedSignEntryWriterTest {
                 "unknown",
                 new SignLinesParseResult("[poi]", label, label),
                 new SignLinesParseResult(null, "", ""),
-                1000L);
+                1000L,
+                null,
+                null);
     }
 }

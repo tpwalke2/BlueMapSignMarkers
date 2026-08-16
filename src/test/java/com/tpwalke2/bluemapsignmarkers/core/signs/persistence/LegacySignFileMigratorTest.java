@@ -104,6 +104,8 @@ class LegacySignFileMigratorTest {
                 "unknown",
                 new SignLinesParseResult("[poi]", label, label),
                 new SignLinesParseResult(null, "", ""),
-                1000L);
+                1000L,
+                null,
+                null);
     }
 }

@@ -44,7 +44,9 @@ class SignTransitionResolverTest {
                 "unknown",
                 new SignLinesParseResult(prefix, label, detail),
                 new SignLinesParseResult(null, "", ""),
-                createdAtMillis);
+                createdAtMillis,
+                null,
+                null);
     }
 
     private static ActionFactory actionFactory() {
@@ -67,7 +69,7 @@ class SignTransitionResolverTest {
     @Test
     void computeRepresentationOnMalformedEntryWithNullFrontTextReturnsNullInsteadOfThrowing() {
         var group = poiGroup("[poi]");
-        var malformed = new SignEntry(new SignEntryKey(0, 64, 0, MAP), "unknown", null, null, 1000L);
+        var malformed = new SignEntry(new SignEntryKey(0, 64, 0, MAP), "unknown", null, null, 1000L, null, null);
 
         var rep = SignTransitionResolver.computeRepresentation(malformed, Map.of(group.prefix(), group));
 

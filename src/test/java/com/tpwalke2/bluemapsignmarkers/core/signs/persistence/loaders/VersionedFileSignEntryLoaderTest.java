@@ -12,6 +12,7 @@ import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.VersionedSignFile;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.MarkerTypeV2;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV2;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV3;
+import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV4;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignLinesParseResultV2;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -40,21 +41,44 @@ class VersionedFileSignEntryLoaderTest {
     }
 
     @Test
-    void v4ContentIsParsedDirectlyWithoutCreatingABackup(@TempDir Path tempDir) throws IOException {
+    void v5ContentIsParsedDirectlyWithoutCreatingABackup(@TempDir Path tempDir) throws IOException {
         var path = tempDir.resolve("signs.json").toString();
         var entry = new SignEntry(KEY, "player-1", new SignLinesParseResult("[poi]", "label", "detail"),
-                new SignLinesParseResult(null, "", ""), 1000L);
-        var content = GSON.toJson(new VersionedSignFile(SignFileVersions.V4, GSON.toJson(new SignEntry[]{entry})));
+                new SignLinesParseResult(null, "", ""), 1000L, new String[]{"[poi]", "label"}, new String[]{});
+        var content = GSON.toJson(new VersionedSignFile(SignFileVersions.V5, GSON.toJson(new SignEntry[]{entry})));
         Files.writeString(Path.of(path), content, StandardCharsets.UTF_8);
 
         var result = VersionedFileSignEntryLoader.loadSignEntries(path, content, NO_GROUPS, GSON);
 
         assertArrayEquals(new SignEntry[]{entry}, result);
-        assertFalse(Files.exists(Path.of(path + ".v3.bak")), "a V4 file should not be backed up as a V3 file");
+        assertFalse(Files.exists(Path.of(path + ".v4.bak")), "a V5 file should not be backed up as a V4 file");
     }
 
     @Test
-    void v3ContentIsConvertedThroughVersion4ConverterAndBackedUp(@TempDir Path tempDir) throws IOException {
+    void v4ContentIsConvertedThroughVersion5ConverterAndBackedUp(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("signs.json").toString();
+        var v4Entry = new SignEntryV4(KEY, "player-1", new SignLinesParseResult("[poi]", "label", "detail"),
+                new SignLinesParseResult(null, "", ""), 1000L);
+        var content = GSON.toJson(new VersionedSignFile(SignFileVersions.V4, GSON.toJson(new SignEntryV4[]{v4Entry})));
+        Files.writeString(Path.of(path), content, StandardCharsets.UTF_8);
+
+        var result = VersionedFileSignEntryLoader.loadSignEntries(path, content, NO_GROUPS, GSON);
+
+        assertEquals(1, result.length);
+        assertEquals(KEY, result[0].key());
+        assertEquals("player-1", result[0].playerId());
+        assertEquals("[poi]", result[0].frontText().prefix());
+        assertEquals(1000L, result[0].createdAtMillis());
+        assertNull(result[0].frontRawLines(), "a V4 entry has no raw sign text to backfill from");
+        assertNull(result[0].backRawLines(), "a V4 entry has no raw sign text to backfill from");
+
+        var backup = Path.of(path + ".v4.bak");
+        assertTrue(Files.exists(backup), "the original V4 file should be backed up before being replaced");
+        assertEquals(content, Files.readString(backup));
+    }
+
+    @Test
+    void v3ContentIsConvertedThroughVersion4And5ConvertersAndBackedUp(@TempDir Path tempDir) throws IOException {
         var path = tempDir.resolve("signs.json").toString();
         var v3Entry = new SignEntryV3(KEY, "player-1", new SignLinesParseResult("[poi]", "label", "detail"),
                 new SignLinesParseResult(null, "", ""));
@@ -67,6 +91,8 @@ class VersionedFileSignEntryLoaderTest {
         assertEquals(KEY, result[0].key());
         assertEquals("player-1", result[0].playerId());
         assertEquals("[poi]", result[0].frontText().prefix());
+        assertNull(result[0].frontRawLines());
+        assertNull(result[0].backRawLines());
 
         var backup = Path.of(path + ".v3.bak");
         assertTrue(Files.exists(backup), "the original V3 file should be backed up before being replaced");
