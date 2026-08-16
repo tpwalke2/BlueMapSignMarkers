@@ -224,7 +224,7 @@ public class SignManager implements IResetHandler {
             }
 
             var newRep = SignTransitionResolver.computeRepresentation(entry, newConfig.prefixGroupMap());
-            dispatchTransition(() -> allSigns, entry.key(), oldRep, newRep, newConfig.actionFactory(), true);
+            dispatchTransition(this::getAllSigns, entry.key(), oldRep, newRep, newConfig.actionFactory(), true);
         }
     }
 
