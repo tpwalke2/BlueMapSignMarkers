@@ -2,7 +2,7 @@
 
 ## Context
 
-The project currently has no automated tests — `src/main` only, no `src/test`, and `build.gradle` declares no test
+The project currently has no automated tests — `../../src/main` only, no `../../src/test`, and `../../build.gradle` declares no test
 dependencies or config. Verification today is manual (`./gradlew runServer` + placing signs in-game). We want a
 standard JUnit 5 setup so pure-logic classes (starting with `SignLinesParser`) can be covered by fast, automated
 tests, without any of that test code ending up in the shipped mod jar.
@@ -13,28 +13,28 @@ Fabric, or BlueMap API references, so they run as ordinary JUnit tests with no g
 
 ## Why tests won't ship in the mod jar
 
-Gradle's `java` plugin (applied transitively by `fabric-loom`) already keeps `src/test/java` fully separate from
-`src/main/java`: the `jar` task only packages `sourceSets.main.output`. No exclusion rules are needed — this is
-automatic as long as test code lives under `src/test/java`.
+Gradle's `java` plugin (applied transitively by `fabric-loom`) already keeps `../../src/test/java` fully separate from
+`../../src/main/java`: the `jar` task only packages `sourceSets.main.output`. No exclusion rules are needed — this is
+automatic as long as test code lives under `../../src/test/java`.
 
 ## Changes
 
-1. **`build.gradle`** — add a JUnit 5 test setup:
+1. **`../../build.gradle`** — add a JUnit 5 test setup:
    - `testImplementation platform('org.junit:junit-bom:5.11.4')`
    - `testImplementation 'org.junit.jupiter:junit-jupiter'`
    - `test { useJUnitPlatform() }`
    - No changes needed to the `jar`, `loom`, or `processResources` blocks.
-   - Note: `compileOnly` dependencies (e.g. `bluemap-api`) are not visible to `src/test` by default. Not needed for
+   - Note: `compileOnly` dependencies (e.g. `bluemap-api`) are not visible to `../../src/test` by default. Not needed for
      `SignLinesParser` tests, but call this out as a note in case future tests touch BlueMap-API-dependent code —
      they'd need an explicit `testCompileOnly`/`testImplementation` for that dependency.
 
-2. **New file: `src/test/java/com/tpwalke2/bluemapsignmarkers/core/signs/SignLinesParserTest.java`**
+2. **New file: `../../src/test/java/com/tpwalke2/bluemapsignmarkers/core/signs/SignLinesParserTest.java`**
    Package-mirrors the main source layout. Uses JUnit 5 (`@Test`, `@ParameterizedTest` where useful) to construct
    `SignLinesParser` instances directly with hand-built `MarkerGroup` records (via its existing constructor —
    no test-only production code needed) and assert on the returned `SignLinesParseResult`.
 
    Planned test cases, based on the actual parsing behavior in
-   `src/main/java/com/tpwalke2/bluemapsignmarkers/core/signs/SignLinesParser.java`:
+   `../../src/main/java/com/tpwalke2/bluemapsignmarkers/core/signs/SignLinesParser.java`:
    - **STARTS_WITH match, label on the prefix line** — e.g. `["[poi] Town Hall"]` → prefix `[poi]`, label
      `Town Hall`, detail `Town Hall`.
    - **STARTS_WITH match, label on a following line** — e.g. `["[poi]", "Town Hall"]` → label pulled from the next
@@ -53,17 +53,17 @@ automatic as long as test code lives under `src/test/java`.
      correctly (each line is `.trim()`-ed before matching).
 
 3. **CI workflows** — unit tests will run in CI (explicit `./gradlew test` step) and a results summary will be written to the workflow run summary (see Follow-up below).
-   Other project files (`README.md`, mixins, `fabric.mod.json`) are unaffected.
+   Other project files (`../../README.md`, mixins, `fabric.mod.json`) are unaffected.
 
 ## Verification
 
 - Run `./gradlew test` — confirms the new JUnit 5 wiring works and all `SignLinesParserTest` cases pass.
 - Run `./gradlew clean build` — confirms the full build (including `runServer`-independent test run) still succeeds
-  and that `build/libs/*.jar` contains no `src/test` classes (spot-check with `jar tf` if desired).
+  and that `build/libs/*.jar` contains no `../../src/test` classes (spot-check with `jar tf` if desired).
 
 ## Follow-up (implemented): CI test-count summary
 
-Both `.github/workflows/build.yml` and `.github/workflows/publish.yml` have an explicit `run unit tests` step
+Both `../../.github/workflows/build.yml` and `../../.github/workflows/publish.yml` have an explicit `run unit tests` step
 (`./gradlew test`), which already fails the job on any test failure. That alone only shows pass/fail counts buried
 in the raw log ("N tests completed, M failed"); a `summarize test results` step was added right after each
 `run unit tests` step for a prominent, structured display.
@@ -78,7 +78,7 @@ file per test class, each with a root `<testsuite ... tests="N" failures="N" err
 set. The new `summarize test results` step:
 1. Runs with `if: always()` so the summary is written even when the preceding test step failed — that's the case
    where seeing the counts matters most.
-2. Sums the `tests`/`failures`/`errors`/`skipped` attributes across all XML files in `build/test-results/test/`
+2. Sums the `tests`/`failures`/`errors`/`skipped` attributes across all XML files in `../../build/test-results/test`
    using `sed` (not `grep -oP` as originally sketched — `-P` (PCRE) support turned out to be locale-sensitive in
    local testing, so a portable `sed -n 's/.../\1/p'` extraction is used instead; no `xmllint` or other extra
    tooling needed either way).
@@ -87,10 +87,10 @@ set. The new `summarize test results` step:
    needs no extra permissions and behaves identically for PRs from forks.
 
 **Files changed:**
-- `.github/workflows/build.yml` — added the summary step after `run unit tests`.
-- `.github/workflows/publish.yml` — added the same summary step after its `run unit tests`.
-- `AGENTS.md` — documents the new step.
-- No other files changed; this was CI-only and didn't touch `build.gradle` or test code.
+- `../../.github/workflows/build.yml` — added the summary step after `run unit tests`.
+- `../../.github/workflows/publish.yml` — added the same summary step after its `run unit tests`.
+- `../../AGENTS.md` — documents the new step.
+- No other files changed; this was CI-only and didn't touch `../../build.gradle` or test code.
 
 **Verification performed:** locally ran the summarizer shell logic against `build/test-results/test/*.xml` for both
 an all-passing suite (10/10) and, by temporarily breaking then reverting an assertion in

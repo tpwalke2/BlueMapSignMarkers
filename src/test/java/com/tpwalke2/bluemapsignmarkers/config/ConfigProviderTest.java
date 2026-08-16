@@ -161,6 +161,138 @@ class ConfigProviderTest {
     }
 
     @Test
+    void loadConfigDefaultsLineWidthAndLineColorForALineGroupWhenOmitted(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[line]", "name": "Line Group", "type": "LINE" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(MarkerGroupType.LINE, group.type());
+        assertEquals(2, group.lineWidth());
+        assertEquals("#FF0000FF", group.lineColor());
+    }
+
+    @Test
+    void loadConfigPreservesExplicitLineWidthAndLineColorForALineGroup(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[line]", "name": "Line Group", "type": "LINE", "lineWidth": 5, "lineColor": "#00FF00FF" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(5, group.lineWidth());
+        assertEquals("#00FF00FF", group.lineColor());
+    }
+
+    @Test
+    void loadConfigFallsBackToDefaultLineWidthWhenNonPositive(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[line]", "name": "Line Group", "type": "LINE", "lineWidth": 0 }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(2, group.lineWidth());
+    }
+
+    @Test
+    void loadConfigFallsBackToDefaultLineWidthWhenNegative(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[line]", "name": "Line Group", "type": "LINE", "lineWidth": -5 }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(2, group.lineWidth());
+    }
+
+    @Test
+    void loadConfigFallsBackToDefaultLineColorWhenMalformed(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[line]", "name": "Line Group", "type": "LINE", "lineColor": "notacolor" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals("#FF0000FF", group.lineColor());
+    }
+
+    @Test
+    void loadConfigStillLoadsAPOIGroupWithLineWidthAndLineColorSet(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group", "type": "POI", "lineWidth": 5, "lineColor": "#00FF00FF" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(MarkerGroupType.POI, group.type());
+        assertEquals("[poi]", group.prefix());
+    }
+
+    @Test
+    void loadConfigDoesNotValidateLineWidthOrLineColorForAPOIGroup(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group", "type": "POI", "lineWidth": -5, "lineColor": "notacolor" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(MarkerGroupType.POI, group.type());
+        assertEquals(-5, group.lineWidth());
+        assertEquals("notacolor", group.lineColor());
+    }
+
+    @Test
     void saveAndLoadConfigRoundTripNonAsciiMarkerGroupNamesThroughUtf8(@TempDir Path tempDir) throws IOException {
         var path = tempDir.resolve("BMSM-Core.json");
         var original = new com.tpwalke2.bluemapsignmarkers.config.models.BMSMConfigV2(
@@ -174,7 +306,9 @@ class ConfigProviderTest {
                         0,
                         false,
                         0.0,
-                        10000000.0));
+                        10000000.0,
+                        2,
+                        "#FF0000FF"));
 
         ConfigProvider.saveConfig(original, path);
         var reloaded = ConfigProvider.loadConfig(path);

@@ -1,7 +1,7 @@
 # Marker group reload — follow-up todo list
 
-Deferred edge cases from `plans/marker-group-config-reload-plan.md`, not tracked anywhere else (checked
-`plans/codebase-review-2026-07-11.md` and the rest of `plans/` — no match). Neither blocks that plan's core
+Deferred edge cases from `marker-group-config-reload-plan.md`, not tracked anywhere else (checked
+`codebase-review-2026-07-11.md` and the rest of `` — no match). Neither blocks that plan's core
 goal (icon/offset/visibility/distance edits reflected on `/bluemap reload`); both need `SignManager` to track,
 per cached sign, the last-dispatched `MarkerGroup` value (not just its prefix string) to fix properly.
 

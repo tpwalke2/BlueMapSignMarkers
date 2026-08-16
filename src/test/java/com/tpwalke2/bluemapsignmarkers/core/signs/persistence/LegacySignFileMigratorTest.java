@@ -41,11 +41,11 @@ class LegacySignFileMigratorTest {
     }
 
     @Test
-    void migratesAV3LegacyFileAndBacksItUpWithoutDeletingIt(@TempDir Path tempDir) throws IOException {
+    void migratesAV4LegacyFileAndBacksItUpWithoutDeletingIt(@TempDir Path tempDir) throws IOException {
         var legacyPath = tempDir.resolve("signs.json").toString();
         var storageRoot = tempDir.resolve("storage");
         var entry = signEntry(0, 0, "minecraft:overworld", "Town Hall");
-        writeLegacyV3File(legacyPath, entry);
+        writeLegacyV4File(legacyPath, entry);
 
         var result = LegacySignFileMigrator.migrate(legacyPath, storageRoot, NO_GROUPS, GSON);
 
@@ -65,7 +65,7 @@ class LegacySignFileMigratorTest {
         var storageRoot = tempDir.resolve("storage");
         var poiGroup = new MarkerGroup(
                 "[poi]", MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI,
-                "Points of Interest", null, 0, 0, false, 0.0, 10000000.0);
+                "Points of Interest", null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF");
 
         // Already-namespaced dimension string: Version1SignEntryLoader's legacy-shorthand ("overworld"/"nether"/
         // "end") normalization branch reaches into net.minecraft.world.level.Level's static constants, which
@@ -82,9 +82,9 @@ class LegacySignFileMigratorTest {
         assertTrue(Files.exists(Path.of(legacyPath + ".migrated")));
     }
 
-    private static void writeLegacyV3File(String path, SignEntry... entries) throws IOException {
+    private static void writeLegacyV4File(String path, SignEntry... entries) throws IOException {
         var data = GSON.toJson(entries);
-        var content = GSON.toJson(new VersionedSignFile(SignFileVersions.V3, data));
+        var content = GSON.toJson(new VersionedSignFile(SignFileVersions.V4, data));
         Files.writeString(Path.of(path), content, StandardCharsets.UTF_8);
     }
 
@@ -103,6 +103,7 @@ class LegacySignFileMigratorTest {
                 new SignEntryKey(x, 64, z, dimension),
                 "unknown",
                 new SignLinesParseResult("[poi]", label, label),
-                new SignLinesParseResult(null, "", ""));
+                new SignLinesParseResult(null, "", ""),
+                1000L);
     }
 }

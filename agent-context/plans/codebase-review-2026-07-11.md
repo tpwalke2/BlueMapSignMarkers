@@ -27,7 +27,7 @@ Verify with `runServer` under two different `level-name` values before fixing.
 `.toAbsolutePath().normalize()` on the level dir before taking `getParent()`/`getFileName()`, collapsing the `.`
 segment `LevelResource.ROOT` resolves to before stepping up — the missing normalize was the root cause. The old
 buggy formula is deliberately kept, unchanged, as `getLegacyMarkerFilePath`, used only to locate the pre-existing
-single-file `signs.json` for one-time migration. See `agent-context/context/config-and-persistence.md`.
+single-file `signs.json` for one-time migration. See `../context/config-and-persistence.md`.
 
 ### 2. `ReactiveQueue.getExecutor()` self-heals a shut-down executor, defeating `shutdown()` and leaking threads
 **`src/main/java/com/tpwalke2/bluemapsignmarkers/core/reactive/ReactiveQueue.java:56-62`**
@@ -106,7 +106,7 @@ removing the root cause. `Version1SignEntryLoader.java:28-31`'s same all-or-noth
 unaddressed.
 
 ### 5. Concurrent, unsynchronized mutation of a shared BlueMap marker map
-**`src/main/java/com/tpwalke2/bluemapsignmarkers/core/bluemap/BlueMapAPIConnector.java`** — `addMarker` (132-154),
+**`../../src/main/java/com/tpwalke2/bluemapsignmarkers/core/bluemap/BlueMapAPIConnector.java`** — `addMarker` (132-154),
 `updateMarker` (114-125), `removeMarker` (127-130) vs. `getMarkerSets` (175-207, `synchronized`)
 `getMarkerSets(...)` is `synchronized`, but `addMarker`/`updateMarker`/`removeMarker` — which mutate the
 `Map<String, Marker>` returned by `MarkerSet.getMarkers()` — are `static` and not synchronized on anything.
@@ -186,7 +186,7 @@ reference never matches. Fixed by storing the registered `Consumer<BlueMapAPI>` 
 (`onEnableListener`, `onDisableListener`) built once in the constructor, and reusing those same instances in both
 the `BlueMapAPI.onEnable`/`onDisable` registration calls and `shutdown()`'s `unregisterListener` calls, so identity
 matches and the listeners actually detach. `BlueMapAPIConnector` references BlueMap API types directly, so per
-`AGENTS.md`'s testable-core split it has no automated test coverage (verified manually); the full unit test suite
+`../../AGENTS.md`'s testable-core split it has no automated test coverage (verified manually); the full unit test suite
 still passes unchanged.
 
 Github issue #140
@@ -224,7 +224,7 @@ real marker groups. A `.v1.bak` backup is made first, so it's recoverable, but t
 contains `poiPrefix`, so it won't retrigger — the damage silently sticks unless someone notices.
 
 **Resolved 2026-08-07 (`e7ca4ec`, "#169 Tighten logic around loading old config versions";
-`.scratch/codebase-review-followups/issues/01-config-load-save-correctness.md`).** `ConfigProvider.loadConfig` now
+`../../.scratch/codebase-review-followups/issues/01-config-load-save-correctness.md`).** `ConfigProvider.loadConfig` now
 detects V1 structurally — `root.has("poiPrefix") && !root.has("markerGroups")` on the parsed `JsonObject` — instead
 of a substring search on the raw file text, so a V2 config whose group name/icon happens to contain the literal
 text `poiPrefix` is no longer misdetected. `ConfigProviderTest`'s existing substring-bug test was updated to assert
@@ -321,7 +321,7 @@ pre-migration data is gone with no recoverable backup and no visible signal beyo
 entire point of backing up before a data-changing migration.
 
 **Resolved 2026-08-08 (`cc38ce5`, "#169 Ensure backup created before migrating original", plus follow-ups
-`4950aac`/post-review fixes; `.scratch/codebase-review-followups/issues/02-abort-migration-overwrite-on-backup-failure.md`).**
+`4950aac`/post-review fixes; `../../.scratch/codebase-review-followups/issues/02-abort-migration-overwrite-on-backup-failure.md`).**
 `FileUtils.createBackup`/`copyFile` now return `boolean` instead of swallowing the `IOException`, and all three
 backup call sites check it: `ConfigProvider.loadV1Config` throws `IllegalStateException` on failure (caught by
 `loadConfig`'s catch-all, which returns `null` without ever reaching `saveConfig`'s overwrite);
@@ -345,8 +345,8 @@ accept it at all, but then `replaceAll` greedily strips the entire line, includi
 There's no configuration that makes "label on the same line as a REGEX prefix" actually work, and the failure is
 silent. Not covered by any existing test.
 
-**Reviewed, descoped — not fixed (2026-08-06, `.scratch/codebase-review-followups/issues/03-signlinesparser-text-edge-cases.md`).**
-`AGENTS.md` documents whole-line `REGEX` matching (`line.matches(...)`) as intentional existing behavior, not a
+**Reviewed, descoped — not fixed (2026-08-06, `../../.scratch/codebase-review-followups/issues/03-signlinesparser-text-edge-cases.md`).**
+`../../AGENTS.md` documents whole-line `REGEX` matching (`line.matches(...)`) as intentional existing behavior, not a
 bug: switching `getLabel`'s REGEX branch to `lookingAt()`-style anchored-start matching to allow trailing label
 text would be a much larger, backward-incompatible change to REGEX semantics for every configured group, out of
 scope for a hardening ticket. Instead of fixing the behavior, added
@@ -363,7 +363,7 @@ marker group, and permanently transitions the parser to `INVALID` — so a genui
 never reached. A leading invisible character on an otherwise-valid prefix line defeats `startsWith`/most regexes the
 same way, with only a DEBUG log and no other feedback.
 
-**Resolved 2026-08-06 (`.scratch/codebase-review-followups/issues/03-signlinesparser-text-edge-cases.md`).**
+**Resolved 2026-08-06 (`../../.scratch/codebase-review-followups/issues/03-signlinesparser-text-edge-cases.md`).**
 `SignLinesParser.trimLine` now strips NBSP (U+00A0), zero-width space (U+200B), and ideographic space (U+3000)
 from line edges alongside standard whitespace, so a line consisting solely of (or led/trailed by) one of these no
 longer derails the parser to `INVALID`. Added `nonAsciiInvisibleWhitespaceOnlyLineIsTreatedAsBlank` and
@@ -422,7 +422,7 @@ AGENTS.md it has no automated unit coverage; verified via clean compile and a fu
   player edit.
 
   **Resolved 2026-08-08 (`83cfc3a`/`1fe01b5`, "#169 Misc collection of small hardening fixes";
-  `.scratch/codebase-review-followups/issues/08-misc-small-hardening-cleanup.md`).** Both call sites now reference
+  `../../.scratch/codebase-review-followups/issues/08-misc-small-hardening-cleanup.md`).** Both call sites now reference
   `WorldMap.UNKNOWN` directly instead of independent `"unknown"` literals.
 - ~~**`ServerPathProvider.java` is dead code**~~ — **Resolved.** `BlueMapSignMarkersMod` now `implements ...
   ServerPathProvider`; no longer unwired.
@@ -448,7 +448,7 @@ AGENTS.md it has no automated unit coverage; verified via clean compile and a fu
   files in scope.
 
   **Resolved 2026-08-08 (`9c9b824`, "#169 Fixes for dimensions in legacy loaders";
-  `.scratch/codebase-review-followups/issues/05-harden-legacy-migration-loaders.md`).** `getNormalizedMapId` now
+  `../../.scratch/codebase-review-followups/issues/05-harden-legacy-migration-loaders.md`).** `getNormalizedMapId` now
   also recognizes the canonical-but-unnamespaced resource paths (`"the_nether"`/`"the_end"`), with or without a
   `minecraft:` namespace already attached, alongside the original three shorthand literals. An unrecognized
   dimension string is still silently lowercased on the `default` branch rather than preserved as-is or rejected —
@@ -466,7 +466,7 @@ AGENTS.md it has no automated unit coverage; verified via clean compile and a fu
   every iteration after the first) that a future refactor could silently break.
 
   **Resolved 2026-08-08 (`aa21d2d`, "#169 log sanitize bug fix; tighten get marker sets retrieval";
-  `.scratch/codebase-review-followups/issues/06-harden-bluemapapiconnector-internals.md`).** The
+  `../../.scratch/codebase-review-followups/issues/06-harden-bluemapapiconnector-internals.md`).** The
   `markerSetsCache.putIfAbsent(...)`/debug-log call now happens once, after the per-map `forEach` loop completes,
   instead of repeated inside it against the same list reference — same observable behavior, no longer dependent on
   the implicit no-op-after-first-iteration invariant.
@@ -488,7 +488,7 @@ AGENTS.md it has no automated unit coverage; verified via clean compile and a fu
   Low.
 
   **Resolved 2026-08-08 (`7be3141`, "#169 Clear marker sets cache on reload";
-  `.scratch/codebase-review-followups/issues/04-clear-markersetscache-on-reload.md`).** Added
+  `../../.scratch/codebase-review-followups/issues/04-clear-markersetscache-on-reload.md`).** Added
   `BlueMapAPIConnector.clearMarkerSetsCache()` — replaces `markerSetsCache` with a fresh `ConcurrentHashMap` —
   called from `SignManager.reloadConfig()`. Deliberately not routed through the existing `resetQueue()`: that
   method also replaces `markerActionQueue`, abandoning its executor (never shut down — thread leak) and dropping
@@ -499,7 +499,7 @@ AGENTS.md it has no automated unit coverage; verified via clean compile and a fu
   *both* sides' text regardless of whether they matched different groups.
 
   **Resolved 2026-08-08 (`06df248`, "#169 Mixed groups on dual-sided signs";
-  `.scratch/codebase-review-followups/issues/07-fix-dual-sided-sign-semantics.md`).** `SignEntryHelper.getDetail`
+  `../../.scratch/codebase-review-followups/issues/07-fix-dual-sided-sign-semantics.md`).** `SignEntryHelper.getDetail`
   now merges both sides' detail text only when front and back matched the *same* marker group; when they matched
   different groups, only the front side's detail is used, matching `getPrefix`'s front-preferred rule for which
   group the marker belongs to. Added `getDetailUsesOnlyFrontWhenSidesMatchDifferentGroups` to `SignEntryHelperTest`.
@@ -551,7 +551,7 @@ AGENTS.md it has no automated unit coverage; verified via clean compile and a fu
 
 - **`HtmlUtils.escape`/`toHtmlDetail`** (from the recent #131 fix): escaping order is correct (`&` first, avoiding
   double-escaping), `escape()` runs before the `\n`→`<br>` substitution as the plan requires, and test coverage in
-  `HtmlUtilsTest.java` matches every case in `plans/html-detail-escaping-plan.md`. Traced the full text path
+  `HtmlUtilsTest.java` matches every case in `detail-escaping-plan.md`. Traced the full text path
   (`ParsingContext` → `SignEntryHelper` → `AddMarkerAction`/`UpdateMarkerAction` → `BlueMapAPIConnector.addMarker`/
   `updateMarker`) and confirmed `toHtmlDetail` is applied at both and only both call sites that reach a `detail`
   field — no double-escaping, no gap.
@@ -575,7 +575,7 @@ AGENTS.md it has no automated unit coverage; verified via clean compile and a fu
   prefix-change branch (dispatching remove then add as two separate calls) may not apply in order under load.
 
   **Resolved 2026-08-08 (`a62aaf1`, "#169 fixes for message ordering", plus follow-up `43aec10`;
-  `.scratch/codebase-review-followups/issues/09-reactivequeue-message-ordering.md`).** Confirmed: yes,
+  `../../.scratch/codebase-review-followups/issues/09-reactivequeue-message-ordering.md`).** Confirmed: yes,
   `processMessages` submits each message as its own independent executor task, so once the fixed thread pool has
   more than one worker thread there's no guarantee about relative execution order between messages —
   `ReactiveQueueTest.reactiveQueueGivesNoOrderingGuaranteeBetweenIndependentlySubmittedMessages` reproduces this
