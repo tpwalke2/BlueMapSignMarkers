@@ -10,6 +10,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 // Covers SignManager.reparseFromRawLines - the static, game-type-free core of the reload-time self-heal
 // fix in agent-context/plans/stale-prefix-orphaned-signs-fix.md. SignManager itself can't be unit tested
@@ -84,5 +85,23 @@ class SignManagerTest {
         var reparsed = SignManager.reparseFromRawLines(entry, newParser);
 
         assertNull(reparsed.frontText().prefix());
+    }
+
+    @Test
+    void reparseThrowsOnANullRawLineSoCallersMustCatchAndFallBack() {
+        // Gson happily deserializes a raw-lines array containing a null element, but
+        // SignLinesParser.trimLine() dereferences every line unconditionally. SignManager wraps
+        // reparseFromRawLines in a try/catch (safeReparseFromRawLines) precisely so one malformed
+        // persisted entry can't abort an entire reload/startup-load pass - this test pins down the
+        // exception reparseFromRawLines itself is expected to throw, so that safety net doesn't silently
+        // stop doing anything if the parser is ever changed to tolerate nulls.
+        var parser = new SignLinesParser(List.of(regexGroup("\\[poi\\]")));
+        var frontRawLines = new String[]{"[poi]", null};
+        var backRawLines = new String[]{};
+        var entry = new SignEntry(
+                KEY, "unknown", parser.parse(new String[]{"[poi]", "Shop"}), parser.parse(backRawLines), 1000L,
+                frontRawLines, backRawLines);
+
+        assertThrows(NullPointerException.class, () -> SignManager.reparseFromRawLines(entry, parser));
     }
 }

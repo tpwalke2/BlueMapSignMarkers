@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -107,6 +108,15 @@ public class SignManager implements IResetHandler {
         var config = runtimeConfig;
         var prefixGroupMap = config.prefixGroupMap();
         var actionFactory = config.actionFactory();
+
+        // Reparse against the currently-loaded config before computing newRep. This matters most at
+        // startup: SignProvider.loadSigns replays every persisted V5 entry through this same method, and
+        // its cached parsed text reflects whatever config was active when it was last saved, not the
+        // config active on this boot. Without reparsing here, an entry whose prefix was edited while the
+        // server was stopped would compute newRep as null from the stale cached parse and get discarded
+        // before its raw text is ever checked against the new config - orphaning its marker on restart
+        // instead of self-healing. See agent-context/plans/stale-prefix-orphaned-signs-fix.md.
+        signEntry = safeReparseFromRawLines(signEntry, config.parser());
 
         var key = signEntry.key();
         var existing = signCache.get(key);
@@ -209,22 +219,51 @@ public class SignManager implements IResetHandler {
 
         var newConfig = runtimeConfig;
         var allSigns = getAllSigns();
+
+        // Phase 1: reparse every entry against the new config and land it in signCache before dispatching
+        // anything. LINE transitions look up a line's current membership via the allSignsSupplier passed
+        // to dispatchTransition below; if reparsing and dispatching were interleaved in one pass, that
+        // supplier would see a different, partially-reparsed membership set on each iteration, so two
+        // signs joining the same line under a prefix change could enqueue conflicting intermediate
+        // transitions for the same line id - and since ReactiveQueue gives no ordering guarantee between
+        // them, BlueMap could apply them out of order and leave the line absent. Finishing every reparse
+        // first means every dispatch in phase 2 sees the final, fully-reparsed membership set.
+        var oldReps = new HashMap<SignEntryKey, SignTransitionResolver.Representation>();
         for (SignEntry entry : allSigns) {
-            var oldRep = SignTransitionResolver.computeRepresentation(entry, oldPrefixGroupMap);
+            oldReps.put(entry.key(), SignTransitionResolver.computeRepresentation(entry, oldPrefixGroupMap));
 
             // Self-heal a sign whose representation drifted from its cached parse (e.g. a REGEX group's
             // prefix text was edited) by reparsing from the raw sign text under the new config, rather
             // than trusting the stale cached SignLinesParseResult as an identity key - see
             // agent-context/plans/stale-prefix-orphaned-signs-fix.md. Entries with no raw text (migrated
             // pre-V5) fall back to today's behavior: diff the cached parse as-is.
-            var reparsed = reparseFromRawLines(entry, newConfig.parser());
+            var reparsed = safeReparseFromRawLines(entry, newConfig.parser());
             if (reparsed != entry) {
                 signCache.put(reparsed.key(), reparsed);
-                entry = reparsed;
             }
+        }
 
-            var newRep = SignTransitionResolver.computeRepresentation(entry, newConfig.prefixGroupMap());
-            dispatchTransition(this::getAllSigns, entry.key(), oldRep, newRep, newConfig.actionFactory(), true);
+        // Phase 2: cache is now fully reparsed, so dispatch each entry's transition against a consistent
+        // final state.
+        for (var keyAndOldRep : oldReps.entrySet()) {
+            var key = keyAndOldRep.getKey();
+            var current = signCache.get(key);
+            var newRep = current == null ? null : SignTransitionResolver.computeRepresentation(current, newConfig.prefixGroupMap());
+            dispatchTransition(this::getAllSigns, key, keyAndOldRep.getValue(), newRep, newConfig.actionFactory(), true);
+        }
+    }
+
+    // A malformed persisted entry (e.g. a V5 raw-lines array with a null element - Gson accepts it,
+    // SignLinesParser.trimLine() doesn't) must not abort reloadConfig()'s loop or addOrUpdateSign() for
+    // every other sign. reparseFromRawLines runs outside dispatchTransition's per-entry try/catch (it has
+    // to, since it mutates signCache ahead of dispatch), so it needs its own: log and keep the cached
+    // parse rather than let one bad entry take down the whole reload/startup-load pass.
+    private static SignEntry safeReparseFromRawLines(SignEntry entry, SignLinesParser parser) {
+        try {
+            return reparseFromRawLines(entry, parser);
+        } catch (Exception e) {
+            LOGGER.error("Failed to reparse sign {} from raw lines; keeping previous parse.", entry.key(), e);
+            return entry;
         }
     }
 
