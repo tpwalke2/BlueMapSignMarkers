@@ -51,6 +51,8 @@ class SignRegionPartitionerTest {
                 "unknown",
                 new SignLinesParseResult("[poi]", "label", "detail"),
                 new SignLinesParseResult(null, "", ""),
-                1000L);
+                1000L,
+                null,
+                null);
     }
 }

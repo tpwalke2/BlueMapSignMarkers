@@ -14,7 +14,9 @@ class LineGroupResolverTest {
                 "unknown",
                 new SignLinesParseResult(prefix, label, "detail"),
                 new SignLinesParseResult(null, "", ""),
-                createdAtMillis);
+                createdAtMillis,
+                null,
+                null);
     }
 
     @Test

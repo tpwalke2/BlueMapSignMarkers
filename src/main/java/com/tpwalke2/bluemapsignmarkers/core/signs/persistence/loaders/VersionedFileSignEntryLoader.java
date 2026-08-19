@@ -9,6 +9,7 @@ import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.SignFileVersions;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.VersionedSignFile;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV2;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV3;
+import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV4;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,24 +52,35 @@ public class VersionedFileSignEntryLoader {
 
                 if (!FileUtils.createBackup(path, ".v2.bak", "markers file")) {
                     LOGGER.error(
-                            "Failed to back up markers file {} before v2-to-v4 migration; continuing to load the "
+                            "Failed to back up markers file {} before v2-to-v5 migration; continuing to load the "
                                     + "entries in-memory without a backup", path);
                 }
 
-                return convertV3EntriesToV4(signEntriesV3, path);
+                return convertV3EntriesToV5(signEntriesV3, path);
             } else if (versionedSignFile.version() == SignFileVersions.V3) {
                 LOGGER.info("Loading version 3 markers file...");
                 var signEntriesV3 = Arrays.asList(gson.fromJson(versionedSignFile.data(), SignEntryV3[].class));
 
                 if (!FileUtils.createBackup(path, ".v3.bak", "markers file")) {
                     LOGGER.error(
-                            "Failed to back up markers file {} before v3-to-v4 migration; continuing to load the "
+                            "Failed to back up markers file {} before v3-to-v5 migration; continuing to load the "
                                     + "entries in-memory without a backup", path);
                 }
 
-                return convertV3EntriesToV4(signEntriesV3, path);
+                return convertV3EntriesToV5(signEntriesV3, path);
+            } else if (versionedSignFile.version() == SignFileVersions.V4) {
+                LOGGER.info("Loading version 4 markers file...");
+                var signEntriesV4 = Arrays.asList(gson.fromJson(versionedSignFile.data(), SignEntryV4[].class));
+
+                if (!FileUtils.createBackup(path, ".v4.bak", "markers file")) {
+                    LOGGER.error(
+                            "Failed to back up markers file {} before v4-to-v5 migration; continuing to load the "
+                                    + "entries in-memory without a backup", path);
+                }
+
+                return convertV4EntriesToV5(signEntriesV4);
             } else {
-                LOGGER.info("Loading version 4+ markers file...");
+                LOGGER.info("Loading version 5+ markers file...");
                 return gson.fromJson(versionedSignFile.data(), SignEntry[].class);
             }
         } catch (Exception e) {
@@ -77,11 +89,19 @@ public class VersionedFileSignEntryLoader {
         return null;
     }
 
-    private static SignEntry[] convertV3EntriesToV4(List<SignEntryV3> signEntriesV3, String path) {
+    private static SignEntry[] convertV3EntriesToV5(List<SignEntryV3> signEntriesV3, String path) {
         var fileLastModifiedMillis = getLastModifiedMillis(path);
-        var result = new SignEntry[signEntriesV3.size()];
+        var signEntriesV4 = new SignEntryV4[signEntriesV3.size()];
         for (var i = 0; i < signEntriesV3.size(); i++) {
-            result[i] = Version4Converter.convertToV4(signEntriesV3.get(i), i, fileLastModifiedMillis);
+            signEntriesV4[i] = Version4Converter.convertToV4(signEntriesV3.get(i), i, fileLastModifiedMillis);
+        }
+        return convertV4EntriesToV5(Arrays.asList(signEntriesV4));
+    }
+
+    private static SignEntry[] convertV4EntriesToV5(List<SignEntryV4> signEntriesV4) {
+        var result = new SignEntry[signEntriesV4.size()];
+        for (var i = 0; i < signEntriesV4.size(); i++) {
+            result[i] = Version5Converter.convertToV5(signEntriesV4.get(i));
         }
         return result;
     }
