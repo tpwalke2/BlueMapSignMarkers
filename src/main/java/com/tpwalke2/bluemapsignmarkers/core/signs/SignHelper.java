@@ -26,6 +26,8 @@ public class SignHelper {
             SignBlockEntity signBlockEntity,
             String playerId) {
         var pos = signBlockEntity.getBlockPos();
+        var frontRawLines = getRawLines(signBlockEntity.getFrontText());
+        var backRawLines = getRawLines(signBlockEntity.getBackText());
 
         return new SignEntry(
                 new SignEntryKey(
@@ -34,9 +36,11 @@ public class SignHelper {
                         pos.getZ(),
                         getSignParentMap(signBlockEntity.getLevel())),
                 playerId,
-                getParsedSignText(signBlockEntity.getFrontText()),
-                getParsedSignText(signBlockEntity.getBackText()),
-                System.currentTimeMillis());
+                signLinesParser.parse(frontRawLines),
+                signLinesParser.parse(backRawLines),
+                System.currentTimeMillis(),
+                frontRawLines,
+                backRawLines);
     }
 
     public static String getSignParentMap(Level world) {
@@ -45,10 +49,9 @@ public class SignHelper {
         return world.dimension().identifier().toString();
     }
 
-    private static SignLinesParseResult getParsedSignText(SignText signText) {
-        return signLinesParser
-                .parse(Arrays.stream(signText.getMessages(false))
-                        .map(Component::getString)
-                        .toArray(String[]::new));
+    private static String[] getRawLines(SignText signText) {
+        return Arrays.stream(signText.getMessages(false))
+                .map(Component::getString)
+                .toArray(String[]::new);
     }
 }

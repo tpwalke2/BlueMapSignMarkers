@@ -56,7 +56,7 @@ private static boolean writeRegionFile(Path filePath, List<SignEntry> signEntrie
     try {
         Files.createDirectories(filePath.getParent());
         var signEntryData = gson.toJson(signEntries);
-        var json = gson.toJson(new VersionedSignFile(SignFileVersions.V4, signEntryData));
+        var json = gson.toJson(new VersionedSignFile(SignFileVersions.V5, signEntryData));
         Files.writeString(filePath, json, StandardCharsets.UTF_8);
         return true;
     } catch (IOException e) {

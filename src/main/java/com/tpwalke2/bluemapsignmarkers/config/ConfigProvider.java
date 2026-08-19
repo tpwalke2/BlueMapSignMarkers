@@ -158,9 +158,15 @@ public class ConfigProvider {
         }
     }
 
+    // Centralizes the "null type defaults to POI" rule so the three call sites that need the effective
+    // type (warnOnTypeFieldMismatches, resolveLineWidth, resolveLineColor) can't drift out of sync.
+    private static MarkerGroupType effectiveType(LoadingMarkerGroupV2 markerGroup) {
+        return markerGroup.type() == null ? MarkerGroupType.POI : markerGroup.type();
+    }
+
     private static void warnOnTypeFieldMismatches(LoadingMarkerGroupV2[] markerGroups) {
         for (var markerGroup : markerGroups) {
-            var type = markerGroup.type() == null ? MarkerGroupType.POI : markerGroup.type();
+            var type = effectiveType(markerGroup);
             var name = markerGroup.name();
 
             if (type == MarkerGroupType.POI) {
@@ -190,7 +196,7 @@ public class ConfigProvider {
         return new MarkerGroup(
                 markerGroup.prefix(),
                 markerGroup.matchType() == null ? MarkerGroupMatchType.STARTS_WITH : markerGroup.matchType(),
-                markerGroup.type() == null ? MarkerGroupType.POI : markerGroup.type(),
+                effectiveType(markerGroup),
                 markerGroup.name(),
                 markerGroup.icon(),
                 markerGroup.offsetX() == null ? 0 : markerGroup.offsetX(),
@@ -211,7 +217,7 @@ public class ConfigProvider {
         var lineWidth = markerGroup.lineWidth();
         if (lineWidth == null) return DEFAULT_LINE_WIDTH;
 
-        var type = markerGroup.type() == null ? MarkerGroupType.POI : markerGroup.type();
+        var type = effectiveType(markerGroup);
         if (type != MarkerGroupType.LINE) return lineWidth;
 
         if (lineWidth <= 0) {
@@ -232,7 +238,7 @@ public class ConfigProvider {
         var lineColor = markerGroup.lineColor();
         if (lineColor == null) return DEFAULT_LINE_COLOR;
 
-        var type = markerGroup.type() == null ? MarkerGroupType.POI : markerGroup.type();
+        var type = effectiveType(markerGroup);
         if (type != MarkerGroupType.LINE) return lineColor;
 
         if (!ColorUtils.isValidHex(lineColor)) {

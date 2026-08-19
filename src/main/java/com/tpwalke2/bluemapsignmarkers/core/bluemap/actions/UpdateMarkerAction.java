@@ -12,6 +12,11 @@ public class UpdateMarkerAction extends MarkerAction {
         this.newDetails = newDetail;
     }
 
+    @Override
+    public MarkerIdentifier getMarkerIdentifier() {
+        return (MarkerIdentifier) super.getMarkerIdentifier();
+    }
+
     public String getNewLabel() {
         return newLabel;
     }

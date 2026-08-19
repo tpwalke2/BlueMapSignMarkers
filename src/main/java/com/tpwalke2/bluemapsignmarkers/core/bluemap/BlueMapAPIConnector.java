@@ -254,7 +254,7 @@ public class BlueMapAPIConnector {
 
     private static void addMarker(AddMarkerAction addAction, Stream<Map<String, Marker>> markerSetMaps) {
         LOGGER.debug("Adding marker...");
-        var identifier = (MarkerIdentifier) addAction.getMarkerIdentifier();
+        var identifier = addAction.getMarkerIdentifier();
         var markerGroup = identifier.parentSet().markerGroup();
         if (markerGroup.type() == MarkerGroupType.POI) {
             LOGGER.debug("Adding POI marker...");

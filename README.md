@@ -82,6 +82,14 @@ field.
 This example configuration creates 4 marker groups: one for `[poi]` signs, one for `[store]` signs, one for signs
 where the prefix is a regex match for villages (e.g. `[Village]` or `[VILLAGE]`), and one for `[trail]` signs.
 
+## Troubleshooting
+
+- **Editing a marker group's prefix (especially a `REGEX` prefix) orphans existing signs.** On servers running a
+  version before this fix, changing a group's prefix text can make already-placed signs vanish from the map after
+  `/bluemap reload`, and they won't come back on their own. Re-edit the sign's text (even re-typing the same text)
+  or restart the server to fix it. Signs created or re-edited on a version that ships this fix self-heal
+  automatically on `/bluemap reload` - no manual fix needed going forward.
+
 The `[poi]` and `Villages` marker groups use the default POI icon, while the `[store]` marker group uses a custom icon
 located at `assets/store.png`.
 

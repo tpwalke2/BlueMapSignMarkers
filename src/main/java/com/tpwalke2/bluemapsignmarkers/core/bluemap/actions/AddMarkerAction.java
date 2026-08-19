@@ -12,6 +12,11 @@ public class AddMarkerAction extends MarkerAction {
         this.detail = detail;
     }
 
+    @Override
+    public MarkerIdentifier getMarkerIdentifier() {
+        return (MarkerIdentifier) super.getMarkerIdentifier();
+    }
+
     public String getLabel() {
         return label;
     }
