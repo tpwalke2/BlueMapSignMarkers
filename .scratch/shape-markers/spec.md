@@ -54,8 +54,9 @@ removing any member sign updates or removes the shape the same way editing a `LI
     in a walk around the region's perimeter produces the polygon I expect (and placing them out of order produces a
     self-intersecting shape I can fix by re-placing/editing signs) — the same placement-order contract `LINE`
     already has.
-14. As a player, I want the shape's rendered height (Y) to be the height of whichever member sign was placed first,
-    so that the polygon sits at one consistent, predictable Y even though member signs may be at different heights.
+14. As a player, I want the shape's rendered height (Y) to be the height of whichever member sign is tallest,
+    so that the polygon sits at one consistent Y that clears every member sign's build, even though member signs
+    may be at different heights.
 15. As a player, I want the shape's detail popup to show the members' shared label text, so that hovering/clicking
     the polygon tells me what it represents (matching `LINE`'s current detail behavior).
 16. As a server admin, I want persisted sign data and existing region-sharded storage/versioning to require no
@@ -77,8 +78,8 @@ removing any member sign updates or removes the shape the same way editing a `LI
   forward; see ADR `0001-shape-points-insertion-order-no-validation`.
 - **Geometry**: a flat BlueMap `ShapeMarker` (2D polygon, single Y for the whole shape, with a border and a fill) —
   not an extruded 3D volume.
-- **Shape Y height**: taken from the oldest (first-placed, lowest `createdAtMillis`) member — the same sign that
-  anchors point order.
+- **Shape Y height**: taken from the tallest member (maximum Y across all current members), recomputed on every
+  join/leave/recompute — independent of placement order/point order, which is still by `createdAtMillis`.
 - **Marker detail**: the shape's detail popup shows the members' shared label text (same value used for the label),
   mirroring `LINE`'s current `createSetLineAction`-style behavior of passing the label as both label and detail.
 - **Config fields on `MarkerGroup`**:

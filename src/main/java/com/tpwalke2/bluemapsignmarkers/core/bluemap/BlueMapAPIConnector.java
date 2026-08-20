@@ -16,6 +16,7 @@ import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetShapeMarkerAction
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.UpdateMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.markers.DispatchedMarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.LineMarkerIdentifier;
+import com.tpwalke2.bluemapsignmarkers.core.markers.LinePoint;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifier;
@@ -246,6 +247,16 @@ public class BlueMapAPIConnector {
         markerSetMaps.forEach(stringMarkerMap -> stringMarkerMap.remove(id));
     }
 
+    // ColorUtils.parseHex returns alpha in the same 0-255 range as r/g/b, but BlueMap's Color(int, int, int,
+    // float) constructor takes alpha in 0-1 - passing the raw 0-255 int straight through (as the earlier
+    // Color(int, int, int, int alpha-as-int) overload does, treating alpha/255f) is NOT what an int
+    // widening to float gives you: it silently widens to e.g. 51.0f instead of dividing by 255, which
+    // BlueMap then clamps to fully opaque. Every translucent color (e.g. SHAPE's fillColor default) rendered
+    // fully opaque as a result.
+    private static Color toBlueMapColor(int[] rgba) {
+        return new Color(rgba[0], rgba[1], rgba[2], rgba[3] / 255f);
+    }
+
     private static void setLineMarker(SetLineMarkerAction action, Stream<Map<String, Marker>> markerSetMaps) {
         LOGGER.debug("Setting line marker...");
         if (action.getPoints().size() < 2) return; // defensive - SignManager should never dispatch below 2
@@ -260,7 +271,7 @@ public class BlueMapAPIConnector {
                     .detail(HtmlUtils.toHtmlDetail(action.getDetail()))
                     .line(line)
                     .lineWidth(action.getLineWidth())
-                    .lineColor(new Color(color[0], color[1], color[2], color[3]))
+                    .lineColor(toBlueMapColor(color))
                     .build();
             marker.setMinDistance(markerGroup.minDistance());
             marker.setMaxDistance(markerGroup.maxDistance());
@@ -274,7 +285,9 @@ public class BlueMapAPIConnector {
 
         var points = action.getPoints();
         var shape = new Shape(points.stream().map(p -> new Vector2d(p.x(), p.z())).toList());
-        var shapeY = points.get(0).y(); // oldest (first-placed) member anchors the shape's height
+        // Shape height anchors to the tallest member rather than placement order, so the polygon always
+        // clears the terrain/builds of every sign that defines it.
+        var shapeY = (float) points.stream().mapToInt(LinePoint::y).max().orElseThrow();
         var lineColor = ColorUtils.parseHex(action.getLineColor());
         var fillColor = ColorUtils.parseHex(action.getFillColor());
         var markerGroup = action.getMarkerIdentifier().parentSet().markerGroup();
@@ -285,8 +298,8 @@ public class BlueMapAPIConnector {
                     .detail(HtmlUtils.toHtmlDetail(action.getDetail()))
                     .shape(shape, shapeY)
                     .lineWidth(action.getLineWidth())
-                    .lineColor(new Color(lineColor[0], lineColor[1], lineColor[2], lineColor[3]))
-                    .fillColor(new Color(fillColor[0], fillColor[1], fillColor[2], fillColor[3]))
+                    .lineColor(toBlueMapColor(lineColor))
+                    .fillColor(toBlueMapColor(fillColor))
                     .build();
             marker.setMinDistance(markerGroup.minDistance());
             marker.setMaxDistance(markerGroup.maxDistance());

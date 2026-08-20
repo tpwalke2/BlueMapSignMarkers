@@ -176,8 +176,8 @@ public class SignTransitionResolver {
 
     // SHAPE mirrors LINE's join/leave/recompute shape (see lineJoinAction/lineLeaveAction above), but at a
     // 3-member render threshold instead of 2 - see docs/adr/0002-shape-duplicates-line-pattern.md. Points
-    // stay ordered by createdAtMillis (toPoints/ShapeGroupResolver.members), so the oldest member - the
-    // shape's Y anchor - is always points.get(0).
+    // stay ordered by createdAtMillis (toPoints/ShapeGroupResolver.members) purely for polygon vertex order;
+    // the shape's Y anchor (BlueMapAPIConnector.setShapeMarker) is the tallest member, not the oldest.
     private static final int SHAPE_MIN_MEMBERS = 3;
 
     private static MarkerAction shapeJoinAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, boolean sameGroupRecompute) {

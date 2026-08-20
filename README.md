@@ -37,7 +37,7 @@ configuration contains the following options:
 - `type` - the type of marker to display; optional; default is `POI`
   - `POI` - a single point marker per sign;
   - `LINE` - signs sharing this group's prefix and the same first-line label become ordered points of one line marker (points ordered by placement time); requires at least 2 signs to appear;
-  - `SHAPE` - signs sharing this group's prefix and the same first-line label become ordered points of one filled polygon marker (points ordered by placement time, height taken from the first-placed sign); requires at least 3 signs to appear;
+  - `SHAPE` - signs sharing this group's prefix and the same first-line label become ordered points of one filled polygon marker (points ordered by placement time, height taken from the tallest member); requires at least 3 signs to appear;
 - `icon` - the icon path or URL to display for the marker; optional; default is `null` (BlueMap default POI icon); `POI` only
 - `offsetX` - the x offset of the marker; optional; default is `0` (corresponds with `anchor.x` in BlueMap base configuration); `POI` only
 - `offsetY` - the y offset of the marker; optional; default is `0` (corresponds with `anchor.y` in BlueMap base configuration); `POI` only

@@ -29,7 +29,7 @@ for the design constraints this must follow.
       at 1→2 members (no-op), 2→3 (first appearance), 3→4+ (recompute); leave/recompute at 4→3 (recompute), 3→2
       (remove), 2→1/1→0 (no-op) — mirroring the existing `LINE`↔`LINE` branch and its 2-member threshold, but at 3.
 - [x] `BlueMapAPIConnector` renders a `SetShapeMarkerAction` as a flat BlueMap `ShapeMarker` (polygon from the
-      ordered points' x/z, anchor Y from the oldest member, `fillColor`, `lineWidth`, `lineColor`) and handles
+      ordered points' x/z, anchor Y from the tallest member, `fillColor`, `lineWidth`, `lineColor`) and handles
       `RemoveShapeMarkerAction`, with matching `case` arms in both `processMarkerAction` and
       `logProcessingMessage` (per `AGENTS.md` — `MarkerAction` is unsealed, so a missing case silently falls
       through to `default`).
@@ -57,9 +57,22 @@ type-flip combination for free through the existing generic leave+join bundling 
 `lineJoinAction`/`lineLeaveAction` at a 3-member threshold instead of 2.
 
 `BlueMapAPIConnector` renders `SetShapeMarkerAction` via BlueMap's `ShapeMarker` builder: polygon from points'
-x/z (`Shape`), anchor Y from `points.get(0)` (oldest member, since points stay ordered by `createdAtMillis`),
+x/z (`Shape`), anchor Y from the tallest member (`max` across all current points' y, not placement order - a
+deliberate deviation from the original plan of anchoring to the oldest/first-placed member, per user feedback),
 plus `fillColor`/`lineWidth`/`lineColor`; matching `case` arms added to both `processMarkerAction`'s and
 `logProcessingMessage`'s switches per `AGENTS.md`'s unsealed-`MarkerAction` warning.
+
+**Follow-up fix (post-review):** two bugs found in manual review before `runServer` verification:
+1. `fillColor`/`lineColor` rendered fully opaque regardless of configured alpha. Root cause: BlueMap's
+   `Color(int, int, int, float alpha)` constructor takes alpha in **0-1**, but `ColorUtils.parseHex` returns
+   alpha in **0-255** (matching r/g/b) - passing that int straight into the float parameter widens it (e.g.
+   `51` becomes `51.0f`) instead of the intended `51/255f ≈ 0.2f`, which BlueMap then clamps to opaque. Fixed
+   with a new `toBlueMapColor(int[] rgba)` helper (`rgba[3] / 255f`), used by both `setShapeMarker` and the
+   pre-existing `setLineMarker` (same bug, latent there too - just never visible since `LINE`'s default alpha
+   is opaque `FF` anyway).
+2. Shape Y-anchor changed from "oldest (first-placed) member" to "tallest member" (max Y across all current
+   members) per explicit user feedback - a deviation from `spec.md`'s original plan, now updated there too.
+   Point order (by `createdAtMillis`) is unchanged and still only governs polygon vertex order, not height.
 
 `ConfigProvider` widened `resolveLineWidth`/`resolveLineColor`'s validation scope from LINE-only to LINE/SHAPE,
 added `resolveFillColor` (SHAPE-only, default `#FF000033`), and added the mismatch warnings ticket 03 asked for

@@ -16,8 +16,9 @@ placement time (`createdAtMillis`), not spatial position.
 **Shape** — a multi-sign marker built the same way as a Line (shared `(prefix, label)` membership key, points
 ordered by placement time), but rendered as a flat, closed BlueMap `ShapeMarker` (2D polygon at one Y height, with a
 fill) instead of an open 3D line. Renders once 3+ members exist — a 2-point "polygon" is degenerate. The shape's Y
-height is taken from its oldest (first-placed) member, the same sign that anchors point order. A Shape's detail
-popup shows the members' shared label text, same as a Line's.
+height is taken from its tallest member (max Y across all current members), recomputed on every join/leave/recompute
+— independent of point order, which stays placement-time-based. A Shape's detail popup shows the members' shared
+label text, same as a Line's.
 
 **Label** — the sign text after a group's prefix is stripped. For `LINE`/`SHAPE` groups, label equality (within the
 same prefix) is what makes two signs members of the same line/shape.
