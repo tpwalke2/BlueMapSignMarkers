@@ -217,7 +217,7 @@ public class BlueMapAPIConnector {
             position = String.format(" label='%s'", LogUtils.sanitizeForLog(shapeMarkerIdentifier.label()));
         }
 
-        LOGGER.info("{} {} type marker in {}{}{}",
+        LOGGER.debug("{} {} type marker in {}{}{}",
                 operation,
                 identifier.parentSet().markerGroup().type(),
                 identifier.parentSet().mapId(),
