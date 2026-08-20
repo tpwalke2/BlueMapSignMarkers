@@ -73,15 +73,11 @@ public class SignTransitionResolver {
         if (oldRep == null && newRep == null) return null;
 
         if (oldRep == null) {
-            return newRep.group().type() == MarkerGroupType.POI
-                    ? actionFactory.createAddPOIAction(key.x(), key.y(), key.z(), key.parentMap(), newRep.label(), newRep.detail(), newRep.group())
-                    : lineJoinAction(allSignsSupplier, key.parentMap(), newRep, actionFactory, false);
+            return joinEffect(allSignsSupplier, key, newRep, actionFactory, false);
         }
 
         if (newRep == null) {
-            return oldRep.group().type() == MarkerGroupType.POI
-                    ? actionFactory.createRemovePOIAction(key.x(), key.y(), key.z(), key.parentMap(), oldRep.group())
-                    : lineLeaveAction(allSignsSupplier, key.parentMap(), oldRep, actionFactory);
+            return leaveEffect(allSignsSupplier, key, oldRep, actionFactory);
         }
 
         var oldType = oldRep.group().type();
@@ -100,26 +96,46 @@ public class SignTransitionResolver {
             return actionFactory.createChangeGroupPOIAction(key.x(), key.y(), key.z(), key.parentMap(), newRep.label(), newRep.detail(), oldRep.group(), newRep.group());
         }
 
-        if (oldType == MarkerGroupType.LINE && newType == MarkerGroupType.LINE && sameGroupAndLabel(oldRep, newRep)) {
+        // Same-group-and-label recompute for either multi-point type (LINE↔LINE or SHAPE↔SHAPE); a
+        // type-pair mismatch (or same type but a different group/label) falls through to the general
+        // leave+join bundling below.
+        if (oldType == newType && oldType != MarkerGroupType.POI && sameGroupAndLabel(oldRep, newRep)) {
             if (oldRep.detail().equals(newRep.detail()) && !isReload) return null;
-            return lineJoinAction(allSignsSupplier, key.parentMap(), newRep, actionFactory, true);
+            return joinEffect(allSignsSupplier, key, newRep, actionFactory, true);
         }
 
         var effects = new ArrayList<MarkerAction>(2);
 
-        var leave = oldType == MarkerGroupType.POI
-                ? actionFactory.createRemovePOIAction(key.x(), key.y(), key.z(), key.parentMap(), oldRep.group())
-                : lineLeaveAction(allSignsSupplier, key.parentMap(), oldRep, actionFactory);
+        var leave = leaveEffect(allSignsSupplier, key, oldRep, actionFactory);
         if (leave != null) effects.add(leave);
 
-        var join = newType == MarkerGroupType.POI
-                ? actionFactory.createAddPOIAction(key.x(), key.y(), key.z(), key.parentMap(), newRep.label(), newRep.detail(), newRep.group())
-                : lineJoinAction(allSignsSupplier, key.parentMap(), newRep, actionFactory, false);
+        var join = joinEffect(allSignsSupplier, key, newRep, actionFactory, false);
         if (join != null) effects.add(join);
 
         if (effects.isEmpty()) return null;
         if (effects.size() == 1) return effects.get(0);
         return new GroupTransitionMarkerAction(effects);
+    }
+
+    // Dispatches the "this sign no longer holds this representation" effect for whichever type the
+    // representation belongs to - a plain POI remove, or a LINE/SHAPE recompute-or-remove.
+    private static MarkerAction leaveEffect(Supplier<List<SignEntry>> allSignsSupplier, SignEntryKey key, Representation rep, ActionFactory actionFactory) {
+        return switch (rep.group().type()) {
+            case POI -> actionFactory.createRemovePOIAction(key.x(), key.y(), key.z(), key.parentMap(), rep.group());
+            case LINE -> lineLeaveAction(allSignsSupplier, key.parentMap(), rep, actionFactory);
+            case SHAPE -> shapeLeaveAction(allSignsSupplier, key.parentMap(), rep, actionFactory);
+        };
+    }
+
+    // Dispatches the "this sign now holds this representation" effect for whichever type the
+    // representation belongs to - a plain POI add, or a LINE/SHAPE recompute-or-first-appearance.
+    // sameGroupRecompute is only meaningful for LINE/SHAPE (see lineJoinAction/shapeJoinAction).
+    private static MarkerAction joinEffect(Supplier<List<SignEntry>> allSignsSupplier, SignEntryKey key, Representation rep, ActionFactory actionFactory, boolean sameGroupRecompute) {
+        return switch (rep.group().type()) {
+            case POI -> actionFactory.createAddPOIAction(key.x(), key.y(), key.z(), key.parentMap(), rep.label(), rep.detail(), rep.group());
+            case LINE -> lineJoinAction(allSignsSupplier, key.parentMap(), rep, actionFactory, sameGroupRecompute);
+            case SHAPE -> shapeJoinAction(allSignsSupplier, key.parentMap(), rep, actionFactory, sameGroupRecompute);
+        };
     }
 
     // Recomputes a line group including the current sign (it must already be in signCache under this
@@ -156,5 +172,33 @@ public class SignTransitionResolver {
 
     private static List<LinePoint> toPoints(List<SignEntry> members) {
         return members.stream().map(e -> new LinePoint(e.key().x(), e.key().y(), e.key().z())).toList();
+    }
+
+    // SHAPE mirrors LINE's join/leave/recompute shape (see lineJoinAction/lineLeaveAction above), but at a
+    // 3-member render threshold instead of 2 - see docs/adr/0002-shape-duplicates-line-pattern.md. Points
+    // stay ordered by createdAtMillis (toPoints/ShapeGroupResolver.members), so the oldest member - the
+    // shape's Y anchor - is always points.get(0).
+    private static final int SHAPE_MIN_MEMBERS = 3;
+
+    private static MarkerAction shapeJoinAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, boolean sameGroupRecompute) {
+        var members = ShapeGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
+        if (members.size() < SHAPE_MIN_MEMBERS) return null;
+
+        var isFirstAppearance = !sameGroupRecompute && members.size() == SHAPE_MIN_MEMBERS;
+        return actionFactory.createSetShapeAction(parentMap, rep.group(), rep.label(), rep.label(), toPoints(members), isFirstAppearance);
+    }
+
+    private static MarkerAction shapeLeaveAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory) {
+        var members = ShapeGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
+
+        if (members.size() >= SHAPE_MIN_MEMBERS) {
+            return actionFactory.createSetShapeAction(parentMap, rep.group(), rep.label(), rep.label(), toPoints(members), false);
+        }
+
+        if (members.size() == SHAPE_MIN_MEMBERS - 1) {
+            return actionFactory.createRemoveShapeAction(parentMap, rep.group(), rep.label());
+        }
+
+        return null;
     }
 }

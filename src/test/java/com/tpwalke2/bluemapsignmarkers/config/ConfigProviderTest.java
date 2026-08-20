@@ -293,6 +293,158 @@ class ConfigProviderTest {
     }
 
     @Test
+    void loadConfigDefaultsFillColorForAShapeGroupWhenOmitted(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[shape]", "name": "Shape Group", "type": "SHAPE" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(MarkerGroupType.SHAPE, group.type());
+        assertEquals("#FF000033", group.fillColor());
+    }
+
+    @Test
+    void loadConfigPreservesExplicitFillColorForAShapeGroup(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[shape]", "name": "Shape Group", "type": "SHAPE", "fillColor": "#00FF0080" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals("#00FF0080", group.fillColor());
+    }
+
+    @Test
+    void loadConfigFallsBackToDefaultFillColorWhenMalformed(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[shape]", "name": "Shape Group", "type": "SHAPE", "fillColor": "notacolor" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals("#FF000033", group.fillColor());
+    }
+
+    @Test
+    void loadConfigAllowsExplicitLineWidthAndLineColorOnAShapeGroup(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[shape]", "name": "Shape Group", "type": "SHAPE", "lineWidth": 5, "lineColor": "#00FF00FF" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(5, group.lineWidth());
+        assertEquals("#00FF00FF", group.lineColor());
+    }
+
+    @Test
+    void loadConfigFallsBackToDefaultLineWidthAndLineColorForAShapeGroupWhenMalformed(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[shape]", "name": "Shape Group", "type": "SHAPE", "lineWidth": -5, "lineColor": "notacolor" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(2, group.lineWidth());
+        assertEquals("#FF0000FF", group.lineColor());
+    }
+
+    @Test
+    void loadConfigStillLoadsAPOIGroupWithFillColorSet(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group", "type": "POI", "fillColor": "#00FF00FF" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(MarkerGroupType.POI, group.type());
+        assertEquals("#00FF00FF", group.fillColor());
+    }
+
+    @Test
+    void loadConfigStillLoadsALineGroupWithFillColorSet(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[line]", "name": "Line Group", "type": "LINE", "fillColor": "#00FF00FF" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(MarkerGroupType.LINE, group.type());
+        assertEquals("#00FF00FF", group.fillColor());
+    }
+
+    @Test
+    void loadConfigStillLoadsAShapeGroupWithIconAndOffsetsSet(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[shape]", "name": "Shape Group", "type": "SHAPE", "icon": "icon.png", "offsetX": 1, "offsetY": 2 }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(MarkerGroupType.SHAPE, group.type());
+        assertEquals("icon.png", group.icon());
+        assertEquals(1, group.offsetX());
+        assertEquals(2, group.offsetY());
+    }
+
+    @Test
     void saveAndLoadConfigRoundTripNonAsciiMarkerGroupNamesThroughUtf8(@TempDir Path tempDir) throws IOException {
         var path = tempDir.resolve("BMSM-Core.json");
         var original = new com.tpwalke2.bluemapsignmarkers.config.models.BMSMConfigV2(
@@ -308,7 +460,8 @@ class ConfigProviderTest {
                         0.0,
                         10000000.0,
                         2,
-                        "#FF0000FF"));
+                        "#FF0000FF",
+                        "#FF000033"));
 
         ConfigProvider.saveConfig(original, path);
         var reloaded = ConfigProvider.loadConfig(path);
