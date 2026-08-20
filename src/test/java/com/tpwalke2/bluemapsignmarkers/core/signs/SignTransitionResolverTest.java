@@ -518,7 +518,8 @@ class SignTransitionResolverTest {
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
         assertInstanceOf(RemoveMarkerAction.class, transition.effects().get(0));
-        assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(1));
+        var join = assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(1));
+        assertTrue(join.isFirstAppearance());
     }
 
     @Test
@@ -559,7 +560,8 @@ class SignTransitionResolverTest {
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
         assertInstanceOf(RemoveLineMarkerAction.class, transition.effects().get(0));
-        assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(1));
+        var join = assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(1));
+        assertTrue(join.isFirstAppearance());
     }
 
     @Test
@@ -599,7 +601,8 @@ class SignTransitionResolverTest {
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
         assertInstanceOf(RemoveMarkerAction.class, transition.effects().get(0));
-        assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(1));
+        var join = assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(1));
+        assertTrue(join.isFirstAppearance());
     }
 
     @Test
@@ -640,7 +643,8 @@ class SignTransitionResolverTest {
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
         assertInstanceOf(RemoveLineMarkerAction.class, transition.effects().get(0));
-        assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(1));
+        var join = assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(1));
+        assertTrue(join.isFirstAppearance());
     }
 
     @Test
