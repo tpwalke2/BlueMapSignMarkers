@@ -69,7 +69,8 @@ public class SignTransitionResolver {
             Representation oldRep,
             Representation newRep,
             ActionFactory actionFactory,
-            boolean isReload) {
+            boolean isReload,
+            Map<String, MarkerGroup> currentPrefixGroupMap) {
         if (oldRep == null && newRep == null) return null;
 
         if (oldRep == null) {
@@ -77,7 +78,7 @@ public class SignTransitionResolver {
         }
 
         if (newRep == null) {
-            return leaveEffect(allSignsSupplier, key, oldRep, actionFactory);
+            return leaveEffect(allSignsSupplier, key, oldRep, actionFactory, currentPrefixGroupMap);
         }
 
         var oldType = oldRep.group().type();
@@ -106,7 +107,7 @@ public class SignTransitionResolver {
 
         var effects = new ArrayList<MarkerAction>(2);
 
-        var leave = leaveEffect(allSignsSupplier, key, oldRep, actionFactory);
+        var leave = leaveEffect(allSignsSupplier, key, oldRep, actionFactory, currentPrefixGroupMap);
         if (leave != null) effects.add(leave);
 
         var join = joinEffect(allSignsSupplier, key, newRep, actionFactory, false);
@@ -119,12 +120,24 @@ public class SignTransitionResolver {
 
     // Dispatches the "this sign no longer holds this representation" effect for whichever type the
     // representation belongs to - a plain POI remove, or a LINE/SHAPE recompute-or-remove.
-    private static MarkerAction leaveEffect(Supplier<List<SignEntry>> allSignsSupplier, SignEntryKey key, Representation rep, ActionFactory actionFactory) {
+    private static MarkerAction leaveEffect(Supplier<List<SignEntry>> allSignsSupplier, SignEntryKey key, Representation rep, ActionFactory actionFactory, Map<String, MarkerGroup> currentPrefixGroupMap) {
         return switch (rep.group().type()) {
             case POI -> actionFactory.createRemovePOIAction(key.x(), key.y(), key.z(), key.parentMap(), rep.group());
-            case LINE -> lineLeaveAction(allSignsSupplier, key.parentMap(), rep, actionFactory);
-            case SHAPE -> shapeLeaveAction(allSignsSupplier, key.parentMap(), rep, actionFactory);
+            case LINE -> lineLeaveAction(allSignsSupplier, key.parentMap(), rep, actionFactory, currentPrefixGroupMap);
+            case SHAPE -> shapeLeaveAction(allSignsSupplier, key.parentMap(), rep, actionFactory, currentPrefixGroupMap);
         };
+    }
+
+    // True once rep's prefix no longer resolves to a same-typed group under the current config - i.e. the
+    // group was deleted, reassigned to a different prefix, or had its type flipped (e.g. SHAPE -> POI).
+    // When true, every sign still sharing rep's old prefix/label is undergoing this same transition
+    // simultaneously, so LineGroupResolver/ShapeGroupResolver's raw prefix/label membership count (which
+    // knows nothing about group type) can't be trusted to decide recompute-vs-remove: it would see the
+    // other members still "present" and recompute the old multi-point marker instead of retiring it. See
+    // agent-context/reviews/review-2026-08-20.md.
+    private static boolean groupIdentityObsolete(Representation rep, Map<String, MarkerGroup> currentPrefixGroupMap) {
+        var currentGroup = currentPrefixGroupMap.get(rep.group().prefix());
+        return currentGroup == null || currentGroup.type() != rep.group().type();
     }
 
     // Dispatches the "this sign now holds this representation" effect for whichever type the
@@ -156,7 +169,11 @@ public class SignTransitionResolver {
     // present in signCache under this group/label by the time this is called). Dispatches Set if ≥2
     // members remain, Remove if it drops below 2 and a marker existed before (i.e. exactly 1 remains -
     // meaning there were 2 before), or nothing if there was never a marker to begin with (0 remain).
-    private static MarkerAction lineLeaveAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory) {
+    private static MarkerAction lineLeaveAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, Map<String, MarkerGroup> currentPrefixGroupMap) {
+        if (groupIdentityObsolete(rep, currentPrefixGroupMap)) {
+            return actionFactory.createRemoveLineAction(parentMap, rep.group(), rep.label());
+        }
+
         var members = LineGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
 
         if (members.size() >= 2) {
@@ -188,7 +205,11 @@ public class SignTransitionResolver {
         return actionFactory.createSetShapeAction(parentMap, rep.group(), rep.label(), rep.label(), toPoints(members), isFirstAppearance);
     }
 
-    private static MarkerAction shapeLeaveAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory) {
+    private static MarkerAction shapeLeaveAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, Map<String, MarkerGroup> currentPrefixGroupMap) {
+        if (groupIdentityObsolete(rep, currentPrefixGroupMap)) {
+            return actionFactory.createRemoveShapeAction(parentMap, rep.group(), rep.label());
+        }
+
         var members = ShapeGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
 
         if (members.size() >= SHAPE_MIN_MEMBERS) {

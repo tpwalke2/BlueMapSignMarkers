@@ -147,7 +147,7 @@ public class SignManager implements IResetHandler {
             }
         }
 
-        dispatchTransition(this::getAllSigns, key, oldRep, newRep, actionFactory, false);
+        dispatchTransition(this::getAllSigns, key, oldRep, newRep, actionFactory, false, prefixGroupMap);
     }
 
     private synchronized void removeByKey(SignEntryKey key) {
@@ -162,7 +162,7 @@ public class SignManager implements IResetHandler {
 
         var config = runtimeConfig;
         var oldRep = SignTransitionResolver.computeRepresentation(removed, config.prefixGroupMap());
-        dispatchTransition(this::getAllSigns, key, oldRep, null, config.actionFactory(), false);
+        dispatchTransition(this::getAllSigns, key, oldRep, null, config.actionFactory(), false, config.prefixGroupMap());
     }
 
     // Both call sites (live sign edits/removals from the mixins, and the reload loop below) run on their
@@ -176,9 +176,10 @@ public class SignManager implements IResetHandler {
             SignTransitionResolver.Representation oldRep,
             SignTransitionResolver.Representation newRep,
             ActionFactory actionFactory,
-            boolean isReload) {
+            boolean isReload,
+            Map<String, MarkerGroup> currentPrefixGroupMap) {
         try {
-            var action = SignTransitionResolver.computeTransitionAction(allSignsSupplier, key, oldRep, newRep, actionFactory, isReload);
+            var action = SignTransitionResolver.computeTransitionAction(allSignsSupplier, key, oldRep, newRep, actionFactory, isReload, currentPrefixGroupMap);
             if (action != null) {
                 LOGGER.debug("Dispatching marker action for {}: {}", key, action);
                 blueMapAPIConnector.dispatch(action);
@@ -249,7 +250,7 @@ public class SignManager implements IResetHandler {
             var key = keyAndOldRep.getKey();
             var current = signCache.get(key);
             var newRep = current == null ? null : SignTransitionResolver.computeRepresentation(current, newConfig.prefixGroupMap());
-            dispatchTransition(this::getAllSigns, key, keyAndOldRep.getValue(), newRep, newConfig.actionFactory(), true);
+            dispatchTransition(this::getAllSigns, key, keyAndOldRep.getValue(), newRep, newConfig.actionFactory(), true, newConfig.prefixGroupMap());
         }
     }
 
