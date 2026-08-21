@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 // Table-driven coverage of SignTransitionResolver.computeTransitionAction, one test per row/sub-branch
-// of the transition table in .scratch/line-markers/spec.md Â§6.
+// of the transition table in .scratch/line-markers/spec.md §6.
 class SignTransitionResolverTest {
 
     private static final String MAP = "minecraft:overworld";
@@ -41,8 +41,12 @@ class SignTransitionResolverTest {
     }
 
     private static MarkerGroup shapeGroup(String prefix) {
+        return shapeGroup(prefix, "name");
+    }
+
+    private static MarkerGroup shapeGroup(String prefix, String name) {
         return new MarkerGroup(prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.SHAPE,
-                "name", null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033");
+                name, null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033");
     }
 
     private static SignEntry signEntry(int x, int y, int z, String prefix, String label, String detail, long createdAtMillis) {
@@ -689,5 +693,31 @@ class SignTransitionResolverTest {
         assertEquals(2, transition.effects().size());
         assertInstanceOf(RemoveShapeMarkerAction.class, transition.effects().get(0));
         assertInstanceOf(AddMarkerAction.class, transition.effects().get(1));
+    }
+
+    // Regression for a Copilot review finding on agent-context/reviews/copilot-review-2026-08-20.md: a reload
+    // where a SHAPE group is renamed (same prefix/type, different `name`, which is the BlueMap marker set key -
+    // see BlueMapAPIConnector.getMarkerSets) must not take the same-group-and-label recompute shortcut, or the
+    // old marker set is never cleared and the shape is duplicated instead of moved.
+    @Test
+    void shapeToShapeGroupRenameOnReloadBundlesRemoveOldSetAndAddNewSet() {
+        var oldGroup = shapeGroup("[region]", "Old Name");
+        var newGroup = shapeGroup("[region]", "New Name");
+        var first = signEntry(0, 64, 0, "[region]", "Plot", "d1", 1000L);
+        var second = signEntry(1, 64, 0, "[region]", "Plot", "d2", 2000L);
+        var third = signEntry(2, 64, 0, "[region]", "Plot", "d3", 3000L);
+        var oldRep = rep(first, oldGroup);
+        var newRep = rep(first, newGroup);
+
+        var allSigns = List.of(first, second, third);
+        var action = SignTransitionResolver.computeTransitionAction(() -> allSigns, first.key(), oldRep, newRep, actionFactory(), true, Map.of(newGroup.prefix(), newGroup));
+
+        var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
+        assertEquals(2, transition.effects().size());
+        var leave = assertInstanceOf(RemoveShapeMarkerAction.class, transition.effects().get(0));
+        assertEquals(oldGroup, leave.getMarkerIdentifier().parentSet().markerGroup());
+        var join = assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(1));
+        assertEquals(newGroup, join.getMarkerIdentifier().parentSet().markerGroup());
+        assertEquals(3, join.getPoints().size());
     }
 }

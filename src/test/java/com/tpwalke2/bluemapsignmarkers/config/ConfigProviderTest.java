@@ -1,13 +1,23 @@
 package com.tpwalke2.bluemapsignmarkers.config;
 
+import com.tpwalke2.bluemapsignmarkers.Constants;
+import com.tpwalke2.bluemapsignmarkers.config.models.BMSMConfigV2;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupMatchType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.LogEvent;
+import org.apache.logging.log4j.core.Logger;
+import org.apache.logging.log4j.core.appender.AbstractAppender;
+import org.apache.logging.log4j.core.config.Property;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -15,6 +25,29 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConfigProviderTest {
+
+    // Captures the log messages the mod's logger emits while running action (and stashes action's result
+    // into result[0]), so tests can assert that warnOnTypeFieldMismatches actually logs a warning rather
+    // than only checking the config still loads.
+    private static List<String> captureWarnMessages(Supplier<BMSMConfigV2> action, BMSMConfigV2[] result) {
+        var logger = (Logger) LogManager.getLogger(Constants.MOD_ID);
+        var messages = new ArrayList<String>();
+        var appender = new AbstractAppender("test-capture", null, null, false, Property.EMPTY_ARRAY) {
+            @Override
+            public void append(LogEvent event) {
+                messages.add(event.getMessage().getFormattedMessage());
+            }
+        };
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            result[0] = action.get();
+        } finally {
+            logger.removeAppender(appender);
+            appender.stop();
+        }
+        return messages;
+    }
 
     @Test
     void loadConfigCreatesAndPersistsDefaultsWhenFileIsAbsent(@TempDir Path tempDir) {
@@ -264,12 +297,16 @@ class ConfigProviderTest {
                 }
                 """);
 
-        var config = ConfigProvider.loadConfig(path);
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
 
         assertEquals(1, config.getMarkerGroups().length);
         var group = config.getMarkerGroups()[0];
         assertEquals(MarkerGroupType.POI, group.type());
         assertEquals("[poi]", group.prefix());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("lineWidth")));
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("lineColor")));
     }
 
     @Test
@@ -396,12 +433,15 @@ class ConfigProviderTest {
                 }
                 """);
 
-        var config = ConfigProvider.loadConfig(path);
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
 
         assertEquals(1, config.getMarkerGroups().length);
         var group = config.getMarkerGroups()[0];
         assertEquals(MarkerGroupType.POI, group.type());
         assertEquals("#00FF00FF", group.fillColor());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("fillColor")));
     }
 
     @Test
@@ -415,12 +455,15 @@ class ConfigProviderTest {
                 }
                 """);
 
-        var config = ConfigProvider.loadConfig(path);
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
 
         assertEquals(1, config.getMarkerGroups().length);
         var group = config.getMarkerGroups()[0];
         assertEquals(MarkerGroupType.LINE, group.type());
         assertEquals("#00FF00FF", group.fillColor());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("fillColor")));
     }
 
     @Test
@@ -434,7 +477,9 @@ class ConfigProviderTest {
                 }
                 """);
 
-        var config = ConfigProvider.loadConfig(path);
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
 
         assertEquals(1, config.getMarkerGroups().length);
         var group = config.getMarkerGroups()[0];
@@ -442,6 +487,9 @@ class ConfigProviderTest {
         assertEquals("icon.png", group.icon());
         assertEquals(1, group.offsetX());
         assertEquals(2, group.offsetY());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("icon")));
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("offsetX")));
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("offsetY")));
     }
 
     @Test

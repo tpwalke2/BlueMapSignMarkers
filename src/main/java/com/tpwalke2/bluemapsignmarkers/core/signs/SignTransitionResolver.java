@@ -52,7 +52,7 @@ public class SignTransitionResolver {
     }
 
     static boolean sameGroupAndLabel(Representation a, Representation b) {
-        return a.group().prefix().equals(b.group().prefix()) && a.label().equals(b.label());
+        return a.group().equals(b.group()) && a.label().equals(b.label());
     }
 
     // The (oldRepresentation, newRepresentation) transition table from
@@ -97,9 +97,10 @@ public class SignTransitionResolver {
             return actionFactory.createChangeGroupPOIAction(key.x(), key.y(), key.z(), key.parentMap(), newRep.label(), newRep.detail(), oldRep.group(), newRep.group());
         }
 
-        // Same-group-and-label recompute for either multi-point type (LINE↔LINE or SHAPE↔SHAPE); a
-        // type-pair mismatch (or same type but a different group/label) falls through to the general
-        // leave+join bundling below.
+        // Same-group-and-label recompute for either multi-point type (LINE↔LINE or SHAPE↔SHAPE); sameGroupAndLabel
+        // requires the whole MarkerGroup to be unchanged (not just its type/prefix), since any other edit - e.g. a
+        // rename - moves the marker to a different BlueMap marker set (see groupIdentityObsolete) and must go
+        // through the general leave+join bundling below instead, or the old marker set would never get cleared.
         if (oldType == newType && oldType != MarkerGroupType.POI && sameGroupAndLabel(oldRep, newRep)) {
             if (oldRep.detail().equals(newRep.detail()) && !isReload) return null;
             return joinEffect(allSignsSupplier, key, newRep, actionFactory, true);
@@ -128,16 +129,18 @@ public class SignTransitionResolver {
         };
     }
 
-    // True once rep's prefix no longer resolves to a same-typed group under the current config - i.e. the
-    // group was deleted, reassigned to a different prefix, or had its type flipped (e.g. SHAPE -> POI).
-    // When true, every sign still sharing rep's old prefix/label is undergoing this same transition
-    // simultaneously, so LineGroupResolver/ShapeGroupResolver's raw prefix/label membership count (which
-    // knows nothing about group type) can't be trusted to decide recompute-vs-remove: it would see the
-    // other members still "present" and recompute the old multi-point marker instead of retiring it. See
+    // True once rep's prefix no longer resolves to the exact same group under the current config - i.e. the
+    // group was deleted, reassigned to a different prefix, had its type flipped (e.g. SHAPE -> POI), or was
+    // otherwise edited (e.g. renamed, which moves its markers to a different BlueMap marker set - see
+    // BlueMapAPIConnector.getMarkerSets keying MarkerSet lookup by MarkerGroup.name()). When true, every
+    // sign still sharing rep's old prefix/label is undergoing this same transition simultaneously, so
+    // LineGroupResolver/ShapeGroupResolver's raw prefix/label membership count (which knows nothing about
+    // group identity) can't be trusted to decide recompute-vs-remove: it would see the other members still
+    // "present" and recompute the old multi-point marker instead of retiring it. See
     // agent-context/reviews/review-2026-08-20.md.
     private static boolean groupIdentityObsolete(Representation rep, Map<String, MarkerGroup> currentPrefixGroupMap) {
         var currentGroup = currentPrefixGroupMap.get(rep.group().prefix());
-        return currentGroup == null || currentGroup.type() != rep.group().type();
+        return currentGroup == null || !currentGroup.equals(rep.group());
     }
 
     // Dispatches the "this sign now holds this representation" effect for whichever type the

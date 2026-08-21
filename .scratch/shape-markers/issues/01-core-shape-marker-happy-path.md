@@ -1,7 +1,7 @@
 # 01 — Core SHAPE marker type: create/update/remove happy path
 
 **What to build:** A new `SHAPE` marker group type. Placing 3 or more signs that share a `SHAPE` group's prefix and
-identical label text renders a filled polygon on the map, anchored at the Y height of the first-placed member and
+identical label text renders a filled polygon on the map, anchored at the Y height of the tallest member and
 ordered by placement time. Editing any member's text (same prefix/label) updates the shape's detail popup without
 breaking or duplicating the marker. Removing members back down to 2 or fewer removes the marker.
 
