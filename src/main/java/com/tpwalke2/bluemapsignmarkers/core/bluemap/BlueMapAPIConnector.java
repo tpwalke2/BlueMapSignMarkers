@@ -10,22 +10,29 @@ import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.GroupTransitionMarke
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.MarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveLineMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveShapeMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetLineMarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetShapeMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.UpdateMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.markers.DispatchedMarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.LineMarkerIdentifier;
+import com.tpwalke2.bluemapsignmarkers.core.markers.LinePoint;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifier;
+import com.tpwalke2.bluemapsignmarkers.core.markers.ShapeMarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.reactive.ReactiveQueue;
+import com.flowpowered.math.vector.Vector2d;
 import de.bluecolored.bluemap.api.BlueMapAPI;
 import de.bluecolored.bluemap.api.BlueMapMap;
 import de.bluecolored.bluemap.api.markers.LineMarker;
 import de.bluecolored.bluemap.api.markers.Marker;
 import de.bluecolored.bluemap.api.markers.MarkerSet;
 import de.bluecolored.bluemap.api.markers.POIMarker;
+import de.bluecolored.bluemap.api.markers.ShapeMarker;
 import de.bluecolored.bluemap.api.math.Color;
 import de.bluecolored.bluemap.api.math.Line;
+import de.bluecolored.bluemap.api.math.Shape;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -157,6 +164,10 @@ public class BlueMapAPIConnector {
                     applyToMarkerSets(setAction.getMarkerIdentifier(), markerSetMaps -> setLineMarker(setAction, markerSetMaps));
             case RemoveLineMarkerAction removeAction ->
                     applyToMarkerSets(removeAction.getMarkerIdentifier(), markerSetMaps -> removeMarkerById(removeAction.getMarkerIdentifier().getId(), markerSetMaps));
+            case SetShapeMarkerAction setAction ->
+                    applyToMarkerSets(setAction.getMarkerIdentifier(), markerSetMaps -> setShapeMarker(setAction, markerSetMaps));
+            case RemoveShapeMarkerAction removeAction ->
+                    applyToMarkerSets(removeAction.getMarkerIdentifier(), markerSetMaps -> removeMarkerById(removeAction.getMarkerIdentifier().getId(), markerSetMaps));
             default -> LOGGER.warn("Unknown marker action: {}", markerAction);
         }
     }
@@ -180,6 +191,8 @@ public class BlueMapAPIConnector {
             case UpdateMarkerAction ignored -> "Updating";
             case RemoveLineMarkerAction ignored -> "Removing";
             case SetLineMarkerAction setAction -> setAction.isFirstAppearance() ? "Adding" : "Updating";
+            case RemoveShapeMarkerAction ignored -> "Removing";
+            case SetShapeMarkerAction setAction -> setAction.isFirstAppearance() ? "Adding" : "Updating";
             default -> "Processing";
         };
 
@@ -198,9 +211,13 @@ public class BlueMapAPIConnector {
             position = String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
         } else if (identifier instanceof LineMarkerIdentifier lineMarkerIdentifier) {
             position = String.format(" label='%s'", LogUtils.sanitizeForLog(lineMarkerIdentifier.label()));
+        } else if (identifier instanceof ShapeMarkerIdentifier && action instanceof SetShapeMarkerAction setAction) {
+            position = String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
+        } else if (identifier instanceof ShapeMarkerIdentifier shapeMarkerIdentifier) {
+            position = String.format(" label='%s'", LogUtils.sanitizeForLog(shapeMarkerIdentifier.label()));
         }
 
-        LOGGER.info("{} {} type marker in {}{}{}",
+        LOGGER.debug("{} {} type marker in {}{}{}",
                 operation,
                 identifier.parentSet().markerGroup().type(),
                 identifier.parentSet().mapId(),
@@ -230,6 +247,16 @@ public class BlueMapAPIConnector {
         markerSetMaps.forEach(stringMarkerMap -> stringMarkerMap.remove(id));
     }
 
+    // ColorUtils.parseHex returns alpha in the same 0-255 range as r/g/b, but BlueMap's Color(int, int, int,
+    // float) constructor takes alpha in 0-1 - passing the raw 0-255 int straight through (as the earlier
+    // Color(int, int, int, int alpha-as-int) overload does, treating alpha/255f) is NOT what an int
+    // widening to float gives you: it silently widens to e.g. 51.0f instead of dividing by 255, which
+    // BlueMap then clamps to fully opaque. Every translucent color (e.g. SHAPE's fillColor default) rendered
+    // fully opaque as a result.
+    private static Color toBlueMapColor(int[] rgba) {
+        return new Color(rgba[0], rgba[1], rgba[2], rgba[3] / 255f);
+    }
+
     private static void setLineMarker(SetLineMarkerAction action, Stream<Map<String, Marker>> markerSetMaps) {
         LOGGER.debug("Setting line marker...");
         if (action.getPoints().size() < 2) return; // defensive - SignManager should never dispatch below 2
@@ -244,7 +271,35 @@ public class BlueMapAPIConnector {
                     .detail(HtmlUtils.toHtmlDetail(action.getDetail()))
                     .line(line)
                     .lineWidth(action.getLineWidth())
-                    .lineColor(new Color(color[0], color[1], color[2], color[3]))
+                    .lineColor(toBlueMapColor(color))
+                    .build();
+            marker.setMinDistance(markerGroup.minDistance());
+            marker.setMaxDistance(markerGroup.maxDistance());
+            markers.put(action.getMarkerIdentifier().getId(), marker);
+        });
+    }
+
+    private static void setShapeMarker(SetShapeMarkerAction action, Stream<Map<String, Marker>> markerSetMaps) {
+        LOGGER.debug("Setting shape marker...");
+        if (action.getPoints().size() < 3) return; // defensive - SignManager should never dispatch below 3
+
+        var points = action.getPoints();
+        var shape = new Shape(points.stream().map(p -> new Vector2d(p.x(), p.z())).toList());
+        // Shape height anchors to the tallest member rather than placement order, so the polygon always
+        // clears the terrain/builds of every sign that defines it.
+        var shapeY = (float) points.stream().mapToInt(LinePoint::y).max().orElseThrow();
+        var lineColor = ColorUtils.parseHex(action.getLineColor());
+        var fillColor = ColorUtils.parseHex(action.getFillColor());
+        var markerGroup = action.getMarkerIdentifier().parentSet().markerGroup();
+
+        markerSetMaps.forEach(markers -> {
+            var marker = ShapeMarker.builder()
+                    .label(action.getLabel())
+                    .detail(HtmlUtils.toHtmlDetail(action.getDetail()))
+                    .shape(shape, shapeY)
+                    .lineWidth(action.getLineWidth())
+                    .lineColor(toBlueMapColor(lineColor))
+                    .fillColor(toBlueMapColor(fillColor))
                     .build();
             marker.setMinDistance(markerGroup.minDistance());
             marker.setMaxDistance(markerGroup.maxDistance());

@@ -15,5 +15,6 @@ public record LoadingMarkerGroupV2(
         Double minDistance,
         Double maxDistance,
         Integer lineWidth,
-        String lineColor) {
+        String lineColor,
+        String fillColor) {
 }
