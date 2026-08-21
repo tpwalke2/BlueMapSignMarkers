@@ -176,6 +176,9 @@ public class ConfigProvider {
                 if (markerGroup.lineColor() != null) {
                     LOGGER.warn("Marker group '{}' is type POI but has 'lineColor' set; this field is ignored for POI groups", name);
                 }
+                if (markerGroup.fillColor() != null) {
+                    LOGGER.warn("Marker group '{}' is type POI but has 'fillColor' set; this field is ignored for POI groups", name);
+                }
             } else if (type == MarkerGroupType.LINE) {
                 if (markerGroup.icon() != null) {
                     LOGGER.warn("Marker group '{}' is type LINE but has 'icon' set; this field is ignored for LINE groups", name);
@@ -185,6 +188,19 @@ public class ConfigProvider {
                 }
                 if (markerGroup.offsetY() != null) {
                     LOGGER.warn("Marker group '{}' is type LINE but has 'offsetY' set; this field is ignored for LINE groups", name);
+                }
+                if (markerGroup.fillColor() != null) {
+                    LOGGER.warn("Marker group '{}' is type LINE but has 'fillColor' set; this field is ignored for LINE groups", name);
+                }
+            } else if (type == MarkerGroupType.SHAPE) {
+                if (markerGroup.icon() != null) {
+                    LOGGER.warn("Marker group '{}' is type SHAPE but has 'icon' set; this field is ignored for SHAPE groups", name);
+                }
+                if (markerGroup.offsetX() != null) {
+                    LOGGER.warn("Marker group '{}' is type SHAPE but has 'offsetX' set; this field is ignored for SHAPE groups", name);
+                }
+                if (markerGroup.offsetY() != null) {
+                    LOGGER.warn("Marker group '{}' is type SHAPE but has 'offsetY' set; this field is ignored for SHAPE groups", name);
                 }
             }
         }
@@ -205,20 +221,21 @@ public class ConfigProvider {
                 markerGroup.minDistance() == null ? 0.0 : markerGroup.minDistance(),
                 markerGroup.maxDistance() == null ? 10000000.0 : markerGroup.maxDistance(),
                 resolveLineWidth(markerGroup),
-                resolveLineColor(markerGroup)
+                resolveLineColor(markerGroup),
+                resolveFillColor(markerGroup)
         );
     }
 
     // Falls back to the default width on a non-positive value rather than throwing - a bad config value
     // must not crash the server (same treatment as ColorUtils.parseHex's fallback on a malformed color).
-    // Only validated for LINE groups - lineWidth is ignored for POI groups (warnOnTypeFieldMismatches already
-    // warns about it being set), so validating it here too would just be a second, confusing warning.
+    // Only validated for LINE/SHAPE groups - lineWidth is ignored for POI groups (warnOnTypeFieldMismatches
+    // already warns about it being set), so validating it here too would just be a second, confusing warning.
     private static int resolveLineWidth(LoadingMarkerGroupV2 markerGroup) {
         var lineWidth = markerGroup.lineWidth();
         if (lineWidth == null) return DEFAULT_LINE_WIDTH;
 
         var type = effectiveType(markerGroup);
-        if (type != MarkerGroupType.LINE) return lineWidth;
+        if (type != MarkerGroupType.LINE && type != MarkerGroupType.SHAPE) return lineWidth;
 
         if (lineWidth <= 0) {
             LOGGER.warn("Marker group '{}' has a non-positive 'lineWidth' ({}); falling back to default {}",
@@ -231,7 +248,7 @@ public class ConfigProvider {
 
     // Warns and falls back to the default color at load time (rather than silently at dispatch time via
     // ColorUtils.parseHex's fallback) so a malformed color gets a clear, attributable log message.
-    // Only validated for LINE groups - see resolveLineWidth above.
+    // Only validated for LINE/SHAPE groups - see resolveLineWidth above.
     private static final String DEFAULT_LINE_COLOR = "#FF0000FF";
 
     private static String resolveLineColor(LoadingMarkerGroupV2 markerGroup) {
@@ -239,7 +256,7 @@ public class ConfigProvider {
         if (lineColor == null) return DEFAULT_LINE_COLOR;
 
         var type = effectiveType(markerGroup);
-        if (type != MarkerGroupType.LINE) return lineColor;
+        if (type != MarkerGroupType.LINE && type != MarkerGroupType.SHAPE) return lineColor;
 
         if (!ColorUtils.isValidHex(lineColor)) {
             LOGGER.warn("Marker group '{}' has a malformed 'lineColor' ({}); falling back to default {}",
@@ -248,6 +265,27 @@ public class ConfigProvider {
         }
 
         return lineColor;
+    }
+
+    // fillColor is SHAPE-only; its default is translucent (unlike lineColor's opaque default) so a SHAPE
+    // group configured without styling doesn't blot out the map underneath it. Only validated for SHAPE
+    // groups - see resolveLineWidth above.
+    private static final String DEFAULT_FILL_COLOR = "#FF000033";
+
+    private static String resolveFillColor(LoadingMarkerGroupV2 markerGroup) {
+        var fillColor = markerGroup.fillColor();
+        if (fillColor == null) return DEFAULT_FILL_COLOR;
+
+        var type = effectiveType(markerGroup);
+        if (type != MarkerGroupType.SHAPE) return fillColor;
+
+        if (!ColorUtils.isValidHex(fillColor)) {
+            LOGGER.warn("Marker group '{}' has a malformed 'fillColor' ({}); falling back to default {}",
+                    markerGroup.name(), fillColor, DEFAULT_FILL_COLOR);
+            return DEFAULT_FILL_COLOR;
+        }
+
+        return fillColor;
     }
 
     private static BMSMConfigV2 loadV1Config(File file, BMSMConfigV1 v1Config) {
@@ -272,6 +310,7 @@ public class ConfigProvider {
                         0,
                         10000000.0,
                         2,
-                        "#FF0000FF"));
+                        "#FF0000FF",
+                        "#FF000033"));
     }
 }

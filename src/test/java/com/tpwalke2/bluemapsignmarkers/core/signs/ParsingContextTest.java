@@ -64,6 +64,6 @@ class ParsingContextTest {
     private static MarkerGroup markerGroup(String prefix) {
         return new MarkerGroup(
                 prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, prefix, "icon.png", 0, 0, false, 0, 0,
-                2, "#FF0000FF");
+                2, "#FF0000FF", "#FF000033");
     }
 }

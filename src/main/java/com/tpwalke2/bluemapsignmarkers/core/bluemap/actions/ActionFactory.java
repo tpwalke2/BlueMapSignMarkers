@@ -5,6 +5,7 @@ import com.tpwalke2.bluemapsignmarkers.core.markers.LinePoint;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifierCollection;
+import com.tpwalke2.bluemapsignmarkers.core.markers.ShapeMarkerIdentifier;
 
 import java.util.List;
 
@@ -92,6 +93,29 @@ public class ActionFactory {
     public RemoveLineMarkerAction createRemoveLineAction(String mapId, MarkerGroup markerGroup, String label) {
         return new RemoveLineMarkerAction(
                 new LineMarkerIdentifier(label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)));
+    }
+
+    public SetShapeMarkerAction createSetShapeAction(
+            String mapId,
+            MarkerGroup markerGroup,
+            String label,
+            String detail,
+            List<LinePoint> points,
+            boolean isFirstAppearance) {
+        return new SetShapeMarkerAction(
+                new ShapeMarkerIdentifier(label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
+                label,
+                detail,
+                points,
+                markerGroup.lineWidth(),
+                markerGroup.lineColor(),
+                markerGroup.fillColor(),
+                isFirstAppearance);
+    }
+
+    public RemoveShapeMarkerAction createRemoveShapeAction(String mapId, MarkerGroup markerGroup, String label) {
+        return new RemoveShapeMarkerAction(
+                new ShapeMarkerIdentifier(label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)));
     }
 
     public UpdateMarkerAction createUpdatePOIAction(

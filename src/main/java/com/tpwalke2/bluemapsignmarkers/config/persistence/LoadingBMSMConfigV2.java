@@ -30,7 +30,8 @@ public final class LoadingBMSMConfigV2 {
                 defaultGroup.minDistance(),
                 defaultGroup.maxDistance(),
                 defaultGroup.lineWidth(),
-                defaultGroup.lineColor());
+                defaultGroup.lineColor(),
+                defaultGroup.fillColor());
     }
 
     public LoadingMarkerGroupV2[] getMarkerGroups() {
