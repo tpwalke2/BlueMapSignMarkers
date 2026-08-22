@@ -298,6 +298,42 @@ class RenderMaskEvaluatorTest {
     }
 
     @Test
+    void ellipseEntryWithZeroRadiusFailsOpenInsteadOfDividingByZero(@TempDir Path mapsDir) throws IOException {
+        writeConfig(mapsDir, "world.conf", """
+                render-mask: [
+                  {
+                    type: ellipse
+                    center-x: 0
+                    center-z: 0
+                    radius-x: 0
+                    radius-z: 5
+                  }
+                ]
+                """);
+
+        // an unparseable entry fails the whole map open (unbounded), rather than letting
+        // contains() divide by a zero radius and produce Infinity/NaN.
+        assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 100, 0, 100));
+    }
+
+    @Test
+    void ellipseEntryWithNegativeRadiusFailsOpen(@TempDir Path mapsDir) throws IOException {
+        writeConfig(mapsDir, "world.conf", """
+                render-mask: [
+                  {
+                    type: ellipse
+                    center-x: 0
+                    center-z: 0
+                    radius-x: 20
+                    radius-z: -5
+                  }
+                ]
+                """);
+
+        assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 100, 0, 100));
+    }
+
+    @Test
     void polygonEntryEvaluatesNonConvexShapeViaPointInPolygon(@TempDir Path mapsDir) throws IOException {
         // a "C" / non-convex shape: a 10x10 square with a 6x6 bite taken out of its right side
         writeConfig(mapsDir, "world.conf", """

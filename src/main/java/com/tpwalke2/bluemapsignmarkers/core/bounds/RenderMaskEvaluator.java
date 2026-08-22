@@ -253,6 +253,17 @@ public class RenderMaskEvaluator {
         return Double.parseDouble(value);
     }
 
+    // RenderMaskEllipse.contains() divides by this value; a zero/negative radius would produce
+    // Infinity/NaN and incorrectly exclude points instead of failing the map open (see
+    // agent-context/reviews/copilot-review-2026-08-22.md), so reject it at parse time instead.
+    private static double requiredPositiveDoubleField(Map<String, String> fields, String key) {
+        var value = requiredDoubleField(fields, key);
+        if (value <= 0) {
+            throw new IllegalStateException("render-mask field '" + key + "' must be > 0, got " + value);
+        }
+        return value;
+    }
+
     private static RenderMaskBox parseBox(Map<String, String> fields, boolean subtract) {
         return new RenderMaskBox(
                 intField(fields, "min-x", Integer.MIN_VALUE),
@@ -278,8 +289,8 @@ public class RenderMaskEvaluator {
         return new RenderMaskEllipse(
                 requiredDoubleField(fields, "center-x"),
                 requiredDoubleField(fields, "center-z"),
-                requiredDoubleField(fields, "radius-x"),
-                requiredDoubleField(fields, "radius-z"),
+                requiredPositiveDoubleField(fields, "radius-x"),
+                requiredPositiveDoubleField(fields, "radius-z"),
                 intField(fields, "min-y", Integer.MIN_VALUE),
                 intField(fields, "max-y", Integer.MAX_VALUE),
                 subtract);
