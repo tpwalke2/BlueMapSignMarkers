@@ -137,16 +137,19 @@ public class BlueMapAPIConnector {
         renderMaskCache = new ConcurrentHashMap<>();
     }
 
-    // Not synchronized itself — applyGatedToMarkerSets/applyToAllMarkerSets each wrap their own
-    // full mutation fan-out (across every one of the action's target maps) in a single
-    // `synchronized (this)` block, so addMarker/updateMarker/removeMarker's mutation of a MarkerSet's
-    // marker Map still never runs concurrently with another dispatched action against the same (or a
-    // different) MarkerSet, and one action's effect is never observably applied on some of its target
-    // maps but not others (findings #5 and the bulk-load fanout item,
-    // plans/codebase-review-2026-07-11.md) — but the render-mask cold-load disk I/O that gating does
-    // first (getRenderMask, on a cache miss) is resolved for every target map *before* that lock is
-    // taken, so it no longer runs while holding it. See the adversarial review finding this addressed
-    // (agent-context/reviews/adversarial-review-feature-tpwalke2-67-map-bounds-2026-08-22.md, #1).
+    // Not synchronized itself — prepareSingleAction resolves everything an action's mutation needs
+    // (including render-mask gating decisions, which can do cold-cache disk I/O via getRenderMask) up
+    // front, and the resulting Runnable is only then run inside a `synchronized (this)` block covering
+    // the action's full mutation fan-out (across every one of its target maps). That keeps
+    // addMarker/updateMarker/removeMarker's mutation of a MarkerSet's marker Map from running
+    // concurrently with another dispatched action against the same (or a different) MarkerSet, and one
+    // action's effect from ever being observably applied on some of its target maps but not others
+    // (findings #5 and the bulk-load fanout item, plans/codebase-review-2026-07-11.md), while ensuring
+    // the render-mask cold-load disk I/O never runs while holding that lock — including for
+    // `GroupTransitionMarkerAction`, whose paired effects are each resolved unlocked, then applied
+    // together under one lock acquisition. See the adversarial review finding this addressed
+    // (agent-context/reviews/adversarial-review-feature-tpwalke2-67-map-bounds-2026-08-22.md, #1) and
+    // its follow-up (agent-context/reviews/copilot-review-2026-08-22.md).
     private void processMarkerAction(MarkerAction markerAction) {
         // ReactiveQueue.shutdown() only stops new submissions — already-submitted tasks still run.
         // Re-check the same condition ReactiveQueue's shouldRunCallback gates on so one of those tasks
@@ -157,12 +160,17 @@ public class BlueMapAPIConnector {
         }
 
         if (markerAction instanceof GroupTransitionMarkerAction transitionAction) {
-            // Held together under one lock so the transition's effects are never observable
-            // half-applied (e.g. present in both the old and new marker group, or missing from both) —
-            // unlike the single-action path below, a transition's own mutations must stay atomic as a
-            // set, so this one still wraps the render-mask lookup its add-side effect may do.
+            // Each effect's render-mask gating is resolved (including any cold-cache disk I/O) before
+            // any lock is taken, same as the single-action path below. The resulting mutations are then
+            // applied together under one lock acquisition so the transition's effects are never
+            // observable half-applied (e.g. present in both the old and new marker group, or missing
+            // from both).
+            var applies = transitionAction.effects().stream()
+                    .peek(this::logProcessingMessage)
+                    .map(this::prepareSingleAction)
+                    .toList();
             synchronized (this) {
-                transitionAction.effects().forEach(this::applySingleAction);
+                applies.forEach(Runnable::run);
             }
             return;
         }
@@ -172,82 +180,92 @@ public class BlueMapAPIConnector {
 
     private void applySingleAction(MarkerAction markerAction) {
         logProcessingMessage(markerAction);
+        var apply = prepareSingleAction(markerAction);
+        synchronized (this) {
+            apply.run();
+        }
+    }
 
-        switch (markerAction) {
+    // Resolves everything an action's mutation needs (including render-mask gating decisions, which
+    // can do cold-cache disk I/O via getRenderMask) up front, returning a Runnable that performs only
+    // the actual MarkerSet mutation. Callers run that Runnable inside their own synchronized(this)
+    // block, so the resolution work above never runs while holding the lock.
+    private Runnable prepareSingleAction(MarkerAction markerAction) {
+        return switch (markerAction) {
             case AddMarkerAction addAction ->
-                    applyGatedToMarkerSets(addAction.getMarkerIdentifier(), pointOf(addAction.getMarkerIdentifier()), markers -> addMarker(addAction, markers));
+                    prepareGated(addAction.getMarkerIdentifier(), pointOf(addAction.getMarkerIdentifier()), markers -> addMarker(addAction, markers));
             case UpdateMarkerAction updateAction ->
-                    applyGatedToMarkerSets(updateAction.getMarkerIdentifier(), pointOf(updateAction.getMarkerIdentifier()), markers -> updateMarker(updateAction, markers));
+                    prepareGated(updateAction.getMarkerIdentifier(), pointOf(updateAction.getMarkerIdentifier()), markers -> updateMarker(updateAction, markers));
             case SetLineMarkerAction setAction ->
-                    applyGatedToMarkerSets(setAction.getMarkerIdentifier(), setAction.getPoints(), markers -> setLineMarker(setAction, markers));
+                    prepareGated(setAction.getMarkerIdentifier(), setAction.getPoints(), markers -> setLineMarker(setAction, markers));
             case SetShapeMarkerAction setAction ->
-                    applyGatedToMarkerSets(setAction.getMarkerIdentifier(), setAction.getPoints(), markers -> setShapeMarker(setAction, markers));
+                    prepareGated(setAction.getMarkerIdentifier(), setAction.getPoints(), markers -> setShapeMarker(setAction, markers));
             // Explicit removes - the sign's representation is genuinely leaving, independent of
             // render bounds - so these apply unconditionally on every real map, no gating needed.
             case RemoveMarkerAction removeAction ->
-                    applyToAllMarkerSets(removeAction.getMarkerIdentifier(), markers -> removeMarker(removeAction, markers));
+                    prepareUngated(removeAction.getMarkerIdentifier(), markers -> removeMarker(removeAction, markers));
             case RemoveLineMarkerAction removeAction ->
-                    applyToAllMarkerSets(removeAction.getMarkerIdentifier(), markers -> removeMarkerById(removeAction.getMarkerIdentifier().getId(), markers));
+                    prepareUngated(removeAction.getMarkerIdentifier(), markers -> removeMarkerById(removeAction.getMarkerIdentifier().getId(), markers));
             case RemoveShapeMarkerAction removeAction ->
-                    applyToAllMarkerSets(removeAction.getMarkerIdentifier(), markers -> removeMarkerById(removeAction.getMarkerIdentifier().getId(), markers));
-            default -> LOGGER.warn("Unknown marker action: {}", markerAction);
-        }
+                    prepareUngated(removeAction.getMarkerIdentifier(), markers -> removeMarkerById(removeAction.getMarkerIdentifier().getId(), markers));
+            default -> {
+                LOGGER.warn("Unknown marker action: {}", markerAction);
+                yield () -> {};
+            }
+        };
     }
 
     private static List<LinePoint> pointOf(MarkerIdentifier identifier) {
         return List.of(new LinePoint(identifier.x(), identifier.y(), identifier.z()));
     }
 
-    // Gates an add/update/set effect per real map: applied only if at least one of the action's
-    // points is inside that map's render bounds. If not, the marker id is actively removed from
-    // that map instead of skipping the effect - this is what sweeps a marker that's either newly
-    // out-of-bounds (moved sign) or was created before this feature shipped (upgrade sweep via
-    // SignManager.reset()'s existing reload-forced re-dispatch).
-    private void applyGatedToMarkerSets(
+    // Resolves the render-mask gating decision for an add/update/set effect on every real map up
+    // front (a marker is only applied where at least one of the action's points is inside that map's
+    // render bounds; otherwise the marker id is actively removed from that map instead of skipping the
+    // effect - this is what sweeps a marker that's either newly out-of-bounds (moved sign) or was
+    // created before this feature shipped, via SignManager.reset()'s existing reload-forced
+    // re-dispatch). Returns a Runnable applying those already-resolved decisions, so a render-mask
+    // cache miss's disk I/O (RenderMaskEvaluator.load) never runs while the caller's lock is held, while
+    // still applying to all of this action's target maps as one atomic unit under that lock - so this
+    // action's effect can never be observed as applied on some of its maps and not others if another
+    // action for the same marker id interleaves.
+    private Runnable prepareGated(
             DispatchedMarkerIdentifier markerIdentifier, List<LinePoint> points, Consumer<Map<String, Marker>> effect) {
         var markerSets = getMarkerSets(markerIdentifier.parentSet());
 
         if (markerSets.isEmpty()) {
             LOGGER.debug("Marker sets not found.");
-            return;
+            return () -> {};
         }
 
         LOGGER.debug("Marker sets found.");
-        // Gating decisions resolved for every target map before the lock below, so a render-mask
-        // cache miss's disk I/O (RenderMaskEvaluator.load) never runs while holding it - but still
-        // applied to all of this action's target maps as one atomic unit (a single lock acquisition,
-        // not one per map), so this action's effect can never be observed as applied on some of its
-        // maps and not others if another action for the same marker id interleaves.
         var decisions = markerSets.get().stream()
                 .map(mapped -> Map.entry(mapped, isInsideRenderBounds(mapped.mapId(), points)))
                 .toList();
 
-        synchronized (this) {
-            decisions.forEach(decision -> {
-                var markers = decision.getKey().markerSet().getMarkers();
-                if (decision.getValue()) {
-                    effect.accept(markers);
-                } else {
-                    markers.remove(markerIdentifier.getId());
-                }
-            });
-        }
+        return () -> decisions.forEach(decision -> {
+            var markers = decision.getKey().markerSet().getMarkers();
+            if (decision.getValue()) {
+                effect.accept(markers);
+            } else {
+                markers.remove(markerIdentifier.getId());
+            }
+        });
     }
 
-    // Applies an effect (always a removal) to every real map's MarkerSet unconditionally - used for
-    // explicit remove actions, which are never gated against render bounds.
-    private void applyToAllMarkerSets(DispatchedMarkerIdentifier markerIdentifier, Consumer<Map<String, Marker>> effect) {
+    // Resolves an effect (always a removal) to every real map's MarkerSet unconditionally - used for
+    // explicit remove actions, which are never gated against render bounds. Returns a Runnable the
+    // caller runs under its own lock.
+    private Runnable prepareUngated(DispatchedMarkerIdentifier markerIdentifier, Consumer<Map<String, Marker>> effect) {
         var markerSets = getMarkerSets(markerIdentifier.parentSet());
 
         if (markerSets.isEmpty()) {
             LOGGER.debug("Marker sets not found.");
-            return;
+            return () -> {};
         }
 
         LOGGER.debug("Marker sets found.");
-        synchronized (this) {
-            markerSets.get().forEach(mapped -> effect.accept(mapped.markerSet().getMarkers()));
-        }
+        return () -> markerSets.get().forEach(mapped -> effect.accept(mapped.markerSet().getMarkers()));
     }
 
     private boolean isInsideRenderBounds(String mapId, List<LinePoint> points) {
