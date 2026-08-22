@@ -8,8 +8,9 @@ A spec/plan (`agent-context/plans/`) for how BlueMapSignMarkers fully suppresses
 just off the 3D render, off that map's sidebar/list too — on any BlueMap map whose `render-mask`
 excludes the sign's position. BlueMap API 2.8.0 exposes no bounds accessor, so BSM reads the
 target map's own `config/bluemap/maps/<id>.conf` file as an interim stand-in, evaluating the
-general list of additive/subtractive axis-aligned boxes the same way BlueMap itself does (not a
-simplified min-y/max-y approximation) — swappable later if BlueMap ever ships something like
+general list of additive/subtractive mask entries — box, circle, ellipse, and polygon shapes — the
+same way BlueMap itself does (not a simplified min-y/max-y or box-only approximation) — swappable
+later if BlueMap ever ships something like
 `isInsideRenderBounds(Vec3)`. This requires restructuring today's dispatch (which fans out to
 every map of a *world* with no per-map distinction) to be keyed by actual `BlueMapMap` id. Fails
 open (treat as unbounded) on any missing/unreadable/unparseable map config. Bounds are
@@ -55,10 +56,16 @@ nether-roof map (`min-y: 127`) still had markers created for signs below that li
   a genuine BlueMap disable/enable does), so the plan/changelog must tell admins to run
   `/bluemap reload` once after upgrading — see
   `.scratch/map-bounds-filtering/issues/04-existing-marker-sweep-on-upgrade.md`.
+- `render-mask` entries aren't box-only: BlueMap also supports `circle`, `ellipse`, and `polygon`
+  shapes (a `type` discriminator field ticket 01/05 never accounted for) — see
+  `.scratch/map-bounds-filtering/issues/07-non-box-render-mask-types.md`. The evaluator implements
+  all four shapes properly rather than failing open on non-box entries; ticket 05's scope is
+  updated in place — see
+  `.scratch/map-bounds-filtering/issues/08-non-box-mask-handling-decision.md`.
 
 ## Not yet specified
 
-(none — all tickets resolved; destination reached, see below)
+(none — all tickets resolved or scoped; destination reached, see below)
 
 ## Out of scope
 

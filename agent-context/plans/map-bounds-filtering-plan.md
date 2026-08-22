@@ -4,7 +4,8 @@ Source: [GitHub issue #67](https://github.com/tpwalke2/BlueMapSignMarkers/issues
 map (`min-y: 127`) still had markers created for signs below that line.
 
 Wayfinder map: `.scratch/map-bounds-filtering/map.md` (destination reached; this plan collapses
-tickets 01-04 into a buildable spec).
+tickets 01-04 into a buildable spec; ticket 08 later expanded scope to all four `render-mask`
+shape types, reflected below).
 
 ## Problem Statement
 
@@ -21,8 +22,9 @@ map's marker sidebar/list.
 BlueMapSignMarkers reads each BlueMap map's own `config/bluemap/maps/<id>.conf` file (BlueMap's API
 exposes no bounds accessor, so this is an interim stand-in, swappable later if BlueMap ever ships
 something like `isInsideRenderBounds(Vec3)`) and evaluates its `render-mask` the same way BlueMap
-itself does — the general list of additive/subtractive axis-aligned boxes, not a simplified
-min-y/max-y approximation. A sign's marker is only created/kept on a given map if its position (or,
+itself does — the general list of additive/subtractive mask entries (box, circle, ellipse, and
+polygon shapes, per BlueMap's documented mask types), not a simplified min-y/max-y-only
+approximation or a box-only approximation. A sign's marker is only created/kept on a given map if its position (or,
 for LINE/SHAPE, any one of its member points) is inside that map's render bounds; if not, the
 marker is actively removed from that map, so a marker never lingers on a map whose bounds exclude
 it — including markers that already existed before this feature shipped. Bounds are re-evaluated on
@@ -95,7 +97,12 @@ Implementation Decisions).
     disable/enable), so a `.conf` file isn't re-read and re-parsed on every single marker dispatch.
 20. As a mod maintainer, I want no new runtime dependency added for HOCON parsing, so the project's
     jar stays free of a first-ever bundled/shaded dependency for what is a narrow, well-bounded read
-    (six numeric fields and a boolean per box entry).
+    (a handful of numeric fields and a boolean per mask entry).
+21. As a server admin using `circle`, `ellipse`, or `polygon` render-mask entries (not just `box`),
+    I want a sign's marker gated against the entry's actual shape, so a non-box mask on any of my
+    maps isn't silently mistaken for an unbounded-on-XZ box — see
+    `.scratch/map-bounds-filtering/issues/07-non-box-render-mask-types.md` and
+    `.scratch/map-bounds-filtering/issues/08-non-box-mask-handling-decision.md`.
 
 ## Implementation Decisions
 
@@ -112,19 +119,31 @@ Implementation Decisions).
 - **`render-mask` parsing**: a hand-rolled parser scoped strictly to this block's known shape (not a
   general HOCON library — see the map's HOCON-parsing-approach decision) — strip `#` line comments,
   locate the `render-mask: [ ... ]` array (matching nested `{`/`}` boundaries), split into
-  `{ ... }` object chunks, and parse each chunk's `min-x`/`max-x`/`min-y`/`max-y`/`min-z`/`max-z`
-  (bare integers) and `subtract` (bare boolean) keys, comma-optional between entries/pairs. Any
-  field absent or commented out defaults to unbounded on that axis (`Integer.MIN_VALUE`/
-  `MAX_VALUE`, matching BlueMap's own `BoxMaskConfig` defaults).
+  `{ ... }` object chunks, and parse each chunk by its `type` discriminator
+  (`box`/`circle`/`ellipse`/`polygon`; absent `type` defaults to `box`, matching BlueMap's own
+  default) into one of four shape records:
+  - `box`: `min-x`/`max-x`/`min-y`/`max-y`/`min-z`/`max-z` (bare integers), each absent/commented
+    field defaulting to unbounded on that axis (`Integer.MIN_VALUE`/`MAX_VALUE`, matching
+    BlueMap's own `BoxMaskConfig` defaults).
+  - `circle`: `center-x`, `center-z`, `radius` (bare numbers), plus optional `min-y`/`max-y`
+    (unbounded if absent); a point is inside when its XZ distance from the center is `<= radius`
+    and its Y falls in range.
+  - `ellipse`: `center-x`, `center-z`, `radius-x`, `radius-z`, plus optional `min-y`/`max-y`; a
+    point is inside when `((x-cx)/rx)^2 + ((z-cz)/rz)^2 <= 1` and its Y falls in range.
+  - `polygon`: `shape` (an array of `{x, z}` pairs, 3+ points), plus optional `min-y`/`max-y`; a
+    point is inside via standard point-in-polygon (ray casting) on XZ and its Y falls in range.
+  All four also read the shared `subtract` (bare boolean) key, comma-optional between
+  entries/pairs. An unrecognized `type` value fails open for that single map (logged), consistent
+  with the module's overall fail-open contract.
 - **Combination algorithm** (matching BlueMap's `CombinedMask` exactly, not a symmetric
-  union/subtract reading): walk the parsed box list from **last** entry to **first**; the first box
-  in that reverse walk that contains the point decides the verdict outright via its own `subtract`
-  flag (`subtract: true` → excluded, otherwise → included). If no box contains the point, the
-  verdict is "included" only when the list itself is empty; a non-empty list with no matching box
-  means excluded. Special case: if the very first entry in list order is `subtract: true`, an
-  implicit "include everything" layer is inserted beneath it, so a mask that starts with a subtract
-  box means "render everything except this" rather than "render nothing except what's subtracted
-  from nothing."
+  union/subtract reading): walk the parsed entry list from **last** entry to **first**, regardless
+  of each entry's shape type; the first entry in that reverse walk whose shape contains the point
+  decides the verdict outright via its own `subtract` flag (`subtract: true` → excluded, otherwise
+  → included). If no entry's shape contains the point, the verdict is "included" only when the
+  list itself is empty; a non-empty list with no matching entry means excluded. Special case: if
+  the very first entry in list order is `subtract: true`, an implicit "include everything" layer
+  is inserted beneath it, so a mask that starts with a subtract entry means "render everything
+  except this" rather than "render nothing except what's subtracted from nothing."
 - **Fail-open behavior**: any missing file, unreadable file, or parse failure (malformed syntax, a
   chunk that doesn't parse) results in treating that map as fully unbounded (every point included),
   logged at a level appropriate for an unexpected-but-non-fatal condition. Same fail-open behavior

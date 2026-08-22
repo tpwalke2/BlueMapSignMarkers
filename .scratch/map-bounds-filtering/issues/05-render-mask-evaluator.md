@@ -4,15 +4,34 @@
 this BlueMap map's render bounds?" given a real `BlueMapMap` id and the fixed
 `config/bluemap/maps/` directory. It resolves the id to its `.conf` file by sanitizing each
 candidate filename stem the same way BlueMap itself does, parses that file's `render-mask` block
-with a hand-rolled parser scoped to its known shape (an array of objects with
-`min-x`/`max-x`/`min-y`/`max-y`/`min-z`/`max-z` and `subtract`), and evaluates the box list with
-BlueMap's own last-matching-box-wins algorithm (walked from the last entry to the first; an
-implicit "include everything" layer if the first entry is `subtract: true`). Any missing file,
-unreadable file, unparseable content, or unmatched map id fails open (bounds treated as
-unbounded). No Minecraft/Fabric/BlueMap types anywhere in this class's signature, no caching
-(caching per real map id belongs to ticket 06). This ticket delivers no user-visible behavior on
-its own — it isn't wired into the mod yet — and is verified entirely through its own unit test
-suite.
+with a hand-rolled parser scoped to its known shape (an array of objects, each carrying a `type`
+discriminator — `box`/`circle`/`ellipse`/`polygon`, defaulting to `box` when absent — plus that
+type's own fields and a shared `subtract`), and evaluates the resulting entry list with BlueMap's
+own last-matching-entry-wins algorithm (walked from the last entry to the first, regardless of
+shape; an implicit "include everything" layer if the first entry is `subtract: true`). Any missing
+file, unreadable file, unparseable content, unmatched map id, or unrecognized `type` value fails
+open (bounds treated as unbounded). No Minecraft/Fabric/BlueMap types anywhere in this class's
+signature, no caching (caching per real map id belongs to ticket 06). This ticket delivers no
+user-visible behavior on its own — it isn't wired into the mod yet — and is verified entirely
+through its own unit test suite.
+
+**Shape scope (expanded per
+[`08 — How should RenderMaskEvaluator handle circle/ellipse/polygon mask entries?`](08-non-box-mask-handling-decision.md)):**
+all four of BlueMap's documented mask types, not box only —
+- `box`: `min-x`/`max-x`/`min-y`/`max-y`/`min-z`/`max-z` (each independently unbounded if absent).
+- `circle`: `center-x`, `center-z`, `radius`, optional `min-y`/`max-y`.
+- `ellipse`: `center-x`, `center-z`, `radius-x`, `radius-z`, optional `min-y`/`max-y`.
+- `polygon`: `shape` (array of `{x, z}` pairs, 3+ points), optional `min-y`/`max-y`, point-in-polygon
+  via ray casting on the XZ plane.
+
+See `.scratch/map-bounds-filtering/issues/07-non-box-render-mask-types.md` for the field-shape
+citations and `agent-context/plans/map-bounds-filtering-plan.md`'s "New module: render-mask
+evaluator" section for the full write-up. `RenderMaskBox`/`RenderMaskEvaluator` as they exist
+today (box-only) need reworking into a `type`-dispatching parser plus one evaluatable shape record
+per type (e.g. a small `RenderMaskShape` interface with `contains(x, y, z)`, implemented by
+`RenderMaskBox`, `RenderMaskCircle`, `RenderMaskEllipse`, `RenderMaskPolygon`), not a from-scratch
+rewrite of the file-lookup/comment-stripping/bracket-matching/combination-algorithm parts, which
+are shape-agnostic and already correct.
 
 **Blocked by:** None — can start immediately.
 
@@ -34,6 +53,17 @@ suite.
 - [ ] Malformed/unparseable `render-mask` content fails open (unbounded) rather than throwing.
 - [ ] A map id whose sanitized form doesn't match any `.conf` file's sanitized filename stem fails
       open (unbounded).
+- [ ] A `circle` entry (`center-x`/`center-z`/`radius`, optional `min-y`/`max-y`) evaluates points
+      inside its XZ radius (and Y range, if set) as matching that entry, and points outside as not.
+- [ ] An `ellipse` entry (`center-x`/`center-z`/`radius-x`/`radius-z`, optional `min-y`/`max-y`)
+      evaluates independently-radiused X/Z containment correctly, not just circular containment.
+- [ ] A `polygon` entry (`shape: [{x, z}, ...]`, optional `min-y`/`max-y`) evaluates XZ containment
+      via point-in-polygon, including a non-convex polygon fixture.
+- [ ] An entry with no `type` key defaults to `box` (matching today's implicit behavior).
+- [ ] An entry with an unrecognized `type` value fails open for that map (unbounded), logged,
+      rather than being silently mis-parsed as a box.
+- [ ] A `render-mask` list mixing shape types (e.g. a `box` include and a `circle` subtract)
+      evaluates last-matching-entry-wins across shapes, not just within one shape type.
 - [ ] Unit tests (JUnit 5, `src/test/java`) cover all of the above using fixtures copied from
       `run/config/bluemap/maps/*.conf` plus synthetic fixtures for the edge cases, following the
       `SignLinesParser`/`SignLinesParserTest` pattern (`AGENTS.md`'s "Testable vs. game-coupled
