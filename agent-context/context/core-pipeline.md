@@ -104,7 +104,7 @@ dispatch, or a sign removed mid-diff could be silently re-added. `dispatch()`
 only enqueues onto `ReactiveQueue` under this lock (no blocking BlueMap API work), so it doesn't add hot-path
 contention the way locking around `processMarkerAction` would.
 
-### Representation and the transition table (`.scratch/line-markers/spec.md` §6)
+### Representation and the transition table (`../plans/line-markers/spec.md` §6)
 
 A private record `Representation(MarkerGroup group, String label, String detail)` captures what a sign currently
 *is* to the marker layer: `null` means the sign matches no configured group (NONE); a non-null `Representation`
@@ -210,7 +210,7 @@ code path.
 This replaced the previous behavior (`reloadSigns()`: snapshot the cache, clear it, replay every entry through
 `addOrUpdateSign` so every entry always took the Add branch) for a concrete bug fix documented in
 `.scratch/codebase-review-followups/issues/10-reload-clear-and-replay-orphans-markers-on-id-scheme-change.md` and
-`.scratch/line-markers/issues/07-config-reload-fix-id-scheme-change.md`: a replayed "add" only ever puts a marker
+`../plans/line-markers/issues/07-config-reload-fix-id-scheme-change.md`: a replayed "add" only ever puts a marker
 under the *new* id, it never explicitly removes an old one. That was silently safe only because a POI marker's id
 is always the position-based `x_y_z`, unchanged across reloads. A `LINE` marker's id (`"line:" + label`) is
 content-keyed, not position-keyed — so the first config change that flips a group's `type` between `POI` and
@@ -498,9 +498,10 @@ gating" section. This section covers the code-level mechanics.
 - **Fails open** (mask treated as unbounded — every point passes) on every failure path, all funneling to an empty
   shape list: no `config/bluemap/maps/` directory, or no file matching the sanitized map id (`findConfigFile`
   returns `null`); an `IOException` reading the matched file; a `RuntimeException` (malformed/unbalanced config,
-  unrecognized shape type) while parsing it. Each of these logs a warning before returning the empty list — a
-  broken render-mask config degrades to "no filtering" rather than crashing marker dispatch (see
-  `project_no_server_crashes` guidance).
+  unrecognized shape type, or an ellipse's `radius-x`/`radius-z` parsed as `<= 0` — `requiredPositiveDoubleField`
+  rejects it before it can reach `RenderMaskEllipse.contains()`'s division and produce `Infinity`/`NaN`) while
+  parsing it. Each of these logs a warning before returning the empty list — a broken render-mask config degrades
+  to "no filtering" rather than crashing marker dispatch (see `project_no_server_crashes` guidance).
 - **`BlueMapAPIConnector` integration**: `getRenderMask(mapId)` is `renderMaskCache.computeIfAbsent(mapId, id ->
   RenderMaskEvaluator.load(...))` — one parse per real map id, cached for the connector's lifetime until
   invalidated (see §6). `MappedMarkerSet(String mapId, MarkerSet markerSet)` is a private record pairing a cached
@@ -529,5 +530,5 @@ gating" section. This section covers the code-level mechanics.
   themselves are otherwise unchanged — the fix is localized to `prepareGated`.
 
 ---
-*Last updated: 2026-08-22 | Verified against: feature/tpwalke2/67-map-bounds (217c17f)*
+*Last updated: 2026-08-22 | Verified against: docs/tpwalke2/refactor (f1d4730)*
 

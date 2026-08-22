@@ -231,16 +231,18 @@ As of `feature/tpwalke2/67-map-bounds` (`217c17f`), `src/test/java/com/tpwalke2/
   ticket 02) if that backup fails; one malformed entry being skipped rather than losing the whole file (ticket 05,
   `loadEntry`'s per-entry try/catch); and a documented Low-severity finding that an unrecognized dimension string
   is still silently lowercased on the `default` branch rather than preserved as-is.
-- `core/bounds/RenderMaskEvaluatorTest.java` — 24 tests. A real-world fixture (`NETHER_ROOF_RENDER_MASK`) checks
+- `core/bounds/RenderMaskEvaluatorTest.java` — 23 tests. A real-world fixture (`NETHER_ROOF_RENDER_MASK`) checks
   min-y cutoff and subtract-range behavior; fail-open coverage for a missing `render-mask` key, an empty shape
   array, a missing config file, an unreadable file (gated with `assumeTrue` for cross-platform reliability), a
   malformed/unbalanced config, an unmatched map id, and an unrecognized shape type; last-entry-wins combination
   coverage (a mask starting with `subtract`, overlapping boxes with last-entry-include vs. last-entry-subtract,
   mixed shape types confirming the reverse scan works across different shape types, not just within one); per-shape
   coverage for box (default type, an omitted axis is unbounded on that axis), circle (xz-radius + y-range), ellipse
-  (independent x/z radii), and polygon (a non-convex "C" shape via ray casting); and
-  `quotedBooleanAndNumericFieldsAreEquivalentToBareLiterals` confirming a quoted literal (`subtract: "true"`)
-  parses identically to the bare form (the fix in commit `217c17f`).
+  (independent x/z radii, plus `ellipseEntryWithZeroRadiusFailsOpenInsteadOfDividingByZero` and
+  `ellipseEntryWithNegativeRadiusFailsOpen` confirming a non-positive `radius-x`/`radius-z` is rejected at parse
+  time rather than reaching `RenderMaskEllipse.contains()`'s division), and polygon (a non-convex "C" shape via ray
+  casting); and `quotedBooleanAndNumericFieldsAreEquivalentToBareLiterals` confirming a quoted literal
+  (`subtract: "true"`) parses identically to the bare form (the fix in commit `217c17f`).
 
 ## CI integration
 
@@ -256,5 +258,5 @@ JUnit reporter action** — those actions don't get `checks: write` permission o
 public repo, so the summary step was written to need no extra permissions.
 
 ---
-*Last updated: 2026-08-22 | Verified against: feature/tpwalke2/67-map-bounds (217c17f)*
+*Last updated: 2026-08-22 | Verified against: docs/tpwalke2/refactor (f1d4730)*
 
