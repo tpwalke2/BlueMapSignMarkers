@@ -83,12 +83,14 @@ class RenderMaskEvaluatorTest {
     @Test
     void unreadableConfigFileIsUnbounded(@TempDir Path mapsDir) throws IOException {
         var file = writeConfig(mapsDir, "world.conf", "render-mask: [ { min-y: 0 } ]\n");
-        var permissionsRevoked = file.toFile().setReadable(false);
+        file.toFile().setReadable(false);
         try {
-            // File.setReadable(false) is unreliable across platforms (notably Windows, where an
-            // owner/admin process can often still read the file afterward) - assumeTrue marks the
-            // test as skipped rather than passed when that happened, so an unverifiable platform is
-            // visible in the test report instead of reading as a silent, unearned pass.
+            // File.setReadable(false)'s return value only reports whether the JVM's request was
+            // accepted, not whether the file actually became unreadable (e.g. an owner/admin
+            // process on Windows can still read it afterward) - check the real outcome via
+            // Files.isReadable and assumeTrue so an unverifiable platform is visible in the test
+            // report as skipped, instead of reading as a silent, unearned pass.
+            var permissionsRevoked = !Files.isReadable(file);
             assumeTrue(permissionsRevoked, "Could not revoke read permission on this platform; fail-open behavior unverified");
             assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 0, -6000, 0));
         } finally {
