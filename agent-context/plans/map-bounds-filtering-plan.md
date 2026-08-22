@@ -101,8 +101,8 @@ Implementation Decisions).
 21. As a server admin using `circle`, `ellipse`, or `polygon` render-mask entries (not just `box`),
     I want a sign's marker gated against the entry's actual shape, so a non-box mask on any of my
     maps isn't silently mistaken for an unbounded-on-XZ box — see
-    `.scratch/map-bounds-filtering/issues/07-non-box-render-mask-types.md` and
-    `.scratch/map-bounds-filtering/issues/08-non-box-mask-handling-decision.md`.
+    `map-bounds-filtering/issues/07-non-box-render-mask-types.md` and
+    `map-bounds-filtering/issues/08-non-box-mask-handling-decision.md`.
 
 ## Implementation Decisions
 
@@ -261,14 +261,14 @@ mechanism.
 ## Further Notes
 
 - Wayfinder tickets with full research/decision detail behind this plan:
-  `.scratch/map-bounds-filtering/issues/01-render-mask-semantics-and-config-lookup.md` (combination
+  `map-bounds-filtering/issues/01-render-mask-semantics-and-config-lookup.md` (combination
   algorithm, missing-axis defaults, map id ↔ config file, config directory location — all confirmed
   against BlueMap's own source, not just its wiki),
-  `.scratch/map-bounds-filtering/issues/02-hocon-parsing-approach.md` (hand-rolled parser vs.
+  `map-bounds-filtering/issues/02-hocon-parsing-approach.md` (hand-rolled parser vs.
   library survey),
-  `.scratch/map-bounds-filtering/issues/03-dispatch-restructuring-decomposition.md` (the two-ticket
+  `map-bounds-filtering/issues/03-dispatch-restructuring-decomposition.md` (the two-ticket
   decomposition this plan's Implementation Decisions section draws from),
-  `.scratch/map-bounds-filtering/issues/04-existing-marker-sweep-on-upgrade.md` (the upgrade-sweep
+  `map-bounds-filtering/issues/04-existing-marker-sweep-on-upgrade.md` (the upgrade-sweep
   decision and its restart-vs-reload caveat).
 - Sized as two implementation PRs, sequential: the render-mask evaluator first (no dependency on the
   connector work), then the `BlueMapAPIConnector` restructuring/gating (depends on the evaluator).

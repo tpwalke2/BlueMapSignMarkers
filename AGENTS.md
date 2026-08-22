@@ -138,7 +138,7 @@ For `LINE` groups, `LineGroupResolver` finds all signs sharing a group's prefix 
 sign text after the prefix) — that shared (group, label) is a line's membership key. A line marker only appears once
 2+ members exist; it's removed once membership drops back to 1 or 0. Point ordering within a line follows
 `SignEntry.createdAtMillis` (insertion order, not spatial order — see "Known limitations" in
-`.scratch/line-markers/spec.md`).
+`agent-context/plans/line-markers/spec.md`).
 
 ### Sign persistence and versioning
 

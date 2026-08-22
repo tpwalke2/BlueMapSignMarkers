@@ -104,7 +104,7 @@ dispatch, or a sign removed mid-diff could be silently re-added. `dispatch()`
 only enqueues onto `ReactiveQueue` under this lock (no blocking BlueMap API work), so it doesn't add hot-path
 contention the way locking around `processMarkerAction` would.
 
-### Representation and the transition table (`.scratch/line-markers/spec.md` §6)
+### Representation and the transition table (`../plans/line-markers/spec.md` §6)
 
 A private record `Representation(MarkerGroup group, String label, String detail)` captures what a sign currently
 *is* to the marker layer: `null` means the sign matches no configured group (NONE); a non-null `Representation`
@@ -210,7 +210,7 @@ code path.
 This replaced the previous behavior (`reloadSigns()`: snapshot the cache, clear it, replay every entry through
 `addOrUpdateSign` so every entry always took the Add branch) for a concrete bug fix documented in
 `.scratch/codebase-review-followups/issues/10-reload-clear-and-replay-orphans-markers-on-id-scheme-change.md` and
-`.scratch/line-markers/issues/07-config-reload-fix-id-scheme-change.md`: a replayed "add" only ever puts a marker
+`../plans/line-markers/issues/07-config-reload-fix-id-scheme-change.md`: a replayed "add" only ever puts a marker
 under the *new* id, it never explicitly removes an old one. That was silently safe only because a POI marker's id
 is always the position-based `x_y_z`, unchanged across reloads. A `LINE` marker's id (`"line:" + label`) is
 content-keyed, not position-keyed — so the first config change that flips a group's `type` between `POI` and
