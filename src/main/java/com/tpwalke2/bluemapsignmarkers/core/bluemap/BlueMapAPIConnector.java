@@ -137,15 +137,18 @@ public class BlueMapAPIConnector {
         renderMaskCache = new ConcurrentHashMap<>();
     }
 
-    // synchronized so addMarker/updateMarker/removeMarker's mutation of a MarkerSet's marker Map can
-    // never run concurrently with another dispatched action against the same (or a different) MarkerSet.
-    // ReactiveQueue's executor is sized to availableProcessors(), so without this, two actions dispatched
-    // close together — e.g. many signs loading at server startup — can race on the same underlying Map,
-    // whose thread-safety is controlled by BlueMap's API, not this mod (findings #5 and the bulk-load
-    // fanout item, plans/codebase-review-2026-07-11.md).
-    private synchronized void processMarkerAction(MarkerAction markerAction) {
-        // ReactiveQueue.shutdown() only stops new submissions — already-submitted tasks still run, and
-        // now that this method is synchronized, several can be queued behind the monitor for a while.
+    // Not synchronized itself — applyGatedToMarkerSets/applyToAllMarkerSets each wrap their own
+    // full mutation fan-out (across every one of the action's target maps) in a single
+    // `synchronized (this)` block, so addMarker/updateMarker/removeMarker's mutation of a MarkerSet's
+    // marker Map still never runs concurrently with another dispatched action against the same (or a
+    // different) MarkerSet, and one action's effect is never observably applied on some of its target
+    // maps but not others (findings #5 and the bulk-load fanout item,
+    // plans/codebase-review-2026-07-11.md) — but the render-mask cold-load disk I/O that gating does
+    // first (getRenderMask, on a cache miss) is resolved for every target map *before* that lock is
+    // taken, so it no longer runs while holding it. See the adversarial review finding this addressed
+    // (agent-context/reviews/adversarial-review-feature-tpwalke2-67-map-bounds-2026-08-22.md, #1).
+    private void processMarkerAction(MarkerAction markerAction) {
+        // ReactiveQueue.shutdown() only stops new submissions — already-submitted tasks still run.
         // Re-check the same condition ReactiveQueue's shouldRunCallback gates on so one of those tasks
         // can't mutate a MarkerSet after BlueMap has actually disabled in the meantime.
         if (BlueMapAPI.getInstance().isEmpty()) {
@@ -154,10 +157,13 @@ public class BlueMapAPIConnector {
         }
 
         if (markerAction instanceof GroupTransitionMarkerAction transitionAction) {
-            // Each effect runs here, inside the single synchronized processMarkerAction() call that
-            // dispatched the transition, so it's never observable half-applied (e.g. present in both the
-            // old and new marker group, or missing from both).
-            transitionAction.effects().forEach(this::applySingleAction);
+            // Held together under one lock so the transition's effects are never observable
+            // half-applied (e.g. present in both the old and new marker group, or missing from both) —
+            // unlike the single-action path below, a transition's own mutations must stay atomic as a
+            // set, so this one still wraps the render-mask lookup its add-side effect may do.
+            synchronized (this) {
+                transitionAction.effects().forEach(this::applySingleAction);
+            }
             return;
         }
 
@@ -207,14 +213,25 @@ public class BlueMapAPIConnector {
         }
 
         LOGGER.debug("Marker sets found.");
-        markerSets.get().forEach(mapped -> {
-            var markers = mapped.markerSet().getMarkers();
-            if (isInsideRenderBounds(mapped.mapId(), points)) {
-                effect.accept(markers);
-            } else {
-                markers.remove(markerIdentifier.getId());
-            }
-        });
+        // Gating decisions resolved for every target map before the lock below, so a render-mask
+        // cache miss's disk I/O (RenderMaskEvaluator.load) never runs while holding it - but still
+        // applied to all of this action's target maps as one atomic unit (a single lock acquisition,
+        // not one per map), so this action's effect can never be observed as applied on some of its
+        // maps and not others if another action for the same marker id interleaves.
+        var decisions = markerSets.get().stream()
+                .map(mapped -> Map.entry(mapped, isInsideRenderBounds(mapped.mapId(), points)))
+                .toList();
+
+        synchronized (this) {
+            decisions.forEach(decision -> {
+                var markers = decision.getKey().markerSet().getMarkers();
+                if (decision.getValue()) {
+                    effect.accept(markers);
+                } else {
+                    markers.remove(markerIdentifier.getId());
+                }
+            });
+        }
     }
 
     // Applies an effect (always a removal) to every real map's MarkerSet unconditionally - used for
@@ -228,7 +245,9 @@ public class BlueMapAPIConnector {
         }
 
         LOGGER.debug("Marker sets found.");
-        markerSets.get().forEach(mapped -> effect.accept(mapped.markerSet().getMarkers()));
+        synchronized (this) {
+            markerSets.get().forEach(mapped -> effect.accept(mapped.markerSet().getMarkers()));
+        }
     }
 
     private boolean isInsideRenderBounds(String mapId, List<LinePoint> points) {
