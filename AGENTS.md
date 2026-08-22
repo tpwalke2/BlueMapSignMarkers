@@ -113,11 +113,11 @@ alongside `markerSetsCache` (config reload, genuine BlueMap disable/enable).
 
 A sign's marker only exists on a given map if its position (POI) or at least one member point (LINE/SHAPE,
 all-or-nothing — no per-point clipping) is inside that map's render bounds. `applySingleAction` gates Add/Update/
-SetLine/SetShape actions through `applyGatedToMarkerSets`, which tests the action's point(s) against each map's
+SetLine/SetShape actions through `prepareGated`, which tests the action's point(s) against each map's
 `RenderMask` and, on a gate failure, actively removes the marker id from that map instead of skipping the effect —
 this is what sweeps a marker that already existed on a now-out-of-bounds map before this feature shipped (reusing
 `SignManager.reset()`'s existing reload-forced re-dispatch of every sign). Explicit remove actions
-(Remove/RemoveLine/RemoveShape) go through `applyToAllMarkerSets` instead and apply unconditionally on every map, no
+(Remove/RemoveLine/RemoveShape) go through `prepareUngated` instead and apply unconditionally on every map, no
 gating — the sign's representation is genuinely leaving, independent of bounds. See
 `agent-context/plans/map-bounds-filtering-plan.md` for the full design and rationale, including why a plain server
 restart alone does not trigger the upgrade sweep (only a genuine BlueMap disable/enable, or an explicit

@@ -506,26 +506,27 @@ gating" section. This section covers the code-level mechanics.
   invalidated (see §6). `MappedMarkerSet(String mapId, MarkerSet markerSet)` is a private record pairing a cached
   `MarkerSet` with the real map id it came from, since gating needs the id to look up that map's `RenderMask` but
   the pre-existing `markerSetsCache` only stored bare `MarkerSet`s.
-- **Gated vs. unconditional dispatch**: `applySingleAction` routes `AddMarkerAction`/`UpdateMarkerAction`
+- **Gated vs. unconditional dispatch**: `prepareSingleAction` routes `AddMarkerAction`/`UpdateMarkerAction`
   (single point, wrapped via a `pointOf(MarkerIdentifier)` helper into a one-element point list) and
   `SetLineMarkerAction`/`SetShapeMarkerAction` (their own multi-point `getPoints()`) through
-  `applyGatedToMarkerSets(identifier, points, effect)`. For each target `MappedMarkerSet`, `isInsideRenderBounds`
+  `prepareGated(identifier, points, effect)`. For each target `MappedMarkerSet`, `isInsideRenderBounds`
   is `points.stream().anyMatch(p -> mask.contains(...))` — **any one point in bounds passes the whole marker**
   (all-or-nothing for `LINE`/`SHAPE`, no per-point clipping). On a pass, `effect.accept(markers)` runs as normal;
   on a gate failure, the marker id is actively removed from that map's set (`markers.remove(identifier.getId())`)
   instead of merely skipping the add/update — this is what sweeps a marker that already existed on a
   now-out-of-bounds map before this feature shipped, reusing `SignManager.reset()`'s existing reload-forced
   re-dispatch of every sign (§3) as the trigger. `RemoveMarkerAction`/`RemoveLineMarkerAction`/
-  `RemoveShapeMarkerAction` instead go through `applyToAllMarkerSets(identifier, effect)` — unconditional, no
+  `RemoveShapeMarkerAction` instead go through `prepareUngated(identifier, effect)` — unconditional, no
   gating, since an explicit removal means the sign's representation is genuinely leaving, independent of bounds.
-- **Cold-load-off-the-lock fix**: `applyGatedToMarkerSets` computes each target map's gate decision
-  (`markerSets.get().stream().map(mapped -> Map.entry(mapped, isInsideRenderBounds(...))).toList()`) **before**
-  entering the `synchronized (this)` block that actually mutates marker maps, then only iterates the
-  already-computed decisions inside the lock. Previously the render-mask lookup (a cold `RenderMaskEvaluator.load`
-  call reads and parses a config file off disk) ran *inside* that same lock, so the first dispatch to a given map
-  after a cache invalidation could block every other in-flight `processMarkerAction` call on disk I/O unrelated to
-  their own map. `getMarkerSets`/`processMarkerAction` themselves are otherwise unchanged — the fix is localized to
-  `applyGatedToMarkerSets`.
+- **Cold-load-off-the-lock fix**: `prepareGated`/`prepareUngated` return a `Runnable` that performs only the
+  marker-set mutation; `prepareGated` computes each target map's gate decision
+  (`markerSets.get().stream().map(mapped -> Map.entry(mapped, isInsideRenderBounds(...))).toList()`) up front, before
+  that `Runnable` is built, so the returned `Runnable` only iterates the already-computed decisions. `applySingleAction`
+  calls `prepareSingleAction` to get that `Runnable`, then runs it inside a `synchronized (this)` block. Previously
+  the render-mask lookup (a cold `RenderMaskEvaluator.load` call reads and parses a config file off disk) ran
+  *inside* that same lock, so the first dispatch to a given map after a cache invalidation could block every other
+  in-flight `processMarkerAction` call on disk I/O unrelated to their own map. `getMarkerSets`/`processMarkerAction`
+  themselves are otherwise unchanged — the fix is localized to `prepareGated`.
 
 ---
 *Last updated: 2026-08-22 | Verified against: feature/tpwalke2/67-map-bounds (217c17f)*
