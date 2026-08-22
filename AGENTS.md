@@ -94,11 +94,34 @@ Two Mixins (`src/main/resources/bluemapsignmarkers.mixins.json`) catch the event
    BlueMap API is only available while BlueMap itself is enabled, actions are queued and only drained
    (`markerActionQueue.process()`) while `BlueMapAPI.getInstance().isPresent()`; `BlueMapAPI.onEnable`/`onDisable`
    start/stop draining and clear/rebuild the marker-set cache. `MarkerSet`s are looked up/created per
-   `MarkerSetIdentifier` (map id + marker group) and cached in `markerSetsCache`.
+   `MarkerSetIdentifier` (map id + marker group), cached in `markerSetsCache` as `MappedMarkerSet` (pairing the
+   `MarkerSet` with the real `BlueMapMap.getId()` it came from — needed for the per-map render-bounds gating below).
 
 `ReactiveQueue<T>` (`core/reactive`) is a small generic building block: an unbounded queue plus a "should I run right
 now" predicate, draining onto a fixed thread pool sized to `availableProcessors()`. It isn't BlueMap-specific — reuse
 it if another part of the mod needs the same "buffer while a dependency is unavailable" behavior.
+
+### Per-map render-bounds gating
+
+BlueMap maps can restrict what terrain they render via a `render-mask` (box/circle/ellipse/polygon shapes, each
+optionally `subtract`) in that map's own `config/bluemap/maps/<id>.conf` — BlueMap's API exposes no bounds accessor,
+so `RenderMaskEvaluator` (`core/bounds`, plain Java, no Minecraft/Fabric/BlueMap types) reads and evaluates that file
+directly, matching BlueMap's own `CombinedMask` algorithm (last-entry-wins reverse scan; a mask fails open —
+treated as unbounded — on any missing/unreadable/unparseable config or unmatched map id). `RenderMaskEvaluator.load`
+returns a reusable `RenderMask`; `BlueMapAPIConnector` caches one per real map id in `renderMaskCache`, invalidated
+alongside `markerSetsCache` (config reload, genuine BlueMap disable/enable).
+
+A sign's marker only exists on a given map if its position (POI) or at least one member point (LINE/SHAPE,
+all-or-nothing — no per-point clipping) is inside that map's render bounds. `applySingleAction` gates Add/Update/
+SetLine/SetShape actions through `prepareGated`, which tests the action's point(s) against each map's
+`RenderMask` and, on a gate failure, actively removes the marker id from that map instead of skipping the effect —
+this is what sweeps a marker that already existed on a now-out-of-bounds map before this feature shipped (reusing
+`SignManager.reset()`'s existing reload-forced re-dispatch of every sign). Explicit remove actions
+(Remove/RemoveLine/RemoveShape) go through `prepareUngated` instead and apply unconditionally on every map, no
+gating — the sign's representation is genuinely leaving, independent of bounds. See
+`agent-context/plans/map-bounds-filtering-plan.md` for the full design and rationale, including why a plain server
+restart alone does not trigger the upgrade sweep (only a genuine BlueMap disable/enable, or an explicit
+`/bluemap reload`, does).
 
 ### Marker groups and config
 
@@ -151,7 +174,8 @@ signature (like `SignLinesParser`/`ParsingContext`, `SignEntry`/`SignEntryHelper
 `MarkerGroup`/`MarkerGroupMatchType`, `ConfigManager`/`ConfigProvider`, `ReactiveQueue`, `HtmlUtils`, `FileUtils`,
 the persistence loaders/converters (including `Version1SignEntryLoader`, `Version4Converter`),
 `ActionFactory`/`MarkerSetIdentifierCollection`, `LineGroupResolver`, `SignTransitionResolver`, `ColorUtils`,
-`DispatchedMarkerIdentifier`/`LineMarkerIdentifier`/`LinePoint`) — these can be unit tested directly (see
+`DispatchedMarkerIdentifier`/`LineMarkerIdentifier`/`LinePoint`, `RenderMaskEvaluator`) — these can be unit tested
+directly (see
 `src/test/java/.../core/signs/SignLinesParserTest.java` for the pattern).
 Code that must reference game types (`SignHelper`, the mixins, `BlueMapSignMarkersMod`, `BlueMapAPIConnector`)
 should stay thin glue around the testable core, since it can only be verified manually via `runServer`.

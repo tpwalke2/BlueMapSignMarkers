@@ -28,9 +28,12 @@ builds/adds) an entry:
 
 `SignHelper.createSignEntry` builds a `SignEntry` from both the front and back `SignText`, running each through a
 `volatile` module-level `SignLinesParser` instance (`buildParser()`, first populated from
-`ConfigManager.get().getMarkerGroups()` at class-init). `SignHelper.reloadParser()` rebuilds it from the current
-config — called from `SignManager.reloadConfig()` (see §3) on every BlueMap reset, so a sign parsed *after*
-`/bluemap reload` picks up an edited prefix/matchType rather than a stale one.
+`ConfigManager.get().getMarkerGroups()` at class-init), and also captures each side's raw, unparsed lines
+(`getRawLines(SignText)`) into `SignEntry.frontRawLines`/`backRawLines` — this raw text is what lets a config
+reload later re-parse the sign against a changed prefix instead of trusting the parse it produced at creation time
+(§3's reload self-heal). `SignHelper.reloadParser()` rebuilds the parser from the current config — called from
+`SignManager.reloadConfig()` (see §3) on every BlueMap reset, so a sign parsed *after* `/bluemap reload` picks up
+an edited prefix/matchType rather than a stale one.
 
 ## 2. Parsing: `SignLinesParser`
 
@@ -105,7 +108,7 @@ contention the way locking around `processMarkerAction` would.
 
 A private record `Representation(MarkerGroup group, String label, String detail)` captures what a sign currently
 *is* to the marker layer: `null` means the sign matches no configured group (NONE); a non-null `Representation`
-whose `group.type()` is `POI` or `LINE` says which kind. `computeRepresentation(SignEntry, prefixGroupMap)` derives
+whose `group.type()` is `POI`, `LINE`, or `SHAPE` says which kind. `computeRepresentation(SignEntry, prefixGroupMap)` derives
 it from `SignEntryHelper.getPrefix`/`getLabel`/`getDetail`, returning `null` if the entry has no resolvable prefix
 or the prefix isn't in `prefixGroupMap` (an operator removed/renamed that group's prefix since this sign was last
 dispatched — logged as a warning, not thrown).
@@ -123,25 +126,31 @@ their own `getAllSigns()` snapshot in as the `allSigns` parameter rather than th
 single already-taken snapshot can be reused across every sign's diff during a config reload (§ below) instead of
 re-querying the cache once per sign.
 
-`computeTransitionAction`'s logic (mirrors the table in the spec):
+`computeTransitionAction`'s logic (mirrors the table in the spec, generalized to a third `SHAPE` row/column
+alongside `POI`/`LINE`):
 
-| Old ＼ New | NONE | POI | LINE |
-|---|---|---|---|
-| **NONE** | no-op (`null`) | dispatch `createAddPOIAction` | `lineJoinAction` (recompute group *including* this sign; dispatch `SetLineMarkerAction` if ≥2 members, else no-op) |
-| **POI** | dispatch `createRemovePOIAction` | same group (prefix unchanged): label/detail both unchanged is a no-op, either changed dispatches `createUpdatePOIAction`. Different group (prefix changed): leave-effect + join-effect, bundled | leave-effect (Remove POI) + join-effect (`lineJoinAction`) |
-| **LINE** | `lineLeaveAction` (recompute group *excluding* this sign; `SetLineMarkerAction` if ≥2 remain, `RemoveLineMarkerAction` if exactly 1 remains, no-op if 0) | leave-effect (as above) + join-effect (Add POI) | same group+label: `lineJoinAction` with `sameGroupRecompute=true` (refreshes detail/points — always dispatches `Set` since ≥2 members necessarily already existed); different group/label: leave-effect + join-effect |
+| Old ＼ New | NONE | POI | LINE | SHAPE |
+|---|---|---|---|---|
+| **NONE** | no-op (`null`) | dispatch `createAddPOIAction` | `lineJoinAction` (recompute group *including* this sign; dispatch `SetLineMarkerAction` if ≥2 members, else no-op) | `shapeJoinAction` (same shape, gated on `SHAPE_MIN_MEMBERS = 3` instead of 2) |
+| **POI** | dispatch `createRemovePOIAction` | same group (prefix unchanged): label/detail both unchanged is a no-op, either changed dispatches `createUpdatePOIAction`. Different group (prefix changed): leave-effect + join-effect, bundled | leave-effect (Remove POI) + join-effect (`lineJoinAction`) | leave-effect (Remove POI) + join-effect (`shapeJoinAction`) |
+| **LINE** | `lineLeaveAction` (recompute group *excluding* this sign; `SetLineMarkerAction` if ≥2 remain, `RemoveLineMarkerAction` if exactly 1 remains, no-op if 0) | leave-effect (as above) + join-effect (Add POI) | same group+label: `lineJoinAction` with `sameGroupRecompute=true` (refreshes detail/points — always dispatches `Set` since ≥2 members necessarily already existed); different group/label: leave-effect + join-effect | leave-effect (`lineLeaveAction`) + join-effect (`shapeJoinAction`) |
+| **SHAPE** | `shapeLeaveAction` (mirrors `lineLeaveAction`, but `RemoveShapeMarkerAction` once membership drops below 3) | leave-effect (`shapeLeaveAction`) + join-effect (Add POI) | leave-effect (`shapeLeaveAction`) + join-effect (`lineJoinAction`) | same group+label: `shapeJoinAction` with `sameGroupRecompute=true` (mirrors `LINE`/`LINE`); different group/label: leave-effect + join-effect |
 
 The POI/POI cell deliberately compares only `group().prefix()`, not label — a label-only edit on an unchanged group
 used to fall through to the different-group (leave+join) branch, because the older check compared
 `sameGroupAndLabel` (group *and* label) before deciding whether to update-in-place; that made an ordinary label
-edit dispatch a bundled remove+add instead of a single `UpdateMarkerAction`. The LINE/LINE cell still uses
-`sameGroupAndLabel(a, b)` (compares `group().prefix()` and `label()`), since a `LINE` group's identity (and marker
-id, §5) is keyed on both. When a transition needs both a leave-effect and a join-effect (a group/label/type
-change), each effect is computed independently (`null` if that half is a no-op, e.g. leaving a `LINE` group that
-still has ≥2 members after removal dispatches a `Set`, not a leave at all) and both are collected into a
-`List<MarkerAction>`: zero effects → `null`, one effect → dispatch it directly, two → bundle into a
-`GroupTransitionMarkerAction` (see §5/§6) so `ReactiveQueue`'s lack of message-ordering guarantees (§7) can't
-transiently show a sign in two places.
+edit dispatch a bundled remove+add instead of a single `UpdateMarkerAction`. The LINE/LINE and SHAPE/SHAPE cells
+both use `sameGroupAndLabel(a, b)` (compares `group().prefix()` and `label()`) — the same-group-recompute shortcut
+condition is `oldType == newType && oldType != MarkerGroupType.POI && sameGroupAndLabel(...)`, generalized to cover
+either non-`POI` type rather than naming `LINE` explicitly, since a `LINE`/`SHAPE` group's identity (and marker id,
+§5) is keyed on group+label either way. When a transition needs both a leave-effect and a join-effect (a
+group/label/type change, for any pair of the three types), each effect is computed independently (`null` if that
+half is a no-op, e.g. leaving a `LINE` group that still has ≥2 members after removal dispatches a `Set`, not a
+leave at all) and both are collected into a `List<MarkerAction>`: zero effects → `null`, one effect → dispatch it
+directly, two → bundle into a `GroupTransitionMarkerAction` (see §5/§6) so `ReactiveQueue`'s lack of
+message-ordering guarantees (§7) can't transiently show a sign in two places. `groupIdentityObsolete` (used by the
+config-reload path, below) is likewise type-agnostic, detecting a config-only type flip or rename for any of the
+three types.
 
 `lineJoinAction(allSigns, parentMap, rep, actionFactory, sameGroupRecompute)` and `lineLeaveAction(allSigns,
 parentMap, rep, actionFactory)` both call `LineGroupResolver.members(allSigns, parentMap, rep.group().prefix(),
@@ -149,11 +158,19 @@ rep.label())` against the caller-supplied snapshot — because `signCache` is a 
 for a config reload, see below), a snapshot taken once per dispatch always scans every sign currently known, so a
 `LINE` group recompute is always complete and order-independent regardless of which member triggered it.
 `lineJoinAction`'s `isFirstAppearance` flag (`!sameGroupRecompute && members.size() == 2`) is log-only — see §6 —
-not a distinct dispatch type.
+not a distinct dispatch type. `shapeJoinAction`/`shapeLeaveAction` are the direct `SHAPE` counterparts: they call
+`ShapeGroupResolver.members(...)`, which itself just delegates to `LineGroupResolver.members(...)` (identical
+filtering/ordering — the only real difference between `LINE` and `SHAPE` group resolution is the caller-side
+minimum-member count, `2` vs. `SHAPE_MIN_MEMBERS = 3`), and dispatch via `actionFactory.createSetShapeAction`/
+`createRemoveShapeAction` instead of the line equivalents.
 
 `addOrUpdateSign(signEntry)` (called for every add/update event, from entry points 1-3 above — not §1.4's chunk-load
-reconciliation, which only ever calls `removeByKey` directly): looks up `existing` from `signCache`, computes
-`oldRep`/`newRep` from `existing`/`signEntry` respectively, updates `signCache`/`chunkIndex` (removing the key if
+reconciliation, which only ever calls `removeByKey` directly): first runs the incoming `signEntry` through
+`safeReparseFromRawLines(signEntry, config.parser())` (the same reparse helper reload uses, §3) — this matters at
+server startup, where `SignProvider.loadSigns` (`config-and-persistence.md`) replays every persisted `V5` entry
+through this method, so a sign whose prefix was renamed while the server was offline is still reclassified
+correctly rather than dispatched under a stale cached parse. Then looks up `existing` from `signCache`, computes
+`oldRep`/`newRep` from `existing`/the reparsed `signEntry` respectively, updates `signCache`/`chunkIndex` (removing the key if
 `newRep == null` and something was cached, else caching the merged entry — the merge preserves the *existing*
 cached `playerId` when the incoming entry's is the `WorldMap.UNKNOWN` chunk-load sentinel, and preserves the
 existing entry's `createdAtMillis` rather than ever recomputing it), then dispatches whatever
@@ -174,13 +191,21 @@ code path.
    `blueMapAPIConnector.clearMarkerSetsCache()` (see §6), so neither identifier cache accumulates entries keyed on
    a `MarkerGroup` value from before the last reload (`MarkerSetIdentifier` keys on the whole record by value, so
    a changed icon/offset/distance would otherwise be a new, never-evicted cache entry).
-3. Takes one `getAllSigns()` snapshot (`allSigns`) up front, then for every currently-cached `SignEntry` (the cache
-   is **not** cleared): computes `oldRep` under `oldPrefixGroupMap`, `newRep` under the just-rebuilt
-   `prefixGroupMap`, and dispatches `computeTransitionAction(allSigns, entry.key(), oldRep, newRep, ...)` if
-   non-`null` — the exact same transition table a live sign edit uses, just fed a before/after diff against the
-   *config* instead of the *sign text*. Reusing one snapshot across the whole loop (rather than each sign's
-   `LINE`-group recompute re-querying `getAllSigns()` independently) avoids an O(n²) re-scan of the cache when a
-   config reload touches many signs at once.
+3. Before diffing, every currently-cached `SignEntry` is passed through `safeReparseFromRawLines(entry,
+   newConfig.parser())` (a static, log-and-fall-back wrapper around `reparseFromRawLines`) and, if the result
+   differs from the original reference, the reparsed entry replaces it in `signCache`. `reparseFromRawLines`
+   re-runs `SignLinesParser.parse(...)` on the entry's persisted `frontRawLines`/`backRawLines` against the new
+   config and returns `entry.withParsedText(freshFront, freshBack)` — or the *same* entry reference, cheaply
+   detectable via `!=`, if either raw-lines array is `null` (an entry migrated from pre-V5 data, with no raw text
+   on disk to re-parse; see `config-and-persistence.md`).
+4. Takes one `getAllSigns()` snapshot (`allSigns`) up front, then for every currently-cached `SignEntry` (the cache
+   is **not** cleared): computes `oldRep` under `oldPrefixGroupMap` from the sign's representation as cached
+   *before* reload, `newRep` under the just-rebuilt `prefixGroupMap` from the (possibly reparsed, step 3) entry,
+   and dispatches `computeTransitionAction(allSigns, entry.key(), oldRep, newRep, ...)` if non-`null` — the exact
+   same transition table a live sign edit uses, just fed a before/after diff against the *config* instead of the
+   *sign text*. Reusing one snapshot across the whole loop (rather than each sign's `LINE`/`SHAPE`-group recompute
+   re-querying `getAllSigns()` independently) avoids an O(n²) re-scan of the cache when a config reload touches
+   many signs at once.
 
 This replaced the previous behavior (`reloadSigns()`: snapshot the cache, clear it, replay every entry through
 `addOrUpdateSign` so every entry always took the Add branch) for a concrete bug fix documented in
@@ -193,9 +218,15 @@ content-keyed, not position-keyed — so the first config change that flips a gr
 forever, since `clearMarkerSetsCache()` only evicts this mod's own `MarkerSetIdentifier`→`MarkerSet` lookup cache,
 not the marker entries inside a `MarkerSet` BlueMap itself owns. Diffing old-vs-new representation and running it
 through the transition table dispatches an explicit leave-effect whenever the id scheme changes, closing that gap
-for both `LINE` groups and any future non-position-keyed marker type. Known limitation carried over unchanged: a
-prefix *rename* alone (no in-game re-edit) still isn't reclassified, since reload re-resolves already-parsed
-prefixes against the new config rather than re-parsing sign text (`../plans/marker-group-config-reload-plan.md`).
+for both `LINE` groups and any future non-position-keyed marker type. A previously open limitation — a prefix
+*rename* alone (no in-game re-edit) wasn't reclassified, since reload re-resolved already-parsed prefixes against
+the new config rather than re-parsing sign text (`../plans/marker-group-config-reload-plan.md`) — is now fixed by
+the `frontRawLines`/`backRawLines` self-heal in step 3 above: an entry with raw text on disk gets fully re-parsed
+against the new config every reload, so a `REGEX` prefix edit correctly reclassifies (or drops) it without a
+manual re-edit or restart. Entries migrated from pre-V5 data (raw lines `null`) still fall back to the old
+diff-cached-parse-as-is behavior, since there's no raw text to re-parse — this only self-heals going forward. See
+`README.md`'s "Troubleshooting" section for the end-user framing and `config-and-persistence.md` for the `V5`
+persistence shape.
 
 ## 4. Chunk-load reconciliation — `SignChunkKey` / `SignChunkIndex`
 
@@ -242,8 +273,10 @@ Two id schemes now exist side by side, unified behind one interface:
   **content-keyed**, not position-keyed: a line's points move as members join/leave, but its id stays stable as
   long as the (group, label) key doesn't change. This is exactly the id-scheme difference that motivated
   `SignManager.reloadConfig()`'s rewrite (§3) — a naive replay only ever adds under a marker's *current* id, so an
-  id scheme changing between reloads (e.g. a group's `type` flipping `POI`↔`LINE`) needs an explicit dispatch
-  removing the *old* id, not just adding the new one.
+  id scheme changing between reloads (e.g. a group's `type` flipping `POI`↔`LINE`↔`SHAPE`) needs an explicit
+  dispatch removing the *old* id, not just adding the new one.
+- `ShapeMarkerIdentifier(label, parentSet)` (record) is the `SHAPE`-type counterpart, structurally identical to
+  `LineMarkerIdentifier` — same two fields, same interface — with `getId()` returning `"shape:" + label` instead.
 - `MarkerSetIdentifier(mapId, markerGroup)` — one BlueMap marker-set per (map, marker-group) pair, unchanged by the
   line-markers work.
 - `ActionFactory.createChangeGroupPOIAction(x, y, z, mapId, label, detail, oldMarkerGroup, newMarkerGroup)` now
@@ -253,6 +286,9 @@ Two id schemes now exist side by side, unified behind one interface:
   `createRemoveLineAction(mapId, markerGroup, label)` are the `LINE`-side counterparts, following the same
   `MarkerSetIdentifierCollection.getIdentifier` pattern as every other factory method; `createSetLineAction` builds
   a `LineMarkerIdentifier(label, ...)` and carries `markerGroup.lineWidth()`/`lineColor()` through unchanged.
+  `createSetShapeAction(mapId, markerGroup, label, detail, points, isFirstAppearance)`/`createRemoveShapeAction(mapId,
+  markerGroup, label)` mirror those two exactly but build a `ShapeMarkerIdentifier` and additionally carry
+  `markerGroup.fillColor()` into `SetShapeMarkerAction`.
 - `MarkerSetIdentifierCollection` is a per-`SignManager`-instance cache that guarantees the *same*
   `MarkerSetIdentifier` object is returned for a given `(mapId, markerGroup)` pair (indexed both by map and by
   marker group, intersected) — `ActionFactory` always goes through this rather than constructing
@@ -269,16 +305,22 @@ Two id schemes now exist side by side, unified behind one interface:
 ## 6. `BlueMapAPIConnector` — the only class touching the BlueMap API
 
 - Holds a `volatile ReactiveQueue<MarkerAction> markerActionQueue`, a
-  `volatile Map<MarkerSetIdentifier, List<MarkerSet>> markerSetsCache`, and a `volatile BlueMapAPI blueMapAPI`.
-  All three are `volatile` because `resetQueue()`/`onEnable()` always replace them wholesale with a brand-new
-  object rather than mutating the existing one, so correctness only needs a reader to see the latest *reference*
+  `volatile Map<MarkerSetIdentifier, List<MarkerSet>> markerSetsCache`, a
+  `volatile Map<String, RenderMaskEvaluator.RenderMask> renderMaskCache` (keyed by real `BlueMapMap` id — see §8),
+  and a `volatile BlueMapAPI blueMapAPI`. All four are `volatile` because `resetQueue()`/`onEnable()`/
+  `clearMarkerSetsCache()` always replace them wholesale with a brand-new object rather than mutating the existing
+  one, so correctness only needs a reader to see the latest *reference*
   — that's what `volatile` guarantees (it says nothing about the referenced objects, which are mutated afterward
   through their own thread-safe methods: `ReactiveQueue.enqueue()`/`process()`, `ConcurrentHashMap.get()`/
-  `putIfAbsent()`). No reader (`dispatch()`/`onDisable()`/`onEnable()` for the queue, `getMarkerSets()` for the
-  cache, `getMaps()` for `blueMapAPI`) ever needs a joint snapshot of more than one of these fields at once, so
-  per-field visibility is enough — a shared lock would additionally serialize `dispatch()` (hot path, every sign
-  event) behind `processMarkerAction()`'s BlueMap API calls, an unrelated critical section. This resolves finding
-  #12 (`../plans/codebase-review-2026-07-11.md`, resolved 2026-07-22) and the field-visibility half of #11.
+  `putIfAbsent()`/`computeIfAbsent()`). No reader (`dispatch()`/`onDisable()`/`onEnable()` for the queue,
+  `getMarkerSets()` for the marker-set cache, `getRenderMask()` for the render-mask cache, `getMaps()` for
+  `blueMapAPI`) ever needs a joint snapshot of more than one of these fields at once, so per-field visibility is
+  enough — a shared lock would additionally serialize `dispatch()` (hot path, every sign event) behind
+  `processMarkerAction()`'s BlueMap API calls, an unrelated critical section. This resolves finding #12
+  (`../plans/codebase-review-2026-07-11.md`, resolved 2026-07-22) and the field-visibility half of #11.
+  `renderMaskCache` is invalidated (replaced with a fresh empty map) at the exact same call sites as
+  `markerSetsCache` — `resetQueue()` and `clearMarkerSetsCache()` — so neither cache survives a config reload or a
+  genuine BlueMap disable/enable cycle carrying stale entries.
 - **Listener detach (finding #7, GitHub issue #140, resolved 2026-07-23):** the constructor registers
   `BlueMapAPI.onEnable(...)`/`onDisable(...)` with two `final Consumer<BlueMapAPI>` fields
   (`onEnableListener`/`onDisableListener` — each built once as `this::onEnable`/`this::onDisable`), and
@@ -345,8 +387,10 @@ Two id schemes now exist side by side, unified behind one interface:
   `AGENTS.md`'s "Adding a new marker/BlueMap action" section. All five cases resolve their marker sets via a shared
   `applyToMarkerSets(markerIdentifier, consumer)` helper (parameter type `DispatchedMarkerIdentifier`, needs only
   `.parentSet()` — looks up via `getMarkerSets`, no-ops with a debug log if none found, otherwise hands the
-  consumer a `Stream<Map<String, Marker>>`); `RemoveMarkerAction` and `RemoveLineMarkerAction` both route through
-  an id-based `removeMarkerById(String id, Stream<...>)` helper extracted out of the old `removeMarker` body.
+  consumer a `Stream<Map<String, Marker>>`); `RemoveMarkerAction`, `RemoveLineMarkerAction`, and
+  `RemoveShapeMarkerAction` all route through an id-based `removeMarkerById(String id, Stream<...>)` helper
+  extracted out of the old `removeMarker` body. `SetShapeMarkerAction`/`RemoveShapeMarkerAction` have their own
+  `case` arms alongside the line ones (both in `processMarkerAction`'s switch and in `logProcessingMessage`).
 - `setLineMarker(SetLineMarkerAction, Stream<Map<String, Marker>>)` builds/replaces a BlueMap `LineMarker`: bails
   (defensively — `SignManager` should never dispatch below 2 points) if `action.getPoints().size() < 2`, otherwise
   builds a `de.bluecolored.bluemap.api.math.Line` from the action's `LinePoint`s (via `Vector3d`), parses
@@ -356,10 +400,18 @@ Two id schemes now exist side by side, unified behind one interface:
   id, §5). `ColorUtils.parseHex` is the only conversion point from the persisted hex string to a real color object,
   mirroring how `HtmlUtils` is the only conversion point for HTML-escaped `detail` — both convert at the BlueMap-API
   call site, keeping the rest of the pipeline in plain-Java, unescaped/unconverted form.
+- `setShapeMarker(SetShapeMarkerAction, Stream<Map<String, Marker>>)` is the `SHAPE` counterpart: bails
+  (defensively, mirroring `setLineMarker`) if `action.getPoints().size() < 3`, builds a 2D `Shape` footprint from
+  the points' `x`/`z` only, and takes the marker's rendered height from the **tallest member**:
+  `points.stream().mapToInt(LinePoint::y).max()`. Parses both `lineColor` and `fillColor` through `ColorUtils.parseHex`
+  (fill defaults to a translucent red, `#FF000033`, unlike `lineColor`'s opaque default — see
+  `config-and-persistence.md`), then `put`s a `ShapeMarker.builder().label(...).detail(...).shape(shape,
+  height).lineWidth(...).lineColor(...).fillColor(...).build()` into each marker set's map, keyed by
+  `action.getMarkerIdentifier().getId()` (the content-keyed `"shape:" + label` id, §5).
 - `addMarker` only actually builds a marker `if (markerGroup.type() == MarkerGroupType.POI)` — this is a real,
-  live branch now that `MarkerGroupType.LINE` exists (no longer future-proofing for a value that didn't exist): a
-  `LINE`-typed group's signs never reach `addMarker` at all, since `SignManager`'s transition table (§3) routes
-  `LINE` representations to `SetLineMarkerAction`/`RemoveLineMarkerAction` instead of `AddMarkerAction`.
+  live branch now that `MarkerGroupType.LINE`/`SHAPE` exist (no longer future-proofing for values that didn't
+  exist): a `LINE`- or `SHAPE`-typed group's signs never reach `addMarker` at all, since `SignManager`'s transition
+  table (§3) routes those representations to their own `Set`/`Remove` actions instead of `AddMarkerAction`.
 - **HTML escaping (fixed)**: `addMarker`/`updateMarker` wrap `detail` with `HtmlUtils.toHtmlDetail(...)` (`common`
   package) before it reaches `POIMarker.builder().detail(...)` / `poiMarker.setDetail(...)` — BlueMap renders
   `detail` as raw HTML (unlike `label`, which BlueMap's own `Marker.setLabel()` escapes), and sign text is
@@ -415,6 +467,67 @@ unavailable, drain once it's back."
   processor callback itself is swallowed (captured on an unawaited `Future`, never reaching
   `messageProcessorErrorCallback`) — only a submission-time failure reaches that callback.
 
+## 8. Per-map render-bounds gating — `core.bounds.RenderMaskEvaluator`
+
+High-level design and rationale: `../plans/map-bounds-filtering-plan.md` and `AGENTS.md`'s "Per-map render-bounds
+gating" section. This section covers the code-level mechanics.
+
+- **`RenderMaskEvaluator`** (plain Java, no Minecraft/Fabric/BlueMap types) hand-parses BlueMap's own
+  `config/bluemap/maps/<id>.conf` — no HOCON library is used. `stripComments` removes `#`-led text line-by-line;
+  regex constants (`RENDER_MASK_KEY`, `SHAPE_KEY`, `TYPE_PATTERN`, `FIELD_PATTERN`) locate the `render-mask:` array
+  and each `{...}` shape entry (`findMatchingBracket` for bracket-matching, `splitObjectChunks` for
+  brace-depth-aware splitting on commas); `extractFields`/`extractType` pull a shape's fields into a
+  `Map<String, String>` (type defaults to `"box"` if omitted). `FIELD_PATTERN` allows an optional matching pair of
+  `"` around a numeric/boolean literal (fixed so `subtract: "true"` parses identically to `subtract: true`, rather
+  than silently falling back to the field's default because the quoted form went unmatched).
+- Two entry points: `isInsideRenderBounds(mapId, mapsConfigDir, x, y, z)` (one-shot convenience) and
+  `load(mapId, mapsConfigDir)` → `RenderMask` (a small class wrapping `List<RenderMaskShape>` with one method,
+  `contains(x, y, z)`) — `BlueMapAPIConnector` always uses `load`, since it tests many points against the same
+  map's mask over the connector's lifetime (see below) and reparsing the config file per point would be wasteful.
+- **Evaluation is a last-entry-wins reverse scan**, matching BlueMap's own `CombinedMask`: walks `shapes` from the
+  last-defined entry backward; the first (i.e. last-defined) shape whose `contains(x, y, z)` is `true` decides the
+  result via `!shape.subtract()`. If no shape matches, the result is `shapes.get(0).subtract()` (an empty shape
+  list — no `render-mask` key, or every failure path below — short-circuits to `true`, i.e. unbounded).
+- **Every shape type** (`RenderMaskBox`, `RenderMaskCircle`, `RenderMaskEllipse`, `RenderMaskPolygon`, all records
+  in `core.bounds` implementing `RenderMaskShape { contains(x,y,z); subtract(); }`) carries its own `boolean
+  subtract` field, parsed once via `Boolean.parseBoolean(fields.getOrDefault("subtract", "false"))` — the evaluator
+  itself is shape-agnostic about `subtract`, it just negates the match. `RenderMaskBox` is an axis-aligned min/max
+  range check on x/y/z; `RenderMaskCircle`/`RenderMaskEllipse` check a y-range then a (normalized, for ellipse)
+  radius check on x/z; `RenderMaskPolygon` checks a y-range then does XZ-plane ray-casting (handles non-convex
+  shapes) against its `List<RenderMaskPoint>` vertices.
+- **Fails open** (mask treated as unbounded — every point passes) on every failure path, all funneling to an empty
+  shape list: no `config/bluemap/maps/` directory, or no file matching the sanitized map id (`findConfigFile`
+  returns `null`); an `IOException` reading the matched file; a `RuntimeException` (malformed/unbalanced config,
+  unrecognized shape type) while parsing it. Each of these logs a warning before returning the empty list — a
+  broken render-mask config degrades to "no filtering" rather than crashing marker dispatch (see
+  `project_no_server_crashes` guidance).
+- **`BlueMapAPIConnector` integration**: `getRenderMask(mapId)` is `renderMaskCache.computeIfAbsent(mapId, id ->
+  RenderMaskEvaluator.load(...))` — one parse per real map id, cached for the connector's lifetime until
+  invalidated (see §6). `MappedMarkerSet(String mapId, MarkerSet markerSet)` is a private record pairing a cached
+  `MarkerSet` with the real map id it came from, since gating needs the id to look up that map's `RenderMask` but
+  the pre-existing `markerSetsCache` only stored bare `MarkerSet`s.
+- **Gated vs. unconditional dispatch**: `prepareSingleAction` routes `AddMarkerAction`/`UpdateMarkerAction`
+  (single point, wrapped via a `pointOf(MarkerIdentifier)` helper into a one-element point list) and
+  `SetLineMarkerAction`/`SetShapeMarkerAction` (their own multi-point `getPoints()`) through
+  `prepareGated(identifier, points, effect)`. For each target `MappedMarkerSet`, `isInsideRenderBounds`
+  is `points.stream().anyMatch(p -> mask.contains(...))` — **any one point in bounds passes the whole marker**
+  (all-or-nothing for `LINE`/`SHAPE`, no per-point clipping). On a pass, `effect.accept(markers)` runs as normal;
+  on a gate failure, the marker id is actively removed from that map's set (`markers.remove(identifier.getId())`)
+  instead of merely skipping the add/update — this is what sweeps a marker that already existed on a
+  now-out-of-bounds map before this feature shipped, reusing `SignManager.reset()`'s existing reload-forced
+  re-dispatch of every sign (§3) as the trigger. `RemoveMarkerAction`/`RemoveLineMarkerAction`/
+  `RemoveShapeMarkerAction` instead go through `prepareUngated(identifier, effect)` — unconditional, no
+  gating, since an explicit removal means the sign's representation is genuinely leaving, independent of bounds.
+- **Cold-load-off-the-lock fix**: `prepareGated`/`prepareUngated` return a `Runnable` that performs only the
+  marker-set mutation; `prepareGated` computes each target map's gate decision
+  (`markerSets.get().stream().map(mapped -> Map.entry(mapped, isInsideRenderBounds(...))).toList()`) up front, before
+  that `Runnable` is built, so the returned `Runnable` only iterates the already-computed decisions. `applySingleAction`
+  calls `prepareSingleAction` to get that `Runnable`, then runs it inside a `synchronized (this)` block. Previously
+  the render-mask lookup (a cold `RenderMaskEvaluator.load` call reads and parses a config file off disk) ran
+  *inside* that same lock, so the first dispatch to a given map after a cache invalidation could block every other
+  in-flight `processMarkerAction` call on disk I/O unrelated to their own map. `getMarkerSets`/`processMarkerAction`
+  themselves are otherwise unchanged — the fix is localized to `prepareGated`.
+
 ---
-*Last updated: 2026-08-15 | Verified against: feature/tpwalke2/7-line-markers (c8e58ca)*
+*Last updated: 2026-08-22 | Verified against: feature/tpwalke2/67-map-bounds (217c17f)*
 

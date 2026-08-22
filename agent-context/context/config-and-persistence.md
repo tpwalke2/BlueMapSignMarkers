@@ -37,13 +37,17 @@ File: `config/bluemapsignmarkers/BMSM-Core.json`. Path is fixed (not per-world) 
      `core-pipeline.md` §3 — rather than duplicated separately) and convert each `LoadingMarkerGroupV2` to a
      runtime `MarkerGroup` via `convertToLoadedMarkerGroup`, which applies defaults per-field (`matchType` →
      `STARTS_WITH`, `type` → `POI`, `offsetX`/`offsetY` → `0`, `defaultHidden` → `false`, `minDistance` → `0.0`,
-     `maxDistance` → `10000000.0`, `lineWidth` → `2`, `lineColor` → `"#FF0000FF"` — the last two are the line-markers
-     addition, mirroring BlueMap's own `LineMarker` defaults). `lineWidth`/`lineColor` go through their own
-     validating resolvers (`resolveLineWidth`/`resolveLineColor`) rather than a plain null-check default: a
-     non-positive `lineWidth` (`<= 0`) or a `lineColor` that fails `ColorUtils.isValidHex` (accepts `#RRGGBB`/
-     `#RRGGBBAA`, leading `#` optional — the same shape `ColorUtils.parseHex` accepts) logs a warning naming the
-     group and falls back to the default, instead of the malformed value reaching `ActionFactory`/BlueMap's
-     `LineMarker` unnoticed (silently caught later only at dispatch time by `ColorUtils.parseHex`'s own fallback).
+     `maxDistance` → `10000000.0`, `lineWidth` → `2`, `lineColor` → `"#FF0000FF"`, `fillColor` → `"#FF000033"` — the
+     latter three are the `LINE`/`SHAPE`-marker additions, mirroring BlueMap's own `LineMarker`/`ShapeMarker`
+     defaults; `fillColor`'s default is translucent, unlike `lineColor`'s opaque one). `lineWidth`/`lineColor`/
+     `fillColor` each go through their own validating resolver (`resolveLineWidth`/`resolveLineColor`/
+     `resolveFillColor`) rather than a plain null-check default: a non-positive `lineWidth` (`<= 0`) or a
+     `lineColor`/`fillColor` that fails `ColorUtils.isValidHex` (accepts `#RRGGBB`/`#RRGGBBAA`, leading `#`
+     optional — the same shape `ColorUtils.parseHex` accepts) logs a warning naming the group and falls back to the
+     default, instead of the malformed value reaching `ActionFactory`/BlueMap's `LineMarker`/`ShapeMarker`
+     unnoticed (silently caught later only at dispatch time by `ColorUtils.parseHex`'s own fallback).
+     `resolveFillColor` only validates when the group's effective `type` is `SHAPE`; for any other type it returns
+     the raw configured value unvalidated (pass-through — `fillColor` isn't applied for non-`SHAPE` groups anyway).
      This two-model split (`LoadingMarkerGroupV2`
      boxed/nullable vs. `MarkerGroup` primitive) exists so a partially-specified group in user JSON gets these
      explicit defaults rather than Gson silently zeroing missing primitive fields. `validateMarkerGroups` then fails
@@ -51,9 +55,11 @@ File: `config/bluemapsignmarkers/BMSM-Core.json`. Path is fixed (not per-world) 
      doesn't compile, or a prefix duplicated across groups — ticket 01 — rather than surfacing as a skip/NPE later,
      downstream in `SignLinesParser`/`SignManager`. A separate, non-fatal pass, `warnOnTypeFieldMismatches`, logs a
      warning (never throws) against the raw `LoadingMarkerGroupV2` (which still distinguishes "field omitted" via
-     `null`) if a `POI` group has an explicit `lineWidth`/`lineColor`, or a `LINE` group has an explicit
-     `icon`/`offsetX`/`offsetY` — those fields are silently ignored for the group's actual type, so this just flags
-     a likely config mistake rather than rejecting it.
+     `null`) for a field set on a type it doesn't apply to: `POI` warns on an explicit `lineWidth`/`lineColor`/
+     `fillColor`; `LINE` warns on an explicit `icon`/`offsetX`/`offsetY`/`fillColor`; `SHAPE` warns on an explicit
+     `icon`/`offsetX`/`offsetY` (but *not* `lineWidth`/`lineColor`, which `SHAPE` also uses for its border) — those
+     fields are silently ignored for the group's actual type, so this just flags a likely config mistake rather
+     than rejecting it.
   4. Any exception during load (`Gson.fromJson` failure, I/O error, or a `validateMarkerGroups` failure) logs and
      returns `null`, and `ConfigManager.loadCoreConfig` falls back to `new BMSMConfigV2()` defaults — a broken
      config file never prevents server startup, it just silently reverts to a single default `[poi]` group.
@@ -87,11 +93,23 @@ Loaded on `SERVER_STARTING`, saved on `SERVER_STOPPING` (then `SignManager.stop(
 
 Format envelope per region file is unchanged: `VersionedSignFile(SignFileVersions version, String data)` where
 `data` is itself a JSON-encoded string of that region's entry array (double-encoded — the envelope is parsed first,
-then `data` is parsed again as the entry array). `SignFileVersions` = `V1, V2, V3, V4` (current = `V4`, written by
-`RegionShardedSignEntryWriter` unconditionally) — sharding changed how many files exist and where, not the schema
-of an individual file. `V4` is the line-markers addition: `SignEntry` gained `long createdAtMillis`, set once when
-a sign is first observed by `SignManager` and never recomputed afterward, needed to order a line marker's points in
-placement order (`LineGroupResolver`, `core-pipeline.md` §3).
+then `data` is parsed again as the entry array). `SignFileVersions` = `V1, V2, V3, V4, V5` (current = `V5`, written
+by `RegionShardedSignEntryWriter` unconditionally) — sharding changed how many files exist and where, not the
+schema of an individual file. `V4` is the line-markers addition: `SignEntry` gained `long createdAtMillis`, set
+once when a sign is first observed by `SignManager` and never recomputed afterward, needed to order a line/shape
+marker's points in placement order (`LineGroupResolver`/`ShapeGroupResolver`, `core-pipeline.md` §3).
+
+`V5` is the stale-prefix self-heal fix (GitHub issue #190): `SignEntry` gained `String[] frontRawLines`/
+`backRawLines` — the raw, unparsed sign message lines for each side, captured by `SignHelper.createSignEntry`
+alongside the already-parsed `frontText`/`backText`. These fields are `null` (not empty arrays) rather than
+populated for any entry that came through migration from pre-`V5` data — `Version5Converter.convertToV5`
+(`SignEntryV4` → current `SignEntry`) sets both explicitly to `null`, since there's no raw text on disk to backfill
+from. `SignManager.reloadConfig()` (`core-pipeline.md` §3) uses these fields to re-run `SignLinesParser` against
+every cached sign's *original* text on every `/bluemap reload`, rather than only re-resolving each sign's
+already-parsed prefix against the new config — this is what lets an edited `REGEX` prefix correctly reclassify a
+sign (or drop it, or move it to a different group) without a manual in-game re-edit or a server restart. An entry
+with `null` raw lines (still-unmigrated pre-`V5` data) keeps the old, more limited reload behavior, since there's
+nothing to re-parse. See `README.md`'s "Troubleshooting" section for how this is described to end users.
 
 `SignRegionKey(dimension, regionX, regionZ)`: `forPosition(dimension, x, z)` computes region coordinates via
 `Math.floorDiv(x, 512)`/`Math.floorDiv(z, 512)` (512 = 32 chunks x 16 blocks, matching Minecraft's own Anvil
@@ -112,30 +130,32 @@ each entry's `key().parentMap()`/`x()`/`z()` — the shared grouping logic behin
 2. If false (first boot after upgrading, or a fresh world): `LegacySignFileMigrator.migrate(legacyPath, storageRoot,
    groups, gson)` — one-shot:
    - If no file exists at `legacyPath`, returns an empty list (fresh install, nothing to migrate).
-   - Otherwise reads it and runs the **exact same V1/V2/V3/V4 chain as before sharding**, unchanged:
+   - Otherwise reads it and runs the **exact same V1-V5 chain as before sharding**, unchanged:
      `VersionedFileSignEntryLoader.loadSignEntries(...)`, falling back to `Version1SignEntryLoader.loadSignEntries(...)`
      if that returns `null`. Region-sharding is layered *after* this existing version normalization, not a
      replacement for it. `VersionedFileSignEntryLoader` treats a structurally-valid document missing
      `version`/`data` (e.g. `"{}"`) as an explicit, intentional signal to fall back to `Version1SignEntryLoader`
      (ticket 05), rather than relying on Gson's nulls to coincidentally route there. A `V2` file is converted
      `SignEntryV2` → `SignEntryV3` (`Version3Converter.convertToV3`, per entry, `convertV2EntrySafely` isolating a
-     bad entry) **then** `SignEntryV3` → current `SignEntry` (`Version4Converter.convertToV4`, see below) in the
-     same pass — a V2 file is always exactly two migrations behind current, so both converters run back-to-back
-     rather than requiring a server restart between each version bump. A `V3` file skips straight to the
-     `Version4Converter` step. Both loaders isolate per-entry conversion failures (`convertV2EntrySafely`/`loadEntry`,
-     ticket 05) so one malformed V1/V2 entry logs and is skipped instead of losing the whole file — the same pattern
-     `SignProvider.loadSigns` already applies per entry at step 3 below. `Version1SignEntryLoader`'s dimension
+     bad entry) → `SignEntryV3` → `SignEntryV4` (`Version4Converter.convertToV4`, see below) → `SignEntryV4` →
+     current `SignEntry` (`Version5Converter.convertToV5`) in the same pass — a V2 file is always exactly three
+     migrations behind current, so all three converters run back-to-back rather than requiring a server restart
+     between each version bump. A `V3` file skips straight to `Version4Converter` then `Version5Converter`; a `V4`
+     file goes straight to `Version5Converter`. All loaders isolate per-entry conversion failures
+     (`convertV2EntrySafely`/`loadEntry`, ticket 05) so one malformed V1/V2 entry logs and is skipped instead of
+     losing the whole file — the same pattern `SignProvider.loadSigns` already applies per entry at step 3 below.
+     `Version1SignEntryLoader`'s dimension
      normalization (`getNormalizedMapId`) recognizes both the short legacy names (`"nether"`/`"end"`/`"overworld"`)
      and the canonical-but-unnamespaced resource paths (`"the_nether"`/`"the_end"`), with or without a `minecraft:`
      namespace already attached (ticket 05) — previously only the three exact lowercase shorthand strings
      normalized, so anything else fell through unchanged and permanently mismatched the live dimension key
-     post-migration, duplicating markers as "new" signs. `Version1SignEntryLoader`, the `V2` branch, and the `V3`
-     branch of `VersionedFileSignEntryLoader` each back up the file before migrating (`.v1.bak`/`.v2.bak`/`.v3.bak`
-     respectively) so the original isn't overwritten with no recoverable copy (ticket 02) — but they don't react the
-     same way to a failed backup: `Version1SignEntryLoader` throws `IllegalStateException`, aborting that migration
-     (uncaught here, isolated instead by `LegacySignFileMigrator`'s own try/catch around the whole chain), while
-     `VersionedFileSignEntryLoader`'s `V2`/`V3` branches log an error and **continue anyway**, still returning the
-     converted V4 entries in-memory without a pre-migration backup on disk.
+     post-migration, duplicating markers as "new" signs. `Version1SignEntryLoader` and the `V2`/`V3`/`V4` branches
+     of `VersionedFileSignEntryLoader` each back up the file before migrating (`.v1.bak`/`.v2.bak`/`.v3.bak`/
+     `.v4.bak` respectively) so the original isn't overwritten with no recoverable copy (ticket 02) — but they don't
+     react the same way to a failed backup: `Version1SignEntryLoader` throws `IllegalStateException`, aborting that
+     migration (uncaught here, isolated instead by `LegacySignFileMigrator`'s own try/catch around the whole
+     chain), while `VersionedFileSignEntryLoader`'s `V2`/`V3`/`V4` branches log an error and **continue anyway**,
+     still returning the converted current-version entries in-memory without a pre-migration backup on disk.
    - Writes the resulting entries via `RegionShardedSignEntryWriter.write(...)` (see below). Backs up the legacy
      file via `FileUtils.moveToBackup(legacyPath, ".migrated", ...)` — **renamed, not deleted** — only after
      confirming every region file expected from `SignRegionPartitioner.partition(entryList)` actually exists on
@@ -201,5 +221,5 @@ in place. Old region files (or a not-yet-migrated legacy `signs.json`) on live s
 the version they were written with.
 
 ---
-*Last updated: 2026-08-15 | Verified against: feature/tpwalke2/7-line-markers (c8e58ca)*
+*Last updated: 2026-08-22 | Verified against: feature/tpwalke2/67-map-bounds (217c17f)*
 

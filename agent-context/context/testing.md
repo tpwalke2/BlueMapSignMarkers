@@ -15,10 +15,14 @@ in `build.gradle`.
 Only plain-Java classes with **no Minecraft/Fabric/BlueMap API types in their method signatures** are unit tested.
 Qualifying today: `SignLinesParser`/`ParsingContext`/`SignLinesParseResult`, `SignEntry`, `SignEntryHelper`,
 `SignChunkKey`/`SignChunkIndex`, `MarkerGroup`/`MarkerGroupMatchType`/`MarkerGroupType`, `ConfigManager`/`ConfigProvider`,
-`ReactiveQueue`, `HtmlUtils`, `FileUtils`, `ColorUtils`, `LineGroupResolver`, `SignTransitionResolver`, the
+`ReactiveQueue`, `HtmlUtils`, `FileUtils`, `ColorUtils`, `LineGroupResolver`/`ShapeGroupResolver`,
+`SignTransitionResolver`, `RenderMaskEvaluator` (`core.bounds` — see `core-pipeline.md` §8), the
 sign-persistence loaders/converters/writer (`VersionedFileSignEntryLoader`, `Version1SignEntryLoader`,
-`Version3Converter`, `Version4Converter`, `RegionShardedSignEntryLoader`, `RegionShardedSignEntryWriter`,
-`SignRegionKey`, `SignRegionPartitioner`, `LegacySignFileMigrator`), `ActionFactory`/`MarkerSetIdentifierCollection`.
+`Version3Converter`, `Version4Converter`, `Version5Converter`, `RegionShardedSignEntryLoader`,
+`RegionShardedSignEntryWriter`, `SignRegionKey`, `SignRegionPartitioner`, `LegacySignFileMigrator`),
+`ActionFactory`/`MarkerSetIdentifierCollection`. `SignManager` itself stays game-coupled (its constructor builds a
+`BlueMapAPIConnector`), but its `reparseFromRawLines`/`safeReparseFromRawLines` reparse-on-reload logic (§3 of
+`core-pipeline.md`) is extracted as a package-visible static specifically so it's directly testable.
 
 `Version1SignEntryLoader` used to be a partial exception — its legacy-shorthand (`"nether"`/`"end"`/`"overworld"`)
 dimension normalization branch read `net.minecraft.world.level.Level`'s static constants, requiring a running
@@ -35,7 +39,7 @@ region file to force a regen — then reloading that chunk), watching the BlueMa
 
 ## Current coverage
 
-As of `main` (`374d6db`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
+As of `feature/tpwalke2/67-map-bounds` (`217c17f`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
 - `core/signs/SignLinesParserTest.java` — 12 `@Test` methods covering `SignLinesParser`: label-on-prefix-line vs.
   label-on-following-line, multi-line detail joining/trimming, leading/interstitial blank-line handling, no-match
   and all-blank sign results, `REGEX` match type's whole-line-match requirement (contrasted with `STARTS_WITH`),
@@ -80,7 +84,10 @@ As of `main` (`374d6db`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   `null`/another type), `withKey` returning a new instance with only the key changed (`createdAtMillis` carried
   through unchanged); `equalsAndHashCodeToleratesNullFields` (ticket 08) confirms `equals`/`hashCode` no
   longer `NPE` if the entry's own `key` (or `playerId`/`frontText`/`backText`) is `null` — now backed by
-  `Objects.equals`/`Objects.hash` instead of unguarded field-level `.equals()`/`.hashCode()` calls.
+  `Objects.equals`/`Objects.hash` instead of unguarded field-level `.equals()`/`.hashCode()` calls. Extended for
+  `V5`'s raw-lines fields: `equalsReturnsFalseForDifferentFrontRawLines`/`...BackRawLines` (array-content
+  comparison via `Arrays.equals`, not reference equality), `equalsToleratesNullRawLines`, and confirming
+  `withParsedText`/`withKey` both carry `frontRawLines`/`backRawLines` through unchanged.
 - `core/signs/ParsingContextTest.java` — the `(null, "", "")` sentinel when no marker group is ever set,
   `buildResult()` using the set group's `prefix()` plus the current label, multiple `appendDetail` calls joining
   with `\n`, and that the final `trim()` only strips the outermost whitespace of the joined detail, not per-line
@@ -112,12 +119,27 @@ As of `main` (`374d6db`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   with `isFirstAppearance=false`, a different group bundles a leave+join `GroupTransitionMarkerAction`; POI→LINE and
   LINE→POI each bundle the appropriate remove/set + add/set pair. Confirms the POI/POI cell keys only on
   `group().prefix()`, not label — a label-only edit on an unchanged group dispatches a direct update, not a
-  bundled remove+add (fixed alongside the `allSigns`-snapshot performance change, both same commit series).
+  bundled remove+add (fixed alongside the `allSigns`-snapshot performance change, both same commit series). `SHAPE`
+  coverage mirrors `LINE`'s exactly but gated on `SHAPE_MIN_MEMBERS = 3`: NONE↔SHAPE at exactly 3 members
+  (`isFirstAppearance` true/false), below-threshold no-ops, SHAPE→NONE dropping to 2 members dispatching
+  `RemoveShapeMarkerAction`, SHAPE↔SHAPE same-group/label recompute (no-op vs. detail-changed vs.
+  reload-forced), and the full cross-type bundling matrix (POI↔SHAPE, LINE↔SHAPE) both for a live sign change and
+  for a config-reload-driven type flip/rename (`groupIdentityObsolete`).
 - `core/signs/LineGroupResolverTest.java` — `members` filters to signs sharing `(parentMap, prefix, label)` exactly
   (a different map, prefix, or label is excluded), orders results by `createdAtMillis` ascending, breaks ties on a
   duplicate `createdAtMillis` deterministically by position (`x`, then `y`, then `z` — the cross-region-file
   migration-tie scenario the persistence section's `Version4Converter` paragraph describes), and returns an empty
   list for empty input.
+- `core/signs/ShapeGroupResolverTest.java` — mirrors `LineGroupResolverTest` (filtering, `createdAtMillis`
+  ordering, position tie-break, empty input), confirming `ShapeGroupResolver.members` behaves identically since it
+  delegates straight to `LineGroupResolver.members` — the `SHAPE`/`LINE` difference is the caller-side minimum
+  member count (`core-pipeline.md` §3), not resolver logic.
+- `core/signs/SignManagerTest.java` (reparse coverage) — targets `SignManager.reparseFromRawLines` directly:
+  re-parses both sides under a changed config when `frontRawLines`/`backRawLines` are present; returns the *same*
+  entry instance unchanged when either raw-lines array is `null` (pre-`V5` migrated data) or only one side has raw
+  lines; reparses to a `null` prefix when the sign no longer matches any group; and confirms a `null` element
+  within a raw-lines array makes `reparseFromRawLines` throw, which `safeReparseFromRawLines` is responsible for
+  catching and logging (falls back to the original entry unchanged).
 - `config/ConfigProviderTest.java` — `loadConfig` creating and persisting defaults when the file is absent; missing
   optional V2 fields defaulted per-field in `convertToLoadedMarkerGroup`; malformed JSON returning `null`; V1→V2
   migration producing one POI group plus a `.v1.bak` backup (aborting via `IllegalStateException`, caught by the
@@ -132,7 +154,10 @@ As of `main` (`374d6db`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   `loadConfigFallsBackToDefaultLineWidthWhenNonPositive`/`...WhenNegative` and
   `loadConfigFallsBackToDefaultLineColorWhenMalformed` (ticket 12 follow-up) confirm a non-positive `lineWidth` or a
   `lineColor` failing `ColorUtils.isValidHex` falls back to the default rather than loading the invalid value
-  as-is — see `resolveLineWidth`/`resolveLineColor` in `config-and-persistence.md`.
+  as-is — see `resolveLineWidth`/`resolveLineColor` in `config-and-persistence.md`. `fillColor` has the same shape
+  of coverage for `SHAPE` groups: default fallback (`#FF000033`) when unset, a valid custom hex preserved, an
+  invalid hex falling back to the default with a warning, and warning-only (not load-failing) tests for
+  `fillColor` set on a `POI` or `LINE` group.
 - `config/ConfigManagerTest.java` — `get()` returns the config from the most recent `reload`; falls back to
   `new BMSMConfigV2()` defaults when the configured path fails to load; a second `reload()` replaces (not merges
   with) what an earlier `reload` cached.
@@ -145,7 +170,9 @@ As of `main` (`374d6db`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   type) reuse the same `MarkerSetIdentifier` instance via `MarkerSetIdentifierCollection`. `createSetLineAction`/
   `createRemoveLineAction` each have a dedicated test asserting the built `SetLineMarkerAction`/`RemoveLineMarkerAction`
   fields and `LineMarkerIdentifier`, plus a reuse test confirming line and POI actions for the same map/group share
-  one `MarkerSetIdentifier` (ticket 11).
+  one `MarkerSetIdentifier` (ticket 11). `createSetShapeAction`/`createRemoveShapeAction` have the same shape of
+  dedicated tests, additionally confirming `fillColor` is threaded from the `MarkerGroup` into the built
+  `SetShapeMarkerAction`, and that set/remove use independent `ShapeMarkerIdentifier`s.
 - `core/markers/MarkerSetIdentifierCollectionTest.java` — `getIdentifier` returns the same instance for a repeated
   `(mapId, markerGroup)` pair (case-insensitive on `mapId`), distinct pairs get distinct identifiers. Also includes
   `concurrentFirstTimeCallersForTheSameComboConvergeOnOneIdentifierInstance`, an active (not `@Disabled`) regression
@@ -183,17 +210,19 @@ As of `main` (`374d6db`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   `differentIndicesInTheSameFileProduceDifferentButStableTimestamps` confirm the arbitrary-but-stable
   `fileLastModifiedMillis + indexInFile` formula (no real placement history exists for pre-existing signs, see the
   persistence-doc `Version4Converter` paragraph).
-- `core/signs/persistence/loaders/VersionedFileSignEntryLoaderTest.java` — `v4ContentIsParsedDirectlyWithoutCreatingABackup`
-  (renamed from the pre-line-markers V3-passthrough test — no backup written for a file already at the current
-  version); `v3ContentIsConvertedThroughVersion4ConverterAndBackedUp` (new — a `V3` file converts via
-  `Version4Converter`, backs up to `.v3.bak`); the `V2` branch converts via `Version3Converter` **then**
-  `Version4Converter` in the same pass, backs up to `.v2.bak`, and is per-entry-isolated: one malformed V2 entry is
-  skipped rather than losing the whole file (ticket 05); the catch-all fallback returning `null` rather than
-  throwing, for both malformed JSON and empty content (which parses to `null` and NPEs on `.version()`, caught by
-  the same generic `catch`); a structurally-valid document missing `version`/`data` (e.g. `"{}"`) explicitly falling
-  back to V1 rather than relying on Gson's nulls to coincidentally route there (ticket 05); and the `V2`/`V3`
-  branches returning `null` (falls through to the V1 loader) rather than proceeding, if backing up to `.v2.bak`/
-  `.v3.bak` fails (ticket 02).
+- `core/signs/persistence/loaders/VersionedFileSignEntryLoaderTest.java` — `v5ContentIsParsedDirectlyWithoutCreatingABackup`
+  (renamed from the pre-self-heal V4-passthrough test — no backup written for a file already at the current
+  version); `v4ContentIsConvertedThroughVersion5ConverterAndBackedUp` (new — a `V4` file converts via
+  `Version5Converter` to `null` `frontRawLines`/`backRawLines`, backs up to `.v4.bak`);
+  `v3ContentIsConvertedThroughVersion4ConverterAndBackedUp` (a `V3` file converts via `Version4Converter` then
+  `Version5Converter`, backs up to `.v3.bak`); the `V2` branch converts via `Version3Converter` then
+  `Version4Converter` then `Version5Converter` in the same pass, backs up to `.v2.bak`, and is per-entry-isolated:
+  one malformed V2 entry is skipped rather than losing the whole file (ticket 05); the catch-all fallback returning
+  `null` rather than throwing, for both malformed JSON and empty content (which parses to `null` and NPEs on
+  `.version()`, caught by the same generic `catch`); a structurally-valid document missing `version`/`data` (e.g.
+  `"{}"`) explicitly falling back to V1 rather than relying on Gson's nulls to coincidentally route there (ticket
+  05); and the `V2`/`V3`/`V4` branches returning `null` (falls through to the V1 loader) rather than proceeding, if
+  backing up to `.v2.bak`/`.v3.bak`/`.v4.bak` fails (ticket 02).
 - `core/signs/persistence/loaders/Version1SignEntryLoaderTest.java` — the three recognized legacy shorthand
   strings (`"nether"`/`"end"`/`"overworld"`) *and* the canonical-but-unnamespaced resource paths
   (`"the_nether"`/`"the_end"`, ticket 05) normalizing to their canonical namespaced identifiers, case-insensitively,
@@ -202,6 +231,16 @@ As of `main` (`374d6db`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   ticket 02) if that backup fails; one malformed entry being skipped rather than losing the whole file (ticket 05,
   `loadEntry`'s per-entry try/catch); and a documented Low-severity finding that an unrecognized dimension string
   is still silently lowercased on the `default` branch rather than preserved as-is.
+- `core/bounds/RenderMaskEvaluatorTest.java` — 24 tests. A real-world fixture (`NETHER_ROOF_RENDER_MASK`) checks
+  min-y cutoff and subtract-range behavior; fail-open coverage for a missing `render-mask` key, an empty shape
+  array, a missing config file, an unreadable file (gated with `assumeTrue` for cross-platform reliability), a
+  malformed/unbalanced config, an unmatched map id, and an unrecognized shape type; last-entry-wins combination
+  coverage (a mask starting with `subtract`, overlapping boxes with last-entry-include vs. last-entry-subtract,
+  mixed shape types confirming the reverse scan works across different shape types, not just within one); per-shape
+  coverage for box (default type, an omitted axis is unbounded on that axis), circle (xz-radius + y-range), ellipse
+  (independent x/z radii), and polygon (a non-convex "C" shape via ray casting); and
+  `quotedBooleanAndNumericFieldsAreEquivalentToBareLiterals` confirming a quoted literal (`subtract: "true"`)
+  parses identically to the bare form (the fix in commit `217c17f`).
 
 ## CI integration
 
@@ -217,5 +256,5 @@ JUnit reporter action** — those actions don't get `checks: write` permission o
 public repo, so the summary step was written to need no extra permissions.
 
 ---
-*Last updated: 2026-08-15 | Verified against: feature/tpwalke2/7-line-markers (c8e58ca)*
+*Last updated: 2026-08-22 | Verified against: feature/tpwalke2/67-map-bounds (217c17f)*
 
