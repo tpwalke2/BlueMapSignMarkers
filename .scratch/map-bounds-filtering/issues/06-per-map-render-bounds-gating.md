@@ -18,7 +18,9 @@ persisted sign data.
 
 **Blocked by:** 05
 
-**Status:** implemented (code complete; manual `runServer` verification still outstanding)
+**Status:** done — implemented and fully manually verified (POI gating, reload re-evaluation,
+LINE/SHAPE gating, upgrade sweep) via `runServer` using
+`world_the_nether.conf`/`world_nether_roof.conf`.
 
 - [x] A `[poi]` sign placed outside a map's configured render bounds does not get a marker created
       on that map, while an identical sign inside those bounds does.
@@ -32,16 +34,17 @@ persisted sign data.
       against the new bounds on that map, with no server restart required.
 - [x] A LINE marker appears on a map if any one of its member signs is inside that map's bounds,
       and is removed from that map once none of its members are inside those bounds. SHAPE behaves
-      the same way.
+      the same way. (Manually verified via `runServer`.)
 - [x] A marker manually placed on a map (simulating one created by a pre-this-feature version of
       the mod) outside that map's configured bounds is removed the next time `/bluemap reload`
       runs — the "existing marker sweep on upgrade" behavior from
-      `.scratch/map-bounds-filtering/issues/04-existing-marker-sweep-on-upgrade.md`.
+      `.scratch/map-bounds-filtering/issues/04-existing-marker-sweep-on-upgrade.md`. (Manually
+      verified via `runServer`.)
 - [x] A plain server restart (no `/bluemap reload`) does not attempt this sweep — documented, not
       changed, per ticket 04's caveat; the mod's user-facing docs/changelog note that
       `/bluemap reload` must be run once after upgrading to sweep pre-existing out-of-bounds
       markers.
-- [ ] Verified manually via `runServer` (no automated coverage added for `BlueMapAPIConnector`,
+- [x] Verified manually via `runServer` (no automated coverage added for `BlueMapAPIConnector`,
       consistent with its existing convention) per the plan's Testing Decisions.
 
 **Implementation notes:**
