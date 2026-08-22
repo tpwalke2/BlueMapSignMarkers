@@ -100,6 +100,12 @@ for `[region]` signs.
   `/bluemap reload`, and they won't come back on their own. Re-edit the sign's text (even re-typing the same text)
   or restart the server to fix it. Signs created or re-edited on a version that ships this fix self-heal
   automatically on `/bluemap reload` - no manual fix needed going forward.
+- **Markers are hidden on maps whose `render-mask` excludes them.** A sign's marker only shows up on a given
+  BlueMap map if the sign's position is inside that map's own `render-mask` (configured in
+  `config/bluemap/maps/<id>.conf`) - e.g. a nether-roof map with `min-y: 127` won't show markers for signs placed
+  below y=127. A map with no `render-mask` is unaffected. **After upgrading to a version with this fix, run
+  `/bluemap reload` once** to sweep away any markers that were already showing on a map outside its render bounds -
+  a plain server restart alone does not trigger this sweep.
 
 The `[poi]` and `Villages` marker groups use the default POI icon, while the `[store]` marker group uses a custom icon
 located at `assets/store.png`.
