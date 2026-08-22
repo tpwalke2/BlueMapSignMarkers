@@ -35,36 +35,36 @@ are shape-agnostic and already correct.
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Given a `.conf` file whose `render-mask` matches `run/config/bluemap/maps/world_nether_roof.conf`'s
+- [x] Given a `.conf` file whose `render-mask` matches `run/config/bluemap/maps/world_nether_roof.conf`'s
       two-entry include/subtract shape, points above the `min-y` cutoff evaluate as in-bounds and
       points at/below it evaluate as out-of-bounds, per the worked example in
       `.scratch/map-bounds-filtering/issues/01-render-mask-semantics-and-config-lookup.md`.
-- [ ] A missing `render-mask` key, an empty `render-mask: []`, or a missing/unreadable `.conf` file
+- [x] A missing `render-mask` key, an empty `render-mask: []`, or a missing/unreadable `.conf` file
       all evaluate every point as in-bounds (fail open / unbounded).
-- [ ] A `render-mask` whose first entry is `subtract: true` evaluates as "everything except that
+- [x] A `render-mask` whose first entry is `subtract: true` evaluates as "everything except that
       box," not "nothing except what's subtracted."
-- [ ] An axis bound omitted from a box entry is treated as unbounded on that axis only, independent
+- [x] An axis bound omitted from a box entry is treated as unbounded on that axis only, independent
       of the other five axes.
-- [ ] Two overlapping boxes covering the same point, one `subtract` and one not, produce different
+- [x] Two overlapping boxes covering the same point, one `subtract` and one not, produce different
       verdicts depending on which is listed last in the config — list order determines the result,
       not a symmetric union/subtraction.
-- [ ] Malformed/unparseable `render-mask` content fails open (unbounded) rather than throwing.
-- [ ] A map id whose sanitized form doesn't match any `.conf` file's sanitized filename stem fails
+- [x] Malformed/unparseable `render-mask` content fails open (unbounded) rather than throwing.
+- [x] A map id whose sanitized form doesn't match any `.conf` file's sanitized filename stem fails
       open (unbounded).
-- [ ] A `circle` entry (`center-x`/`center-z`/`radius`, optional `min-y`/`max-y`) evaluates points
+- [x] A `circle` entry (`center-x`/`center-z`/`radius`, optional `min-y`/`max-y`) evaluates points
       inside its XZ radius (and Y range, if set) as matching that entry, and points outside as not.
-- [ ] An `ellipse` entry (`center-x`/`center-z`/`radius-x`/`radius-z`, optional `min-y`/`max-y`)
+- [x] An `ellipse` entry (`center-x`/`center-z`/`radius-x`/`radius-z`, optional `min-y`/`max-y`)
       evaluates independently-radiused X/Z containment correctly, not just circular containment.
-- [ ] A `polygon` entry (`shape: [{x, z}, ...]`, optional `min-y`/`max-y`) evaluates XZ containment
+- [x] A `polygon` entry (`shape: [{x, z}, ...]`, optional `min-y`/`max-y`) evaluates XZ containment
       via point-in-polygon, including a non-convex polygon fixture.
-- [ ] An entry with no `type` key defaults to `box` (matching today's implicit behavior).
-- [ ] An entry with an unrecognized `type` value fails open for that map (unbounded), logged,
+- [x] An entry with no `type` key defaults to `box` (matching today's implicit behavior).
+- [x] An entry with an unrecognized `type` value fails open for that map (unbounded), logged,
       rather than being silently mis-parsed as a box.
-- [ ] A `render-mask` list mixing shape types (e.g. a `box` include and a `circle` subtract)
+- [x] A `render-mask` list mixing shape types (e.g. a `box` include and a `circle` subtract)
       evaluates last-matching-entry-wins across shapes, not just within one shape type.
-- [ ] Unit tests (JUnit 5, `src/test/java`) cover all of the above using fixtures copied from
+- [x] Unit tests (JUnit 5, `src/test/java`) cover all of the above using fixtures copied from
       `run/config/bluemap/maps/*.conf` plus synthetic fixtures for the edge cases, following the
       `SignLinesParser`/`SignLinesParserTest` pattern (`AGENTS.md`'s "Testable vs. game-coupled
       code").

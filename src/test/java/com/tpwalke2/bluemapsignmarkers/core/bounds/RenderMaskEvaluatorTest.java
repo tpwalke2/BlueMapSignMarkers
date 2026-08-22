@@ -195,4 +195,134 @@ class RenderMaskEvaluatorTest {
 
         assertTrue(RenderMaskEvaluator.isInsideRenderBounds("some_other_map", mapsDir, 0, -6000, 0));
     }
+
+    @Test
+    void entryWithNoTypeKeyDefaultsToBox(@TempDir Path mapsDir) throws IOException {
+        writeConfig(mapsDir, "world.conf", """
+                render-mask: [
+                  {
+                    min-x: 0
+                    max-x: 10
+                    min-z: 0
+                    max-z: 10
+                  }
+                ]
+                """);
+
+        assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 5, 0, 5));
+        assertFalse(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 500, 0, 500));
+    }
+
+    @Test
+    void circleEntryEvaluatesXzRadiusAndYRange(@TempDir Path mapsDir) throws IOException {
+        writeConfig(mapsDir, "world.conf", """
+                render-mask: [
+                  {
+                    type: circle
+                    center-x: 0
+                    center-z: 0
+                    radius: 10
+                    min-y: 0
+                    max-y: 100
+                  }
+                ]
+                """);
+
+        assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 5, 50, 5));
+        assertFalse(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 20, 50, 0));
+        assertFalse(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 5, 200, 5));
+    }
+
+    @Test
+    void ellipseEntryEvaluatesIndependentXzRadii(@TempDir Path mapsDir) throws IOException {
+        writeConfig(mapsDir, "world.conf", """
+                render-mask: [
+                  {
+                    type: ellipse
+                    center-x: 0
+                    center-z: 0
+                    radius-x: 20
+                    radius-z: 5
+                  }
+                ]
+                """);
+
+        // inside the wide (x) axis but would be outside a circle of radius 5
+        assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 15, 0, 0));
+        // outside the narrow (z) axis
+        assertFalse(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 0, 0, 15));
+    }
+
+    @Test
+    void polygonEntryEvaluatesNonConvexShapeViaPointInPolygon(@TempDir Path mapsDir) throws IOException {
+        // a "C" / non-convex shape: a 10x10 square with a 6x6 bite taken out of its right side
+        writeConfig(mapsDir, "world.conf", """
+                render-mask: [
+                  {
+                    type: polygon
+                    shape: [
+                      { x: 0, z: 0 }
+                      { x: 10, z: 0 }
+                      { x: 10, z: 2 }
+                      { x: 4, z: 2 }
+                      { x: 4, z: 8 }
+                      { x: 10, z: 8 }
+                      { x: 10, z: 10 }
+                      { x: 0, z: 10 }
+                    ]
+                  }
+                ]
+                """);
+
+        // inside the solid left strip
+        assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 2, 0, 5));
+        // inside the bitten-out notch on the right side
+        assertFalse(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 8, 0, 5));
+        // inside the top strip of the "C"
+        assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 8, 0, 1));
+    }
+
+    @Test
+    void unrecognizedTypeFailsOpenForWholeMap(@TempDir Path mapsDir) throws IOException {
+        writeConfig(mapsDir, "world.conf", """
+                render-mask: [
+                  {
+                    type: cylinder
+                    center-x: 0
+                    center-z: 0
+                    radius: 10
+                  }
+                ]
+                """);
+
+        assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 0, 0, 0));
+        assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 1_000_000, 0, 0));
+    }
+
+    @Test
+    void mixedShapeTypesEvaluateLastMatchingEntryWinsAcrossShapes(@TempDir Path mapsDir) throws IOException {
+        writeConfig(mapsDir, "world.conf", """
+                render-mask: [
+                  {
+                    type: box
+                    min-x: -100
+                    max-x: 100
+                    min-z: -100
+                    max-z: 100
+                  }
+                  {
+                    type: circle
+                    subtract: true
+                    center-x: 0
+                    center-z: 0
+                    radius: 10
+                  }
+                ]
+                """);
+
+        // inside the box but also inside the later subtract circle -> excluded
+        assertFalse(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 5, 0, 5));
+        // inside the box, outside the subtract circle -> included
+        assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 50, 0, 50));
+    }
 }

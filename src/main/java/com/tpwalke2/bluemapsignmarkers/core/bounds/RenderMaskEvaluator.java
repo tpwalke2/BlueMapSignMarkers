@@ -8,8 +8,10 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
-import java.util.regex.Matcher;
+import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 // Answers "is (x, y, z) inside this BlueMap map's render bounds?" by reading and evaluating the
@@ -21,36 +23,39 @@ public class RenderMaskEvaluator {
 
     private static final String CONF_EXTENSION = ".conf";
     private static final Pattern RENDER_MASK_KEY = Pattern.compile("render-mask\\s*:");
-    private static final Pattern FIELD_PATTERN = Pattern.compile("([A-Za-z][\\w-]*)\\s*:\\s*(-?\\d+|true|false)");
+    private static final Pattern SHAPE_KEY = Pattern.compile("shape\\s*:");
+    private static final Pattern TYPE_PATTERN = Pattern.compile("type\\s*:\\s*\"?([A-Za-z]+)\"?");
+    private static final Pattern FIELD_PATTERN =
+            Pattern.compile("([A-Za-z][\\w-]*)\\s*:\\s*(-?\\d+(?:\\.\\d+)?|true|false)");
 
     private RenderMaskEvaluator() {}
 
     public static boolean isInsideRenderBounds(String mapId, Path mapsConfigDir, int x, int y, int z) {
-        var boxes = loadRenderMask(mapId, mapsConfigDir);
-        return evaluate(boxes, x, y, z);
+        var shapes = loadRenderMask(mapId, mapsConfigDir);
+        return evaluate(shapes, x, y, z);
     }
 
-    // BlueMap's own CombinedMask algorithm: walk the box list from last entry to first; the first
-    // box in that reverse walk that contains the point decides the verdict via its own subtract
-    // flag. If no box matches, the verdict is "included" only when the list is empty, or when the
-    // first entry (in list order) is a subtract - which implicitly inserts an "include everything"
-    // layer beneath it.
-    private static boolean evaluate(List<RenderMaskBox> boxes, int x, int y, int z) {
-        if (boxes.isEmpty()) {
+    // BlueMap's own CombinedMask algorithm: walk the entry list from last entry to first; the
+    // first entry in that reverse walk that contains the point decides the verdict via its own
+    // subtract flag, regardless of shape. If no entry matches, the verdict is "included" only
+    // when the list is empty, or when the first entry (in list order) is a subtract - which
+    // implicitly inserts an "include everything" layer beneath it.
+    private static boolean evaluate(List<RenderMaskShape> shapes, int x, int y, int z) {
+        if (shapes.isEmpty()) {
             return true;
         }
 
-        for (var i = boxes.size() - 1; i >= 0; i--) {
-            var box = boxes.get(i);
-            if (box.contains(x, y, z)) {
-                return !box.subtract();
+        for (var i = shapes.size() - 1; i >= 0; i--) {
+            var shape = shapes.get(i);
+            if (shape.contains(x, y, z)) {
+                return !shape.subtract();
             }
         }
 
-        return boxes.get(0).subtract();
+        return shapes.get(0).subtract();
     }
 
-    private static List<RenderMaskBox> loadRenderMask(String mapId, Path mapsConfigDir) {
+    private static List<RenderMaskShape> loadRenderMask(String mapId, Path mapsConfigDir) {
         var configFile = findConfigFile(mapId, mapsConfigDir);
         if (configFile == null) {
             return List.of();
@@ -105,7 +110,7 @@ public class RenderMaskEvaluator {
         return id.replaceAll("\\W", "_");
     }
 
-    private static List<RenderMaskBox> parseRenderMask(String content) {
+    private static List<RenderMaskShape> parseRenderMask(String content) {
         var stripped = stripComments(content);
 
         var keyMatcher = RENDER_MASK_KEY.matcher(stripped);
@@ -121,11 +126,11 @@ public class RenderMaskEvaluator {
         var arrayEnd = findMatchingBracket(stripped, arrayStart, '[', ']');
         var arrayContent = stripped.substring(arrayStart + 1, arrayEnd);
 
-        var boxes = new ArrayList<RenderMaskBox>();
+        var shapes = new ArrayList<RenderMaskShape>();
         for (var chunk : splitObjectChunks(arrayContent)) {
-            boxes.add(parseBox(chunk));
+            shapes.add(parseEntry(chunk));
         }
-        return boxes;
+        return shapes;
     }
 
     private static String stripComments(String content) {
@@ -179,30 +184,115 @@ public class RenderMaskEvaluator {
         return chunks;
     }
 
-    private static RenderMaskBox parseBox(String chunk) {
-        var minX = Integer.MIN_VALUE;
-        var maxX = Integer.MAX_VALUE;
-        var minY = Integer.MIN_VALUE;
-        var maxY = Integer.MAX_VALUE;
-        var minZ = Integer.MIN_VALUE;
-        var maxZ = Integer.MAX_VALUE;
-        var subtract = false;
+    // Dispatches on the entry's "type" field (defaulting to "box" when absent, matching today's
+    // implicit behavior) to the matching shape parser. An unrecognized type throws, which the
+    // caller (loadRenderMask) catches and logs, failing the whole map open.
+    private static RenderMaskShape parseEntry(String chunk) {
+        var type = extractType(chunk);
+        var fields = extractFields(chunk);
+        var subtract = Boolean.parseBoolean(fields.getOrDefault("subtract", "false"));
 
+        return switch (type) {
+            case "box" -> parseBox(fields, subtract);
+            case "circle" -> parseCircle(fields, subtract);
+            case "ellipse" -> parseEllipse(fields, subtract);
+            case "polygon" -> parsePolygon(chunk, fields, subtract);
+            default -> throw new IllegalStateException("Unrecognized render-mask entry type '" + type + "'");
+        };
+    }
+
+    private static String extractType(String chunk) {
+        var matcher = TYPE_PATTERN.matcher(chunk);
+        return matcher.find() ? matcher.group(1).toLowerCase(Locale.ROOT) : "box";
+    }
+
+    private static Map<String, String> extractFields(String chunk) {
+        var fields = new HashMap<String, String>();
         var matcher = FIELD_PATTERN.matcher(chunk);
         while (matcher.find()) {
-            var value = matcher.group(2);
-            switch (matcher.group(1)) {
-                case "min-x" -> minX = Integer.parseInt(value);
-                case "max-x" -> maxX = Integer.parseInt(value);
-                case "min-y" -> minY = Integer.parseInt(value);
-                case "max-y" -> maxY = Integer.parseInt(value);
-                case "min-z" -> minZ = Integer.parseInt(value);
-                case "max-z" -> maxZ = Integer.parseInt(value);
-                case "subtract" -> subtract = Boolean.parseBoolean(value);
-                default -> { /* unknown key within the block; ignore */ }
-            }
+            fields.put(matcher.group(1), matcher.group(2));
+        }
+        return fields;
+    }
+
+    private static int intField(Map<String, String> fields, String key, int defaultValue) {
+        var value = fields.get(key);
+        return value == null ? defaultValue : Integer.parseInt(value);
+    }
+
+    private static double requiredDoubleField(Map<String, String> fields, String key) {
+        var value = fields.get(key);
+        if (value == null) {
+            throw new IllegalStateException("Missing required render-mask field '" + key + "'");
+        }
+        return Double.parseDouble(value);
+    }
+
+    private static RenderMaskBox parseBox(Map<String, String> fields, boolean subtract) {
+        return new RenderMaskBox(
+                intField(fields, "min-x", Integer.MIN_VALUE),
+                intField(fields, "max-x", Integer.MAX_VALUE),
+                intField(fields, "min-y", Integer.MIN_VALUE),
+                intField(fields, "max-y", Integer.MAX_VALUE),
+                intField(fields, "min-z", Integer.MIN_VALUE),
+                intField(fields, "max-z", Integer.MAX_VALUE),
+                subtract);
+    }
+
+    private static RenderMaskCircle parseCircle(Map<String, String> fields, boolean subtract) {
+        return new RenderMaskCircle(
+                requiredDoubleField(fields, "center-x"),
+                requiredDoubleField(fields, "center-z"),
+                requiredDoubleField(fields, "radius"),
+                intField(fields, "min-y", Integer.MIN_VALUE),
+                intField(fields, "max-y", Integer.MAX_VALUE),
+                subtract);
+    }
+
+    private static RenderMaskEllipse parseEllipse(Map<String, String> fields, boolean subtract) {
+        return new RenderMaskEllipse(
+                requiredDoubleField(fields, "center-x"),
+                requiredDoubleField(fields, "center-z"),
+                requiredDoubleField(fields, "radius-x"),
+                requiredDoubleField(fields, "radius-z"),
+                intField(fields, "min-y", Integer.MIN_VALUE),
+                intField(fields, "max-y", Integer.MAX_VALUE),
+                subtract);
+    }
+
+    private static RenderMaskPolygon parsePolygon(String chunk, Map<String, String> fields, boolean subtract) {
+        var points = parsePolygonPoints(chunk);
+        if (points.size() < 3) {
+            throw new IllegalStateException("polygon render-mask entry requires at least 3 points");
         }
 
-        return new RenderMaskBox(minX, maxX, minY, maxY, minZ, maxZ, subtract);
+        return new RenderMaskPolygon(
+                points,
+                intField(fields, "min-y", Integer.MIN_VALUE),
+                intField(fields, "max-y", Integer.MAX_VALUE),
+                subtract);
+    }
+
+    private static List<RenderMaskPoint> parsePolygonPoints(String chunk) {
+        var shapeKeyMatcher = SHAPE_KEY.matcher(chunk);
+        if (!shapeKeyMatcher.find()) {
+            throw new IllegalStateException("polygon render-mask entry missing 'shape' array");
+        }
+
+        var arrayStart = chunk.indexOf('[', shapeKeyMatcher.end());
+        if (arrayStart < 0) {
+            throw new IllegalStateException("polygon 'shape' key found but no opening '[' after it");
+        }
+
+        var arrayEnd = findMatchingBracket(chunk, arrayStart, '[', ']');
+        var arrayContent = chunk.substring(arrayStart + 1, arrayEnd);
+
+        var points = new ArrayList<RenderMaskPoint>();
+        for (var pointChunk : splitObjectChunks(arrayContent)) {
+            var pointFields = extractFields(pointChunk);
+            points.add(new RenderMaskPoint(
+                    requiredDoubleField(pointFields, "x"), requiredDoubleField(pointFields, "z")));
+        }
+        return points;
     }
 }
