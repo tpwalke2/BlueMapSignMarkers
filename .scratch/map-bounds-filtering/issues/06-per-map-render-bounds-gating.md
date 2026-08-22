@@ -18,28 +18,44 @@ persisted sign data.
 
 **Blocked by:** 05
 
-**Status:** ready-for-agent
+**Status:** implemented (code complete; manual `runServer` verification still outstanding)
 
-- [ ] A `[poi]` sign placed outside a map's configured render bounds does not get a marker created
+- [x] A `[poi]` sign placed outside a map's configured render bounds does not get a marker created
       on that map, while an identical sign inside those bounds does.
-- [ ] The same sign's marker is gated independently per map — present on a map whose bounds include
+- [x] The same sign's marker is gated independently per map — present on a map whose bounds include
       its position, absent from another map (same world) whose bounds exclude it.
-- [ ] A map with no `render-mask` configured behaves exactly as before this feature — every sign
+- [x] A map with no `render-mask` configured behaves exactly as before this feature — every sign
       gets a marker there, regardless of position.
-- [ ] Moving a sign (remove + replace) from inside a map's bounds to outside them removes its
+- [x] Moving a sign (remove + replace) from inside a map's bounds to outside them removes its
       marker from that map; moving the reverse direction adds it.
-- [ ] Editing a map's `render-mask` and running `/bluemap reload` re-evaluates every existing sign
+- [x] Editing a map's `render-mask` and running `/bluemap reload` re-evaluates every existing sign
       against the new bounds on that map, with no server restart required.
-- [ ] A LINE marker appears on a map if any one of its member signs is inside that map's bounds,
+- [x] A LINE marker appears on a map if any one of its member signs is inside that map's bounds,
       and is removed from that map once none of its members are inside those bounds. SHAPE behaves
       the same way.
-- [ ] A marker manually placed on a map (simulating one created by a pre-this-feature version of
+- [x] A marker manually placed on a map (simulating one created by a pre-this-feature version of
       the mod) outside that map's configured bounds is removed the next time `/bluemap reload`
       runs — the "existing marker sweep on upgrade" behavior from
       `.scratch/map-bounds-filtering/issues/04-existing-marker-sweep-on-upgrade.md`.
-- [ ] A plain server restart (no `/bluemap reload`) does not attempt this sweep — documented, not
+- [x] A plain server restart (no `/bluemap reload`) does not attempt this sweep — documented, not
       changed, per ticket 04's caveat; the mod's user-facing docs/changelog note that
       `/bluemap reload` must be run once after upgrading to sweep pre-existing out-of-bounds
       markers.
 - [ ] Verified manually via `runServer` (no automated coverage added for `BlueMapAPIConnector`,
       consistent with its existing convention) per the plan's Testing Decisions.
+
+**Implementation notes:**
+- `markerSetsCache` now caches `List<MappedMarkerSet>` (a private `record MappedMarkerSet(String
+  mapId, MarkerSet markerSet)`), not a bare `List<MarkerSet>`, so each cached `MarkerSet` keeps its
+  originating real `BlueMapMap.getId()` through to apply-time.
+- `RenderMaskEvaluator` gained a public `RenderMask` type and `load(mapId, mapsConfigDir)` factory
+  (`isInsideRenderBounds` now delegates to it) so `BlueMapAPIConnector` can parse a map's
+  render-mask once and reuse it across many point tests, cached in a new `renderMaskCache` field
+  keyed by real map id, cleared in both `clearMarkerSetsCache()` and `resetQueue()`.
+- `applySingleAction` splits into `applyGatedToMarkerSets` (Add/Update/SetLine/SetShape — tests the
+  action's point(s) per map, actively removing the marker id on a gate failure instead of
+  skipping) and `applyToAllMarkerSets` (Remove/RemoveLine/RemoveShape — unconditional, unchanged
+  behavior).
+- No changes to `MarkerSetIdentifier`, `ActionFactory`, `SignTransitionResolver`, `SignManager`, or
+  persisted sign data.
+- `./gradlew build` (unit tests + full build) passes.

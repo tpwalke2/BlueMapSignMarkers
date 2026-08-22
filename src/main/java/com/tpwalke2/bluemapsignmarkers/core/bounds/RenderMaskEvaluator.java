@@ -31,8 +31,26 @@ public class RenderMaskEvaluator {
     private RenderMaskEvaluator() {}
 
     public static boolean isInsideRenderBounds(String mapId, Path mapsConfigDir, int x, int y, int z) {
-        var shapes = loadRenderMask(mapId, mapsConfigDir);
-        return evaluate(shapes, x, y, z);
+        return load(mapId, mapsConfigDir).contains(x, y, z);
+    }
+
+    // A parsed, ready-to-query render-mask for one map. Callers that test many points against the
+    // same map (e.g. BlueMapAPIConnector, once per real BlueMapMap id) should load() once and reuse
+    // the result instead of re-reading/re-parsing the .conf file on every point test.
+    public static final class RenderMask {
+        private final List<RenderMaskShape> shapes;
+
+        private RenderMask(List<RenderMaskShape> shapes) {
+            this.shapes = shapes;
+        }
+
+        public boolean contains(int x, int y, int z) {
+            return evaluate(shapes, x, y, z);
+        }
+    }
+
+    public static RenderMask load(String mapId, Path mapsConfigDir) {
+        return new RenderMask(loadRenderMask(mapId, mapsConfigDir));
     }
 
     // BlueMap's own CombinedMask algorithm: walk the entry list from last entry to first; the
