@@ -137,6 +137,26 @@ class RenderMaskEvaluatorTest {
     }
 
     @Test
+    void equalsSignSeparatorIsEquivalentToColon(@TempDir Path mapsDir) throws IOException {
+        writeConfig(mapsDir, "world.conf", """
+                render-mask = [
+                  {
+                    type = box
+                    min-x = -10
+                    max-x = 10
+                    min-y = -10
+                    max-y = 10
+                    min-z = -10
+                    max-z = 10
+                  }
+                ]
+                """);
+
+        assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 0, 0, 0));
+        assertFalse(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 1000, 0, 0));
+    }
+
+    @Test
     void omittedAxisBoundIsUnboundedOnlyOnThatAxis(@TempDir Path mapsDir) throws IOException {
         writeConfig(mapsDir, "world.conf", """
                 render-mask: [
