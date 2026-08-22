@@ -117,6 +117,26 @@ class RenderMaskEvaluatorTest {
     }
 
     @Test
+    void quotedBooleanAndNumericFieldsAreEquivalentToBareLiterals(@TempDir Path mapsDir) throws IOException {
+        writeConfig(mapsDir, "world.conf", """
+                render-mask: [
+                  {
+                    subtract: "true"
+                    min-x: "-10"
+                    max-x: "10"
+                    min-y: "-10"
+                    max-y: "10"
+                    min-z: "-10"
+                    max-z: "10"
+                  }
+                ]
+                """);
+
+        assertFalse(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 0, 0, 0));
+        assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 1000, 0, 0));
+    }
+
+    @Test
     void omittedAxisBoundIsUnboundedOnlyOnThatAxis(@TempDir Path mapsDir) throws IOException {
         writeConfig(mapsDir, "world.conf", """
                 render-mask: [

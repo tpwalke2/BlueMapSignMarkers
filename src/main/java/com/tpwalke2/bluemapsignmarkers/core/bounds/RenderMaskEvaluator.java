@@ -25,8 +25,12 @@ public class RenderMaskEvaluator {
     private static final Pattern RENDER_MASK_KEY = Pattern.compile("render-mask\\s*:");
     private static final Pattern SHAPE_KEY = Pattern.compile("shape\\s*:");
     private static final Pattern TYPE_PATTERN = Pattern.compile("type\\s*:\\s*\"?([A-Za-z]+)\"?");
+    // Value is matched with an optional surrounding quote on each side rather than requiring both -
+    // valid HOCON allows a quoted numeric/boolean literal (e.g. subtract: "true") as equivalent to
+    // the bare form, and this mod's fields are all numeric/boolean, so there's no case where treating
+    // the quoted and bare spellings the same way is wrong.
     private static final Pattern FIELD_PATTERN =
-            Pattern.compile("([A-Za-z][\\w-]*)\\s*:\\s*(-?\\d+(?:\\.\\d+)?|true|false)");
+            Pattern.compile("([A-Za-z][\\w-]*)\\s*:\\s*\"?(-?\\d+(?:\\.\\d+)?|true|false)\"?");
 
     private RenderMaskEvaluator() {}
 
