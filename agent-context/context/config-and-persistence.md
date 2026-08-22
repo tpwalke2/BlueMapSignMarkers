@@ -221,5 +221,5 @@ in place. Old region files (or a not-yet-migrated legacy `signs.json`) on live s
 the version they were written with.
 
 ---
-*Last updated: 2026-08-22 | Verified against: feature/tpwalke2/67-map-bounds (217c17f)*
+*Last updated: 2026-08-22 | Verified against: docs/tpwalke2/refactor (f1d4730)*
 

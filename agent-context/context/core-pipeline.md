@@ -498,9 +498,10 @@ gating" section. This section covers the code-level mechanics.
 - **Fails open** (mask treated as unbounded — every point passes) on every failure path, all funneling to an empty
   shape list: no `config/bluemap/maps/` directory, or no file matching the sanitized map id (`findConfigFile`
   returns `null`); an `IOException` reading the matched file; a `RuntimeException` (malformed/unbalanced config,
-  unrecognized shape type) while parsing it. Each of these logs a warning before returning the empty list — a
-  broken render-mask config degrades to "no filtering" rather than crashing marker dispatch (see
-  `project_no_server_crashes` guidance).
+  unrecognized shape type, or an ellipse's `radius-x`/`radius-z` parsed as `<= 0` — `requiredPositiveDoubleField`
+  rejects it before it can reach `RenderMaskEllipse.contains()`'s division and produce `Infinity`/`NaN`) while
+  parsing it. Each of these logs a warning before returning the empty list — a broken render-mask config degrades
+  to "no filtering" rather than crashing marker dispatch (see `project_no_server_crashes` guidance).
 - **`BlueMapAPIConnector` integration**: `getRenderMask(mapId)` is `renderMaskCache.computeIfAbsent(mapId, id ->
   RenderMaskEvaluator.load(...))` — one parse per real map id, cached for the connector's lifetime until
   invalidated (see §6). `MappedMarkerSet(String mapId, MarkerSet markerSet)` is a private record pairing a cached
@@ -529,5 +530,5 @@ gating" section. This section covers the code-level mechanics.
   themselves are otherwise unchanged — the fix is localized to `prepareGated`.
 
 ---
-*Last updated: 2026-08-22 | Verified against: feature/tpwalke2/67-map-bounds (217c17f)*
+*Last updated: 2026-08-22 | Verified against: docs/tpwalke2/refactor (f1d4730)*
 
