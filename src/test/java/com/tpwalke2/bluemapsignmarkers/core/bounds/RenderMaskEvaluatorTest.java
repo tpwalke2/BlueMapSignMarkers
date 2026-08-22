@@ -9,6 +9,7 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class RenderMaskEvaluatorTest {
 
@@ -84,9 +85,12 @@ class RenderMaskEvaluatorTest {
         var file = writeConfig(mapsDir, "world.conf", "render-mask: [ { min-y: 0 } ]\n");
         var permissionsRevoked = file.toFile().setReadable(false);
         try {
-            if (permissionsRevoked) {
-                assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 0, -6000, 0));
-            }
+            // File.setReadable(false) is unreliable across platforms (notably Windows, where an
+            // owner/admin process can often still read the file afterward) - assumeTrue marks the
+            // test as skipped rather than passed when that happened, so an unverifiable platform is
+            // visible in the test report instead of reading as a silent, unearned pass.
+            assumeTrue(permissionsRevoked, "Could not revoke read permission on this platform; fail-open behavior unverified");
+            assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 0, -6000, 0));
         } finally {
             file.toFile().setReadable(true);
         }
