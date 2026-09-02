@@ -27,6 +27,7 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -249,8 +250,8 @@ public class ConfigProvider {
         if (sorting == null || sorting.isJsonNull()) return DEFAULT_SORTING;
 
         try {
-            return sorting.getAsInt();
-        } catch (NumberFormatException | UnsupportedOperationException e) {
+            return sorting.getAsBigDecimal().intValueExact();
+        } catch (RuntimeException e) {
             LOGGER.warn("Marker group '{}' has a malformed 'sorting' ({}); falling back to default {}",
                     markerGroup.name(), sorting, DEFAULT_SORTING);
             return DEFAULT_SORTING;
@@ -273,7 +274,13 @@ public class ConfigProvider {
     // warnOnTypeFieldMismatches already warns on the LINE/SHAPE case.
     private static List<String> resolveCssClasses(LoadingMarkerGroupV2 markerGroup) {
         var cssClasses = markerGroup.cssClasses();
-        return cssClasses == null ? List.of() : List.copyOf(cssClasses);
+        if (cssClasses == null) return List.of();
+
+        var filtered = cssClasses.stream().filter(Objects::nonNull).toList();
+        if (filtered.size() != cssClasses.size()) {
+            LOGGER.warn("Marker group '{}' has null entries in 'cssClasses'; dropping them", markerGroup.name());
+        }
+        return filtered;
     }
 
     // Falls back to the default width on a non-positive value rather than throwing - a bad config value
