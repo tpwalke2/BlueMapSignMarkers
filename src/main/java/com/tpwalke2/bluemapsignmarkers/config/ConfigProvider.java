@@ -250,6 +250,9 @@ public class ConfigProvider {
         if (sorting == null || sorting.isJsonNull()) return DEFAULT_SORTING;
 
         try {
+            if (!sorting.isJsonPrimitive() || !sorting.getAsJsonPrimitive().isNumber()) {
+                throw new IllegalArgumentException("not a numeric JSON primitive");
+            }
             return sorting.getAsBigDecimal().intValueExact();
         } catch (RuntimeException e) {
             LOGGER.warn("Marker group '{}' has a malformed 'sorting' ({}); falling back to default {}",

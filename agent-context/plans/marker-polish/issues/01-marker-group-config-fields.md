@@ -23,4 +23,5 @@ See `../spec.md` for full context (Implementation/Testing Decisions sections).
 
 **Implementation note:** `LoadingMarkerGroupV2.sorting` is typed as a raw `JsonElement` (not `Integer`), so a
 non-integer `sorting` value falls back with a warning instead of failing Gson's parse for the whole config;
-`ConfigProvider.resolveSorting` validates it manually via `getAsInt()`.
+`ConfigProvider.resolveSorting` validates it manually via `getAsBigDecimal().intValueExact()`, requiring a numeric
+`JsonPrimitive` (a numeric string is rejected, not coerced).

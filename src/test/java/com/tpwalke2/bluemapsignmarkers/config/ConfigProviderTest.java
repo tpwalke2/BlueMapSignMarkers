@@ -621,6 +621,26 @@ class ConfigProviderTest {
     }
 
     @Test
+    void loadConfigFallsBackToDefaultSortingWhenANumericString(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group", "sorting": "5" }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(1, config.getMarkerGroups().length);
+        assertEquals(0, config.getMarkerGroups()[0].sorting());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("sorting")));
+    }
+
+    @Test
     void loadConfigFallsBackToDefaultSortingWhenAnArray(@TempDir Path tempDir) throws IOException {
         var path = tempDir.resolve("BMSM-Core.json");
         Files.writeString(path, """
