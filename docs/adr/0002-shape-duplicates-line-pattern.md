@@ -10,3 +10,9 @@ tuned around two types, and forcing a third through a generic abstraction risked
 marginal reuse win. Genuinely-identical inline logic (member resolution, join/leave/threshold math) was factored
 into shared pure functions where duplication would otherwise be copy-paste, short of a full generic type. Revisit
 extraction if a fourth multi-point marker kind appears.
+
+**Update:** `EXTRUDE` (agent-context/plans/extrude-markers/spec.md) is that fourth kind, and duplicated the same
+pattern again (`ExtrudeGroupResolver`, `SetExtrudeMarkerAction`/`RemoveExtrudeMarkerAction`,
+`ExtrudeMarkerIdentifier`, a 4-way switch in `SignTransitionResolver`) rather than extracting. The transition
+table's branch-per-type-pair shape held up fine at 4 types; the marginal-reuse-vs-readability tradeoff above still
+favored duplication. Revisit extraction if a fifth multi-point marker kind appears.

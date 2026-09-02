@@ -126,6 +126,7 @@ public class SignTransitionResolver {
             case POI -> actionFactory.createRemovePOIAction(key.x(), key.y(), key.z(), key.parentMap(), rep.group());
             case LINE -> lineLeaveAction(allSignsSupplier, key.parentMap(), rep, actionFactory, currentPrefixGroupMap);
             case SHAPE -> shapeLeaveAction(allSignsSupplier, key.parentMap(), rep, actionFactory, currentPrefixGroupMap);
+            case EXTRUDE -> extrudeLeaveAction(allSignsSupplier, key.parentMap(), rep, actionFactory, currentPrefixGroupMap);
         };
     }
 
@@ -151,6 +152,7 @@ public class SignTransitionResolver {
             case POI -> actionFactory.createAddPOIAction(key.x(), key.y(), key.z(), key.parentMap(), rep.label(), rep.detail(), rep.group());
             case LINE -> lineJoinAction(allSignsSupplier, key.parentMap(), rep, actionFactory, sameGroupRecompute);
             case SHAPE -> shapeJoinAction(allSignsSupplier, key.parentMap(), rep, actionFactory, sameGroupRecompute);
+            case EXTRUDE -> extrudeJoinAction(allSignsSupplier, key.parentMap(), rep, actionFactory, sameGroupRecompute);
         };
     }
 
@@ -221,6 +223,37 @@ public class SignTransitionResolver {
 
         if (members.size() == SHAPE_MIN_MEMBERS - 1) {
             return actionFactory.createRemoveShapeAction(parentMap, rep.group(), rep.label());
+        }
+
+        return null;
+    }
+
+    // EXTRUDE mirrors SHAPE's join/leave/recompute shape (see shapeJoinAction/shapeLeaveAction above) at the
+    // same 3-member render threshold - the floor/ceiling Y values are computed from the ordered points at
+    // dispatch time (BlueMapAPIConnector.setExtrudeMarker), not here.
+    private static final int EXTRUDE_MIN_MEMBERS = 3;
+
+    private static MarkerAction extrudeJoinAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, boolean sameGroupRecompute) {
+        var members = ExtrudeGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
+        if (members.size() < EXTRUDE_MIN_MEMBERS) return null;
+
+        var isFirstAppearance = !sameGroupRecompute && members.size() == EXTRUDE_MIN_MEMBERS;
+        return actionFactory.createSetExtrudeAction(parentMap, rep.group(), rep.label(), rep.label(), toPoints(members), isFirstAppearance);
+    }
+
+    private static MarkerAction extrudeLeaveAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, Map<String, MarkerGroup> currentPrefixGroupMap) {
+        if (groupIdentityObsolete(rep, currentPrefixGroupMap)) {
+            return actionFactory.createRemoveExtrudeAction(parentMap, rep.group(), rep.label());
+        }
+
+        var members = ExtrudeGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
+
+        if (members.size() >= EXTRUDE_MIN_MEMBERS) {
+            return actionFactory.createSetExtrudeAction(parentMap, rep.group(), rep.label(), rep.label(), toPoints(members), false);
+        }
+
+        if (members.size() == EXTRUDE_MIN_MEMBERS - 1) {
+            return actionFactory.createRemoveExtrudeAction(parentMap, rep.group(), rep.label());
         }
 
         return null;

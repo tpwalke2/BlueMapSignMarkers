@@ -4,9 +4,11 @@ import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.ActionFactory;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.AddMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.GroupTransitionMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.MarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveExtrudeMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveLineMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveShapeMarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetExtrudeMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetLineMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetShapeMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.UpdateMarkerAction;
@@ -46,6 +48,15 @@ class SignTransitionResolverTest {
 
     private static MarkerGroup shapeGroup(String prefix, String name) {
         return new MarkerGroup(prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.SHAPE,
+                name, null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
+    }
+
+    private static MarkerGroup extrudeGroup(String prefix) {
+        return extrudeGroup(prefix, "name");
+    }
+
+    private static MarkerGroup extrudeGroup(String prefix, String name) {
+        return new MarkerGroup(prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.EXTRUDE,
                 name, null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
     }
 
@@ -717,6 +728,463 @@ class SignTransitionResolverTest {
         var leave = assertInstanceOf(RemoveShapeMarkerAction.class, transition.effects().get(0));
         assertEquals(oldGroup, leave.getMarkerIdentifier().parentSet().markerGroup());
         var join = assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(1));
+        assertEquals(newGroup, join.getMarkerIdentifier().parentSet().markerGroup());
+        assertEquals(3, join.getPoints().size());
+    }
+
+    // --- EXTRUDE: join/leave/recompute at the 3-member threshold (mirrors the SHAPE table above) ---
+
+    @Test
+    void noneToExtrudeWithFewerThanThreeMembersIsNoOp() {
+        var group = extrudeGroup("[building]");
+        var first = signEntry(0, 64, 0, "[building]", "Tower", "d1", 1000L);
+        var second = signEntry(1, 64, 0, "[building]", "Tower", "d2", 2000L);
+        var newRep = rep(second, group);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(first, second), second.key(), null, newRep, actionFactory(), false, Map.of(group.prefix(), group));
+
+        assertNull(action);
+    }
+
+    @Test
+    void noneToExtrudeAtExactlyThreeMembersDispatchesSetWithFirstAppearanceTrue() {
+        var group = extrudeGroup("[building]");
+        var first = signEntry(0, 64, 0, "[building]", "Tower", "d1", 1000L);
+        var second = signEntry(1, 64, 0, "[building]", "Tower", "d2", 2000L);
+        var third = signEntry(2, 64, 0, "[building]", "Tower", "d3", 3000L);
+        var newRep = rep(third, group);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(first, second, third), third.key(), null, newRep, actionFactory(), false, Map.of(group.prefix(), group));
+
+        var set = assertInstanceOf(SetExtrudeMarkerAction.class, action);
+        assertTrue(set.isFirstAppearance());
+        assertEquals(3, set.getPoints().size());
+        assertEquals("Tower", set.getDetail());
+    }
+
+    @Test
+    void noneToExtrudeJoiningAFourthMemberDispatchesSetWithFirstAppearanceFalse() {
+        var group = extrudeGroup("[building]");
+        var first = signEntry(0, 64, 0, "[building]", "Tower", "d1", 1000L);
+        var second = signEntry(1, 64, 0, "[building]", "Tower", "d2", 2000L);
+        var third = signEntry(2, 64, 0, "[building]", "Tower", "d3", 3000L);
+        var fourth = signEntry(3, 64, 0, "[building]", "Tower", "d4", 4000L);
+        var newRep = rep(fourth, group);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(first, second, third, fourth), fourth.key(), null, newRep, actionFactory(), false, Map.of(group.prefix(), group));
+
+        var set = assertInstanceOf(SetExtrudeMarkerAction.class, action);
+        assertTrue(!set.isFirstAppearance());
+        assertEquals(4, set.getPoints().size());
+    }
+
+    @Test
+    void extrudeToNoneDroppingToTwoRemainingMembersDispatchesRemoveExtrude() {
+        var group = extrudeGroup("[building]");
+        var departing = signEntry(0, 64, 0, "[building]", "Tower", "d1", 1000L);
+        var remaining1 = signEntry(1, 64, 0, "[building]", "Tower", "d2", 2000L);
+        var remaining2 = signEntry(2, 64, 0, "[building]", "Tower", "d3", 3000L);
+        var oldRep = rep(departing, group);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(remaining1, remaining2), departing.key(), oldRep, null, actionFactory(), false, Map.of(group.prefix(), group));
+
+        assertInstanceOf(RemoveExtrudeMarkerAction.class, action);
+    }
+
+    @Test
+    void extrudeToNoneDroppingToOneOrZeroRemainingMembersIsNoOp() {
+        var group = extrudeGroup("[building]");
+        var departing = signEntry(0, 64, 0, "[building]", "Tower", "d1", 1000L);
+        var remaining = signEntry(1, 64, 0, "[building]", "Tower", "d2", 2000L);
+        var oldRep = rep(departing, group);
+
+        var actionWithOneRemaining = SignTransitionResolver.computeTransitionAction(() -> List.of(remaining), departing.key(), oldRep, null, actionFactory(), false, Map.of(group.prefix(), group));
+        var actionWithNoneRemaining = SignTransitionResolver.computeTransitionAction(() -> List.of(), departing.key(), oldRep, null, actionFactory(), false, Map.of(group.prefix(), group));
+
+        assertNull(actionWithOneRemaining);
+        assertNull(actionWithNoneRemaining);
+    }
+
+    @Test
+    void extrudeToNoneWithThreeOrMoreRemainingDispatchesRefreshedSet() {
+        var group = extrudeGroup("[building]");
+        var departing = signEntry(0, 64, 0, "[building]", "Tower", "d1", 1000L);
+        var remaining1 = signEntry(1, 64, 0, "[building]", "Tower", "d2", 2000L);
+        var remaining2 = signEntry(2, 64, 0, "[building]", "Tower", "d3", 3000L);
+        var remaining3 = signEntry(3, 64, 0, "[building]", "Tower", "d4", 4000L);
+        var oldRep = rep(departing, group);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(remaining1, remaining2, remaining3), departing.key(), oldRep, null, actionFactory(), false, Map.of(group.prefix(), group));
+
+        var set = assertInstanceOf(SetExtrudeMarkerAction.class, action);
+        assertEquals(3, set.getPoints().size());
+        assertEquals("Tower", set.getDetail());
+    }
+
+    @Test
+    void extrudeToExtrudeSameGroupAndLabelDetailUnchangedIsNoOp() {
+        var group = extrudeGroup("[building]");
+        var self = signEntry(0, 64, 0, "[building]", "Tower", "detail", 1000L);
+        var other1 = signEntry(1, 64, 0, "[building]", "Tower", "d2", 2000L);
+        var other2 = signEntry(2, 64, 0, "[building]", "Tower", "d3", 3000L);
+        var oldRep = rep(self, group);
+        var newRep = rep(self, group);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(self, other1, other2), self.key(), oldRep, newRep, actionFactory(), false, Map.of(group.prefix(), group));
+
+        assertNull(action);
+    }
+
+    @Test
+    void extrudeToExtrudeSameGroupAndLabelDetailChangedDispatchesSetWithFirstAppearanceFalse() {
+        var group = extrudeGroup("[building]");
+        var oldEntry = signEntry(0, 64, 0, "[building]", "Tower", "old detail", 1000L);
+        var newEntry = signEntry(0, 64, 0, "[building]", "Tower", "new detail", 1000L);
+        var other1 = signEntry(1, 64, 0, "[building]", "Tower", "d2", 2000L);
+        var other2 = signEntry(2, 64, 0, "[building]", "Tower", "d3", 3000L);
+        var oldRep = rep(oldEntry, group);
+        var newRep = rep(newEntry, group);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(newEntry, other1, other2), newEntry.key(), oldRep, newRep, actionFactory(), false, Map.of(group.prefix(), group));
+
+        var set = assertInstanceOf(SetExtrudeMarkerAction.class, action);
+        assertTrue(!set.isFirstAppearance());
+    }
+
+    @Test
+    void extrudeToExtrudeSameGroupAndLabelDetailUnchangedOnReloadDispatchesSet() {
+        var group = extrudeGroup("[building]");
+        var self = signEntry(0, 64, 0, "[building]", "Tower", "detail", 1000L);
+        var other1 = signEntry(1, 64, 0, "[building]", "Tower", "d2", 2000L);
+        var other2 = signEntry(2, 64, 0, "[building]", "Tower", "d3", 3000L);
+        var oldRep = rep(self, group);
+        var newRep = rep(self, group);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(self, other1, other2), self.key(), oldRep, newRep, actionFactory(), true, Map.of(group.prefix(), group));
+
+        var set = assertInstanceOf(SetExtrudeMarkerAction.class, action);
+        assertEquals(3, set.getPoints().size());
+        assertEquals("Tower", set.getDetail());
+    }
+
+    @Test
+    void extrudeToExtrudeDifferentGroupBundlesLeaveAndJoin() {
+        var oldGroup = extrudeGroup("[buildingA]");
+        var newGroup = extrudeGroup("[buildingB]");
+        var otherOldGroupMember1 = signEntry(8, 64, 8, "[buildingA]", "OldLabel", "d", 400L);
+        var otherOldGroupMember2 = signEntry(9, 64, 9, "[buildingA]", "OldLabel", "d", 500L);
+        var movedEntry = signEntry(0, 64, 0, "[buildingB]", "NewLabel", "d", 1000L);
+        var otherNewGroupMember1 = signEntry(1, 64, 0, "[buildingB]", "NewLabel", "d2", 2000L);
+        var otherNewGroupMember2 = signEntry(2, 64, 0, "[buildingB]", "NewLabel", "d3", 3000L);
+        var oldRep = rep(signEntry(0, 64, 0, "[buildingA]", "OldLabel", "d", 1000L), oldGroup);
+        var newRep = rep(movedEntry, newGroup);
+
+        var allSigns = List.of(otherOldGroupMember1, otherOldGroupMember2, movedEntry, otherNewGroupMember1, otherNewGroupMember2);
+        var action = SignTransitionResolver.computeTransitionAction(() -> allSigns, movedEntry.key(), oldRep, newRep, actionFactory(), false, Map.of(oldGroup.prefix(), oldGroup, newGroup.prefix(), newGroup));
+
+        var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
+        assertEquals(2, transition.effects().size());
+        assertInstanceOf(RemoveExtrudeMarkerAction.class, transition.effects().get(0));
+        var join = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(1));
+        assertEquals(3, join.getPoints().size());
+    }
+
+    // --- POI<->EXTRUDE, LINE<->EXTRUDE and SHAPE<->EXTRUDE type flips (both directions) ---
+
+    @Test
+    void poiToExtrudeBundlesRemovePoiAndSetExtrude() {
+        var poi = poiGroup("[poi]");
+        var extrude = extrudeGroup("[building]");
+        var movedEntry = signEntry(0, 64, 0, "[building]", "Tower", "d", 1000L);
+        var otherMember1 = signEntry(1, 64, 0, "[building]", "Tower", "d2", 2000L);
+        var otherMember2 = signEntry(2, 64, 0, "[building]", "Tower", "d3", 3000L);
+        var oldRep = rep(signEntry(0, 64, 0, "[poi]", "Shop", "d", 1000L), poi);
+        var newRep = rep(movedEntry, extrude);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(movedEntry, otherMember1, otherMember2), movedEntry.key(), oldRep, newRep, actionFactory(), false, Map.of(poi.prefix(), poi, extrude.prefix(), extrude));
+
+        var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
+        assertEquals(2, transition.effects().size());
+        assertInstanceOf(RemoveMarkerAction.class, transition.effects().get(0));
+        var join = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(1));
+        assertTrue(join.isFirstAppearance());
+    }
+
+    @Test
+    void extrudeToPoiBundlesSetExtrudeAndAddPoi() {
+        var extrude = extrudeGroup("[building]");
+        var poi = poiGroup("[poi]");
+        var departing = signEntry(0, 64, 0, "[building]", "Tower", "d", 1000L);
+        var remaining1 = signEntry(1, 64, 0, "[building]", "Tower", "d2", 2000L);
+        var remaining2 = signEntry(2, 64, 0, "[building]", "Tower", "d3", 3000L);
+        var remaining3 = signEntry(3, 64, 0, "[building]", "Tower", "d4", 4000L);
+        var movedEntry = signEntry(0, 64, 0, "[poi]", "Shop", "d", 1000L);
+        var oldRep = rep(departing, extrude);
+        var newRep = rep(movedEntry, poi);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(remaining1, remaining2, remaining3, movedEntry), movedEntry.key(), oldRep, newRep, actionFactory(), false, Map.of(extrude.prefix(), extrude, poi.prefix(), poi));
+
+        var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
+        assertEquals(2, transition.effects().size());
+        var leave = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(0));
+        assertEquals(3, leave.getPoints().size());
+        assertInstanceOf(AddMarkerAction.class, transition.effects().get(1));
+    }
+
+    @Test
+    void lineToExtrudeBundlesRemoveLineAndSetExtrude() {
+        var line = lineGroup("[trail]");
+        var extrude = extrudeGroup("[building]");
+        var departingLineMember = signEntry(9, 64, 9, "[trail]", "Ridge", "d", 500L);
+        var movedEntry = signEntry(0, 64, 0, "[building]", "Tower", "d", 1000L);
+        var otherMember1 = signEntry(1, 64, 0, "[building]", "Tower", "d2", 2000L);
+        var otherMember2 = signEntry(2, 64, 0, "[building]", "Tower", "d3", 3000L);
+        var oldRep = rep(signEntry(0, 64, 0, "[trail]", "Ridge", "d", 1000L), line);
+        var newRep = rep(movedEntry, extrude);
+
+        var allSigns = List.of(departingLineMember, movedEntry, otherMember1, otherMember2);
+        var action = SignTransitionResolver.computeTransitionAction(() -> allSigns, movedEntry.key(), oldRep, newRep, actionFactory(), false, Map.of(line.prefix(), line, extrude.prefix(), extrude));
+
+        var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
+        assertEquals(2, transition.effects().size());
+        assertInstanceOf(RemoveLineMarkerAction.class, transition.effects().get(0));
+        var join = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(1));
+        assertTrue(join.isFirstAppearance());
+    }
+
+    @Test
+    void extrudeToLineBundlesRemoveExtrudeAndSetLine() {
+        var extrude = extrudeGroup("[building]");
+        var line = lineGroup("[trail]");
+        var departingExtrudeMember1 = signEntry(8, 64, 8, "[building]", "Tower", "d", 400L);
+        var departingExtrudeMember2 = signEntry(9, 64, 9, "[building]", "Tower", "d", 500L);
+        var movedEntry = signEntry(0, 64, 0, "[trail]", "Ridge", "d", 1000L);
+        var otherLineMember = signEntry(1, 64, 0, "[trail]", "Ridge", "d2", 2000L);
+        var oldRep = rep(signEntry(0, 64, 0, "[building]", "Tower", "d", 1000L), extrude);
+        var newRep = rep(movedEntry, line);
+
+        var allSigns = List.of(departingExtrudeMember1, departingExtrudeMember2, movedEntry, otherLineMember);
+        var action = SignTransitionResolver.computeTransitionAction(() -> allSigns, movedEntry.key(), oldRep, newRep, actionFactory(), false, Map.of(extrude.prefix(), extrude, line.prefix(), line));
+
+        var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
+        assertEquals(2, transition.effects().size());
+        assertInstanceOf(RemoveExtrudeMarkerAction.class, transition.effects().get(0));
+        assertInstanceOf(SetLineMarkerAction.class, transition.effects().get(1));
+    }
+
+    @Test
+    void shapeToExtrudeBundlesRemoveShapeAndSetExtrude() {
+        var shape = shapeGroup("[region]");
+        var extrude = extrudeGroup("[building]");
+        var departingShapeMember1 = signEntry(8, 64, 8, "[region]", "Plot", "d", 400L);
+        var departingShapeMember2 = signEntry(9, 64, 9, "[region]", "Plot", "d", 500L);
+        var movedEntry = signEntry(0, 64, 0, "[building]", "Tower", "d", 1000L);
+        var otherMember1 = signEntry(1, 64, 0, "[building]", "Tower", "d2", 2000L);
+        var otherMember2 = signEntry(2, 64, 0, "[building]", "Tower", "d3", 3000L);
+        var oldRep = rep(signEntry(0, 64, 0, "[region]", "Plot", "d", 1000L), shape);
+        var newRep = rep(movedEntry, extrude);
+
+        var allSigns = List.of(departingShapeMember1, departingShapeMember2, movedEntry, otherMember1, otherMember2);
+        var action = SignTransitionResolver.computeTransitionAction(() -> allSigns, movedEntry.key(), oldRep, newRep, actionFactory(), false, Map.of(shape.prefix(), shape, extrude.prefix(), extrude));
+
+        var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
+        assertEquals(2, transition.effects().size());
+        assertInstanceOf(RemoveShapeMarkerAction.class, transition.effects().get(0));
+        var join = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(1));
+        assertTrue(join.isFirstAppearance());
+    }
+
+    @Test
+    void extrudeToShapeBundlesRemoveExtrudeAndSetShape() {
+        var extrude = extrudeGroup("[building]");
+        var shape = shapeGroup("[region]");
+        var departingExtrudeMember1 = signEntry(8, 64, 8, "[building]", "Tower", "d", 400L);
+        var departingExtrudeMember2 = signEntry(9, 64, 9, "[building]", "Tower", "d", 500L);
+        var movedEntry = signEntry(0, 64, 0, "[region]", "Plot", "d", 1000L);
+        var otherMember1 = signEntry(1, 64, 0, "[region]", "Plot", "d2", 2000L);
+        var otherMember2 = signEntry(2, 64, 0, "[region]", "Plot", "d3", 3000L);
+        var oldRep = rep(signEntry(0, 64, 0, "[building]", "Tower", "d", 1000L), extrude);
+        var newRep = rep(movedEntry, shape);
+
+        var allSigns = List.of(departingExtrudeMember1, departingExtrudeMember2, movedEntry, otherMember1, otherMember2);
+        var action = SignTransitionResolver.computeTransitionAction(() -> allSigns, movedEntry.key(), oldRep, newRep, actionFactory(), false, Map.of(extrude.prefix(), extrude, shape.prefix(), shape));
+
+        var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
+        assertEquals(2, transition.effects().size());
+        assertInstanceOf(RemoveExtrudeMarkerAction.class, transition.effects().get(0));
+        var join = assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(1));
+        assertTrue(join.isFirstAppearance());
+    }
+
+    // --- isReload variants for POI<->EXTRUDE, LINE<->EXTRUDE and SHAPE<->EXTRUDE flips ---
+
+    @Test
+    void poiToExtrudeOnReloadStillBundlesRemovePoiAndSetExtrude() {
+        var poi = poiGroup("[poi]");
+        var extrude = extrudeGroup("[building]");
+        var movedEntry = signEntry(0, 64, 0, "[building]", "Tower", "d", 1000L);
+        var otherMember1 = signEntry(1, 64, 0, "[building]", "Tower", "d2", 2000L);
+        var otherMember2 = signEntry(2, 64, 0, "[building]", "Tower", "d3", 3000L);
+        var oldRep = rep(signEntry(0, 64, 0, "[poi]", "Shop", "d", 1000L), poi);
+        var newRep = rep(movedEntry, extrude);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(movedEntry, otherMember1, otherMember2), movedEntry.key(), oldRep, newRep, actionFactory(), true, Map.of(poi.prefix(), poi, extrude.prefix(), extrude));
+
+        var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
+        assertEquals(2, transition.effects().size());
+        assertInstanceOf(RemoveMarkerAction.class, transition.effects().get(0));
+        var join = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(1));
+        assertTrue(join.isFirstAppearance());
+    }
+
+    @Test
+    void extrudeToPoiOnReloadStillBundlesSetExtrudeAndAddPoi() {
+        var extrude = extrudeGroup("[building]");
+        var poi = poiGroup("[poi]");
+        var departing = signEntry(0, 64, 0, "[building]", "Tower", "d", 1000L);
+        var remaining1 = signEntry(1, 64, 0, "[building]", "Tower", "d2", 2000L);
+        var remaining2 = signEntry(2, 64, 0, "[building]", "Tower", "d3", 3000L);
+        var remaining3 = signEntry(3, 64, 0, "[building]", "Tower", "d4", 4000L);
+        var movedEntry = signEntry(0, 64, 0, "[poi]", "Shop", "d", 1000L);
+        var oldRep = rep(departing, extrude);
+        var newRep = rep(movedEntry, poi);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(remaining1, remaining2, remaining3, movedEntry), movedEntry.key(), oldRep, newRep, actionFactory(), true, Map.of(extrude.prefix(), extrude, poi.prefix(), poi));
+
+        var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
+        assertEquals(2, transition.effects().size());
+        var leave = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(0));
+        assertEquals(3, leave.getPoints().size());
+        assertInstanceOf(AddMarkerAction.class, transition.effects().get(1));
+    }
+
+    @Test
+    void lineToExtrudeOnReloadStillBundlesRemoveLineAndSetExtrude() {
+        var line = lineGroup("[trail]");
+        var extrude = extrudeGroup("[building]");
+        var departingLineMember = signEntry(9, 64, 9, "[trail]", "Ridge", "d", 500L);
+        var movedEntry = signEntry(0, 64, 0, "[building]", "Tower", "d", 1000L);
+        var otherMember1 = signEntry(1, 64, 0, "[building]", "Tower", "d2", 2000L);
+        var otherMember2 = signEntry(2, 64, 0, "[building]", "Tower", "d3", 3000L);
+        var oldRep = rep(signEntry(0, 64, 0, "[trail]", "Ridge", "d", 1000L), line);
+        var newRep = rep(movedEntry, extrude);
+
+        var allSigns = List.of(departingLineMember, movedEntry, otherMember1, otherMember2);
+        var action = SignTransitionResolver.computeTransitionAction(() -> allSigns, movedEntry.key(), oldRep, newRep, actionFactory(), true, Map.of(line.prefix(), line, extrude.prefix(), extrude));
+
+        var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
+        assertEquals(2, transition.effects().size());
+        assertInstanceOf(RemoveLineMarkerAction.class, transition.effects().get(0));
+        var join = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(1));
+        assertTrue(join.isFirstAppearance());
+    }
+
+    @Test
+    void extrudeToLineOnReloadStillBundlesRemoveExtrudeAndSetLine() {
+        var extrude = extrudeGroup("[building]");
+        var line = lineGroup("[trail]");
+        var departingExtrudeMember1 = signEntry(8, 64, 8, "[building]", "Tower", "d", 400L);
+        var departingExtrudeMember2 = signEntry(9, 64, 9, "[building]", "Tower", "d", 500L);
+        var movedEntry = signEntry(0, 64, 0, "[trail]", "Ridge", "d", 1000L);
+        var otherLineMember = signEntry(1, 64, 0, "[trail]", "Ridge", "d2", 2000L);
+        var oldRep = rep(signEntry(0, 64, 0, "[building]", "Tower", "d", 1000L), extrude);
+        var newRep = rep(movedEntry, line);
+
+        var allSigns = List.of(departingExtrudeMember1, departingExtrudeMember2, movedEntry, otherLineMember);
+        var action = SignTransitionResolver.computeTransitionAction(() -> allSigns, movedEntry.key(), oldRep, newRep, actionFactory(), true, Map.of(extrude.prefix(), extrude, line.prefix(), line));
+
+        var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
+        assertEquals(2, transition.effects().size());
+        assertInstanceOf(RemoveExtrudeMarkerAction.class, transition.effects().get(0));
+        assertInstanceOf(SetLineMarkerAction.class, transition.effects().get(1));
+    }
+
+    @Test
+    void shapeToExtrudeOnReloadStillBundlesRemoveShapeAndSetExtrude() {
+        var shape = shapeGroup("[region]");
+        var extrude = extrudeGroup("[building]");
+        var departingShapeMember1 = signEntry(8, 64, 8, "[region]", "Plot", "d", 400L);
+        var departingShapeMember2 = signEntry(9, 64, 9, "[region]", "Plot", "d", 500L);
+        var movedEntry = signEntry(0, 64, 0, "[building]", "Tower", "d", 1000L);
+        var otherMember1 = signEntry(1, 64, 0, "[building]", "Tower", "d2", 2000L);
+        var otherMember2 = signEntry(2, 64, 0, "[building]", "Tower", "d3", 3000L);
+        var oldRep = rep(signEntry(0, 64, 0, "[region]", "Plot", "d", 1000L), shape);
+        var newRep = rep(movedEntry, extrude);
+
+        var allSigns = List.of(departingShapeMember1, departingShapeMember2, movedEntry, otherMember1, otherMember2);
+        var action = SignTransitionResolver.computeTransitionAction(() -> allSigns, movedEntry.key(), oldRep, newRep, actionFactory(), true, Map.of(shape.prefix(), shape, extrude.prefix(), extrude));
+
+        var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
+        assertEquals(2, transition.effects().size());
+        assertInstanceOf(RemoveShapeMarkerAction.class, transition.effects().get(0));
+        var join = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(1));
+        assertTrue(join.isFirstAppearance());
+    }
+
+    @Test
+    void extrudeToShapeOnReloadStillBundlesRemoveExtrudeAndSetShape() {
+        var extrude = extrudeGroup("[building]");
+        var shape = shapeGroup("[region]");
+        var departingExtrudeMember1 = signEntry(8, 64, 8, "[building]", "Tower", "d", 400L);
+        var departingExtrudeMember2 = signEntry(9, 64, 9, "[building]", "Tower", "d", 500L);
+        var movedEntry = signEntry(0, 64, 0, "[region]", "Plot", "d", 1000L);
+        var otherMember1 = signEntry(1, 64, 0, "[region]", "Plot", "d2", 2000L);
+        var otherMember2 = signEntry(2, 64, 0, "[region]", "Plot", "d3", 3000L);
+        var oldRep = rep(signEntry(0, 64, 0, "[building]", "Tower", "d", 1000L), extrude);
+        var newRep = rep(movedEntry, shape);
+
+        var allSigns = List.of(departingExtrudeMember1, departingExtrudeMember2, movedEntry, otherMember1, otherMember2);
+        var action = SignTransitionResolver.computeTransitionAction(() -> allSigns, movedEntry.key(), oldRep, newRep, actionFactory(), true, Map.of(extrude.prefix(), extrude, shape.prefix(), shape));
+
+        var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
+        assertEquals(2, transition.effects().size());
+        assertInstanceOf(RemoveExtrudeMarkerAction.class, transition.effects().get(0));
+        assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(1));
+    }
+
+    // Regression mirroring shapeToPoiConfigOnlyTypeFlipOnReloadRemovesShapeInsteadOfRecomputing above, for
+    // EXTRUDE: a reload where a group's type flips (same prefix, EXTRUDE -> POI) while all its signs keep
+    // the same prefix/label must retire the old extrude marker, not recompute it.
+    @Test
+    void extrudeToPoiConfigOnlyTypeFlipOnReloadRemovesExtrudeInsteadOfRecomputing() {
+        var extrude = extrudeGroup("[building]");
+        var poi = poiGroup("[building]");
+        var first = signEntry(0, 64, 0, "[building]", "Tower", "d1", 1000L);
+        var second = signEntry(1, 64, 0, "[building]", "Tower", "d2", 2000L);
+        var third = signEntry(2, 64, 0, "[building]", "Tower", "d3", 3000L);
+        var oldRep = rep(first, extrude);
+        var newRep = rep(first, poi);
+
+        var allSigns = List.of(first, second, third);
+        var action = SignTransitionResolver.computeTransitionAction(() -> allSigns, first.key(), oldRep, newRep, actionFactory(), true, Map.of(poi.prefix(), poi));
+
+        var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
+        assertEquals(2, transition.effects().size());
+        assertInstanceOf(RemoveExtrudeMarkerAction.class, transition.effects().get(0));
+        assertInstanceOf(AddMarkerAction.class, transition.effects().get(1));
+    }
+
+    // Regression mirroring shapeToShapeGroupRenameOnReloadBundlesRemoveOldSetAndAddNewSet above, for EXTRUDE:
+    // a reload where an EXTRUDE group is renamed (same prefix/type, different `name`) must not take the
+    // same-group-and-label recompute shortcut, or the old marker set is never cleared.
+    @Test
+    void extrudeToExtrudeGroupRenameOnReloadBundlesRemoveOldSetAndAddNewSet() {
+        var oldGroup = extrudeGroup("[building]", "Old Name");
+        var newGroup = extrudeGroup("[building]", "New Name");
+        var first = signEntry(0, 64, 0, "[building]", "Tower", "d1", 1000L);
+        var second = signEntry(1, 64, 0, "[building]", "Tower", "d2", 2000L);
+        var third = signEntry(2, 64, 0, "[building]", "Tower", "d3", 3000L);
+        var oldRep = rep(first, oldGroup);
+        var newRep = rep(first, newGroup);
+
+        var allSigns = List.of(first, second, third);
+        var action = SignTransitionResolver.computeTransitionAction(() -> allSigns, first.key(), oldRep, newRep, actionFactory(), true, Map.of(newGroup.prefix(), newGroup));
+
+        var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
+        assertEquals(2, transition.effects().size());
+        var leave = assertInstanceOf(RemoveExtrudeMarkerAction.class, transition.effects().get(0));
+        assertEquals(oldGroup, leave.getMarkerIdentifier().parentSet().markerGroup());
+        var join = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(1));
         assertEquals(newGroup, join.getMarkerIdentifier().parentSet().markerGroup());
         assertEquals(3, join.getPoints().size());
     }
