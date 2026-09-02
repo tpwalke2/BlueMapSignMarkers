@@ -9,6 +9,8 @@ import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV2
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignLinesParseResultV2;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
@@ -19,7 +21,7 @@ class Version3ConverterTest {
     private static MarkerGroup poiGroup(String prefix) {
         return new MarkerGroup(
                 prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, prefix, null, 0, 0, false, 0, 0,
-                2, "#FF0000FF", "#FF000033");
+                2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
     }
 
     private static SignEntryV2 entryWith(SignLinesParseResultV2 front, SignLinesParseResultV2 back) {

@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -37,7 +38,7 @@ class VersionedFileSignEntryLoaderTest {
     private static MarkerGroup poiGroup(String prefix) {
         return new MarkerGroup(
                 prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, prefix, null, 0, 0, false, 0, 0,
-                2, "#FF0000FF", "#FF000033");
+                2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
     }
 
     @Test

@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -26,7 +27,7 @@ class Version1SignEntryLoaderTest {
     private static final Gson GSON = new Gson();
     private static final MarkerGroup[] POI_GROUP = {
             new MarkerGroup("[poi]", MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI,
-                    "[poi]", null, 0, 0, false, 0, 0, 2, "#FF0000FF", "#FF000033")
+                    "[poi]", null, 0, 0, false, 0, 0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of())
     };
 
     private static String load(Path tempDir, String legacyDimension) throws IOException {

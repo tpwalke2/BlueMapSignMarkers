@@ -509,11 +509,234 @@ class ConfigProviderTest {
                         10000000.0,
                         2,
                         "#FF0000FF",
-                        "#FF000033"));
+                        "#FF000033",
+                        0,
+                        true,
+                        true,
+                        List.of()));
 
         ConfigProvider.saveConfig(original, path);
         var reloaded = ConfigProvider.loadConfig(path);
 
         assertEquals("地図マーカー éèà", reloaded.getMarkerGroups()[0].name());
+    }
+
+    @Test
+    void loadConfigDefaultsSortingToggleableDepthTestAndCssClassesWhenOmitted(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(0, group.sorting());
+        assertTrue(group.toggleable());
+        assertTrue(group.depthTest());
+        assertTrue(group.cssClasses().isEmpty());
+    }
+
+    @Test
+    void loadConfigPreservesExplicitSortingToggleableDepthTestAndCssClasses(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[line]", "name": "Line Group", "type": "LINE", "sorting": 5, "toggleable": false, "depthTest": false }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(5, group.sorting());
+        assertFalse(group.toggleable());
+        assertFalse(group.depthTest());
+    }
+
+    @Test
+    void loadConfigPreservesExplicitCssClassesOnAPOIGroup(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group", "cssClasses": ["custom-poi", "highlight"] }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(List.of("custom-poi", "highlight"), group.cssClasses());
+    }
+
+    @Test
+    void loadConfigDropsNullEntriesInCssClasses(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group", "cssClasses": ["custom-poi", null] }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(1, config.getMarkerGroups().length);
+        assertEquals(List.of("custom-poi"), config.getMarkerGroups()[0].cssClasses());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("cssClasses")));
+    }
+
+    @Test
+    void loadConfigFallsBackToDefaultSortingWhenMalformed(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group", "sorting": "notanumber" }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(1, config.getMarkerGroups().length);
+        assertEquals(0, config.getMarkerGroups()[0].sorting());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("sorting")));
+    }
+
+    @Test
+    void loadConfigFallsBackToDefaultSortingWhenANumericString(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group", "sorting": "5" }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(1, config.getMarkerGroups().length);
+        assertEquals(0, config.getMarkerGroups()[0].sorting());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("sorting")));
+    }
+
+    @Test
+    void loadConfigFallsBackToDefaultSortingWhenAnArray(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group", "sorting": [1, 2] }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(1, config.getMarkerGroups().length);
+        assertEquals(0, config.getMarkerGroups()[0].sorting());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("sorting")));
+    }
+
+    @Test
+    void loadConfigFallsBackToDefaultSortingWhenOutOfIntRange(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group", "sorting": 99999999999999999999999999 }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(1, config.getMarkerGroups().length);
+        assertEquals(0, config.getMarkerGroups()[0].sorting());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("sorting")));
+    }
+
+    @Test
+    void loadConfigWarnsWhenDepthTestIsSetOnAPOIGroup(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group", "type": "POI", "depthTest": false }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(1, config.getMarkerGroups().length);
+        assertTrue(config.getMarkerGroups()[0].depthTest());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("depthTest")));
+    }
+
+    @Test
+    void loadConfigWarnsWhenCssClassesIsSetOnALineGroup(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[line]", "name": "Line Group", "type": "LINE", "cssClasses": ["ignored"] }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(1, config.getMarkerGroups().length);
+        assertTrue(config.getMarkerGroups()[0].cssClasses().isEmpty());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("cssClasses")));
+    }
+
+    @Test
+    void loadConfigWarnsWhenCssClassesIsSetOnAShapeGroup(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[shape]", "name": "Shape Group", "type": "SHAPE", "cssClasses": ["ignored"] }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(1, config.getMarkerGroups().length);
+        assertTrue(config.getMarkerGroups()[0].cssClasses().isEmpty());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("cssClasses")));
     }
 }

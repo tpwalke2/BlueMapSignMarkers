@@ -126,9 +126,13 @@ restart alone does not trigger the upgrade sweep (only a genuine BlueMap disable
 ### Marker groups and config
 
 `MarkerGroup` (record: prefix, matchType, type, name, icon, offsetX/Y, defaultHidden, minDistance/maxDistance,
-lineWidth, lineColor) is the unit of configuration described in `README.md`. `type` (`MarkerGroupType`: `POI` or
-`LINE`) picks which kind of marker the group's signs produce; `lineWidth`/`lineColor` only apply to `LINE` groups
-(setting them on a `POI` group is a warning, not an error). `ConfigManager` lazily loads a singleton `BMSMConfigV2`
+lineWidth, lineColor, fillColor, sorting, toggleable, depthTest, cssClasses) is the unit of configuration described
+in `README.md`. `type` (`MarkerGroupType`: `POI`, `LINE`, or `SHAPE`) picks which kind of marker the group's signs produce;
+`lineWidth`/`lineColor` apply to `LINE`/`SHAPE` groups (setting them on a `POI` group is a warning, not an error).
+`sorting`/`toggleable` are thin BlueMap `MarkerSet` passthroughs (menu order, hideability) that apply to every group
+type; `depthTest` (terrain occlusion) is `LINE`/`SHAPE`-only and `cssClasses` (custom.css hooks) is `POI`-only, each
+resolved in `ConfigProvider` and wired into the corresponding BlueMap builder call in `BlueMapAPIConnector`.
+`ConfigManager` lazily loads a singleton `BMSMConfigV2`
 via `ConfigProvider` from `config/bluemapsignmarkers/BMSM-Core.json`, creating sane defaults (a single `[poi]` group)
 if the file is missing or fails to load. `SignLinesParser` matches sign text against groups using either
 `STARTS_WITH` or `REGEX` (see `MarkerGroupMatchType`) — note that `REGEX` uses `String.matches(...)`, which requires

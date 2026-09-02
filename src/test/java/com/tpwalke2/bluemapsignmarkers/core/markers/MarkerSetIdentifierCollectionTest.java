@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -115,6 +116,6 @@ class MarkerSetIdentifierCollectionTest {
     private static MarkerGroup markerGroup(String prefix) {
         return new MarkerGroup(
                 prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, prefix, "icon.png", 0, 0, false, 0, 0,
-                2, "#FF0000FF", "#FF000033");
+                2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
     }
 }
