@@ -157,7 +157,12 @@ As of `feature/tpwalke2/67-map-bounds` (`217c17f`), `src/test/java/com/tpwalke2/
   as-is — see `resolveLineWidth`/`resolveLineColor` in `config-and-persistence.md`. `fillColor` has the same shape
   of coverage for `SHAPE` groups: default fallback (`#FF000033`) when unset, a valid custom hex preserved, an
   invalid hex falling back to the default with a warning, and warning-only (not load-failing) tests for
-  `fillColor` set on a `POI` or `LINE` group.
+  `fillColor` set on a `POI` or `LINE` group. `sorting`/`toggleable`/`depthTest`/`cssClasses` (ticket 197) each have
+  omitted-defaults and explicit-value-preserved tests; `sorting` additionally has malformed-value fallback tests
+  (a non-numeric string, a JSON array, a number outside `int` range — all fall back to `0` with a warning, per
+  `resolveSorting` in `config-and-persistence.md`); `cssClasses` has a null-entry-dropped test and warning-only
+  tests for `cssClasses` set on a `LINE`/`SHAPE` group; `depthTest` has a warning-only test for `depthTest` set on
+  a `POI` group.
 - `config/ConfigManagerTest.java` — `get()` returns the config from the most recent `reload`; falls back to
   `new BMSMConfigV2()` defaults when the configured path fails to load; a second `reload()` replaces (not merges
   with) what an earlier `reload` cached.
@@ -231,16 +236,18 @@ As of `feature/tpwalke2/67-map-bounds` (`217c17f`), `src/test/java/com/tpwalke2/
   ticket 02) if that backup fails; one malformed entry being skipped rather than losing the whole file (ticket 05,
   `loadEntry`'s per-entry try/catch); and a documented Low-severity finding that an unrecognized dimension string
   is still silently lowercased on the `default` branch rather than preserved as-is.
-- `core/bounds/RenderMaskEvaluatorTest.java` — 24 tests. A real-world fixture (`NETHER_ROOF_RENDER_MASK`) checks
+- `core/bounds/RenderMaskEvaluatorTest.java` — 23 tests. A real-world fixture (`NETHER_ROOF_RENDER_MASK`) checks
   min-y cutoff and subtract-range behavior; fail-open coverage for a missing `render-mask` key, an empty shape
   array, a missing config file, an unreadable file (gated with `assumeTrue` for cross-platform reliability), a
   malformed/unbalanced config, an unmatched map id, and an unrecognized shape type; last-entry-wins combination
   coverage (a mask starting with `subtract`, overlapping boxes with last-entry-include vs. last-entry-subtract,
   mixed shape types confirming the reverse scan works across different shape types, not just within one); per-shape
   coverage for box (default type, an omitted axis is unbounded on that axis), circle (xz-radius + y-range), ellipse
-  (independent x/z radii), and polygon (a non-convex "C" shape via ray casting); and
-  `quotedBooleanAndNumericFieldsAreEquivalentToBareLiterals` confirming a quoted literal (`subtract: "true"`)
-  parses identically to the bare form (the fix in commit `217c17f`).
+  (independent x/z radii, plus `ellipseEntryWithZeroRadiusFailsOpenInsteadOfDividingByZero` and
+  `ellipseEntryWithNegativeRadiusFailsOpen` confirming a non-positive `radius-x`/`radius-z` is rejected at parse
+  time rather than reaching `RenderMaskEllipse.contains()`'s division), and polygon (a non-convex "C" shape via ray
+  casting); and `quotedBooleanAndNumericFieldsAreEquivalentToBareLiterals` confirming a quoted literal
+  (`subtract: "true"`) parses identically to the bare form (the fix in commit `217c17f`).
 
 ## CI integration
 
@@ -256,5 +263,5 @@ JUnit reporter action** — those actions don't get `checks: write` permission o
 public repo, so the summary step was written to need no extra permissions.
 
 ---
-*Last updated: 2026-08-22 | Verified against: feature/tpwalke2/67-map-bounds (217c17f)*
+*Last updated: 2026-09-02 | Verified against: feature/tpwalke2/197-marker-polish (1745bc2)*
 

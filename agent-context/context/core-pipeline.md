@@ -104,7 +104,7 @@ dispatch, or a sign removed mid-diff could be silently re-added. `dispatch()`
 only enqueues onto `ReactiveQueue` under this lock (no blocking BlueMap API work), so it doesn't add hot-path
 contention the way locking around `processMarkerAction` would.
 
-### Representation and the transition table (`.scratch/line-markers/spec.md` §6)
+### Representation and the transition table (`../plans/line-markers/spec.md` §6)
 
 A private record `Representation(MarkerGroup group, String label, String detail)` captures what a sign currently
 *is* to the marker layer: `null` means the sign matches no configured group (NONE); a non-null `Representation`
@@ -210,7 +210,7 @@ code path.
 This replaced the previous behavior (`reloadSigns()`: snapshot the cache, clear it, replay every entry through
 `addOrUpdateSign` so every entry always took the Add branch) for a concrete bug fix documented in
 `.scratch/codebase-review-followups/issues/10-reload-clear-and-replay-orphans-markers-on-id-scheme-change.md` and
-`.scratch/line-markers/issues/07-config-reload-fix-id-scheme-change.md`: a replayed "add" only ever puts a marker
+`../plans/line-markers/issues/07-config-reload-fix-id-scheme-change.md`: a replayed "add" only ever puts a marker
 under the *new* id, it never explicitly removes an old one. That was silently safe only because a POI marker's id
 is always the position-based `x_y_z`, unchanged across reloads. A `LINE` marker's id (`"line:" + label`) is
 content-keyed, not position-keyed — so the first config change that flips a group's `type` between `POI` and
@@ -359,7 +359,9 @@ Two id schemes now exist side by side, unified behind one interface:
   now-corrected assignment point.
 - `getMarkerSets(identifier)` is `synchronized`; on cache miss it resolves `BlueMapAPI.getWorld(mapId)` →
   `.getMaps()`, and for each map either fetches an existing `MarkerSet` by `markerGroup.name()` or builds+registers
-  one (`label`, `defaultHidden` from the `MarkerGroup`). One `MarkerSetIdentifier` can map to *multiple*
+  one (`label`, `defaultHidden`, `sorting`, `toggleable` from the `MarkerGroup` — `sorting`/`toggleable` are thin
+  BlueMap `MarkerSet` passthroughs, unlike `depthTest`/`cssClasses` below which are per-marker). One
+  `MarkerSetIdentifier` can map to *multiple*
   `MarkerSet`s if a world has multiple BlueMap maps rendered for it — every dispatched action applies to all of them.
   The `markerSetsCache.putIfAbsent(...)`/debug-log call now happens **once, after** the per-map `forEach` loop
   (ticket 06) rather than repeated inside it against the same `markerSetsToReturn` list reference — the old
@@ -395,23 +397,28 @@ Two id schemes now exist side by side, unified behind one interface:
   (defensively — `SignManager` should never dispatch below 2 points) if `action.getPoints().size() < 2`, otherwise
   builds a `de.bluecolored.bluemap.api.math.Line` from the action's `LinePoint`s (via `Vector3d`), parses
   `action.getLineColor()` through `ColorUtils.parseHex` (`common`, plain Java) into `de.bluecolored.bluemap.api.math.Color`,
-  and `put`s a `LineMarker.builder().label(...).detail(HtmlUtils.toHtmlDetail(...)).line(line).lineWidth(...).lineColor(...).build()`
-  into each marker set's map, keyed by `action.getMarkerIdentifier().getId()` (the content-keyed `"line:" + label`
-  id, §5). `ColorUtils.parseHex` is the only conversion point from the persisted hex string to a real color object,
-  mirroring how `HtmlUtils` is the only conversion point for HTML-escaped `detail` — both convert at the BlueMap-API
-  call site, keeping the rest of the pipeline in plain-Java, unescaped/unconverted form.
+  and `put`s a `LineMarker.builder().label(...).detail(HtmlUtils.toHtmlDetail(...)).line(line).lineWidth(...).lineColor(...)
+  .depthTestEnabled(markerGroup.depthTest()).build()` into each marker set's map, keyed by
+  `action.getMarkerIdentifier().getId()` (the content-keyed `"line:" + label` id, §5). `ColorUtils.parseHex` is the
+  only conversion point from the persisted hex string to a real color object, mirroring how `HtmlUtils` is the only
+  conversion point for HTML-escaped `detail` — both convert at the BlueMap-API call site, keeping the rest of the
+  pipeline in plain-Java, unescaped/unconverted form.
 - `setShapeMarker(SetShapeMarkerAction, Stream<Map<String, Marker>>)` is the `SHAPE` counterpart: bails
   (defensively, mirroring `setLineMarker`) if `action.getPoints().size() < 3`, builds a 2D `Shape` footprint from
   the points' `x`/`z` only, and takes the marker's rendered height from the **tallest member**:
   `points.stream().mapToInt(LinePoint::y).max()`. Parses both `lineColor` and `fillColor` through `ColorUtils.parseHex`
   (fill defaults to a translucent red, `#FF000033`, unlike `lineColor`'s opaque default — see
   `config-and-persistence.md`), then `put`s a `ShapeMarker.builder().label(...).detail(...).shape(shape,
-  height).lineWidth(...).lineColor(...).fillColor(...).build()` into each marker set's map, keyed by
-  `action.getMarkerIdentifier().getId()` (the content-keyed `"shape:" + label` id, §5).
+  height).lineWidth(...).lineColor(...).fillColor(...).depthTestEnabled(markerGroup.depthTest()).build()` into each
+  marker set's map, keyed by `action.getMarkerIdentifier().getId()` (the content-keyed `"shape:" + label` id, §5).
 - `addMarker` only actually builds a marker `if (markerGroup.type() == MarkerGroupType.POI)` — this is a real,
   live branch now that `MarkerGroupType.LINE`/`SHAPE` exist (no longer future-proofing for values that didn't
   exist): a `LINE`- or `SHAPE`-typed group's signs never reach `addMarker` at all, since `SignManager`'s transition
-  table (§3) routes those representations to their own `Set`/`Remove` actions instead of `AddMarkerAction`.
+  table (§3) routes those representations to their own `Set`/`Remove` actions instead of `AddMarkerAction`. It also
+  conditionally calls `markerBuilder.styleClasses(markerGroup.cssClasses().toArray(new String[0]))` when
+  `cssClasses` is non-empty — the only marker-builder call gated on the field being present rather than always
+  called with a possibly-default value, since BlueMap's `styleClasses` has no meaningful "unset" default to fall
+  back to.
 - **HTML escaping (fixed)**: `addMarker`/`updateMarker` wrap `detail` with `HtmlUtils.toHtmlDetail(...)` (`common`
   package) before it reaches `POIMarker.builder().detail(...)` / `poiMarker.setDetail(...)` — BlueMap renders
   `detail` as raw HTML (unlike `label`, which BlueMap's own `Marker.setLabel()` escapes), and sign text is
@@ -498,9 +505,10 @@ gating" section. This section covers the code-level mechanics.
 - **Fails open** (mask treated as unbounded — every point passes) on every failure path, all funneling to an empty
   shape list: no `config/bluemap/maps/` directory, or no file matching the sanitized map id (`findConfigFile`
   returns `null`); an `IOException` reading the matched file; a `RuntimeException` (malformed/unbalanced config,
-  unrecognized shape type) while parsing it. Each of these logs a warning before returning the empty list — a
-  broken render-mask config degrades to "no filtering" rather than crashing marker dispatch (see
-  `project_no_server_crashes` guidance).
+  unrecognized shape type, or an ellipse's `radius-x`/`radius-z` parsed as `<= 0` — `requiredPositiveDoubleField`
+  rejects it before it can reach `RenderMaskEllipse.contains()`'s division and produce `Infinity`/`NaN`) while
+  parsing it. Each of these logs a warning before returning the empty list — a broken render-mask config degrades
+  to "no filtering" rather than crashing marker dispatch (see `project_no_server_crashes` guidance).
 - **`BlueMapAPIConnector` integration**: `getRenderMask(mapId)` is `renderMaskCache.computeIfAbsent(mapId, id ->
   RenderMaskEvaluator.load(...))` — one parse per real map id, cached for the connector's lifetime until
   invalidated (see §6). `MappedMarkerSet(String mapId, MarkerSet markerSet)` is a private record pairing a cached
@@ -529,5 +537,5 @@ gating" section. This section covers the code-level mechanics.
   themselves are otherwise unchanged — the fix is localized to `prepareGated`.
 
 ---
-*Last updated: 2026-08-22 | Verified against: feature/tpwalke2/67-map-bounds (217c17f)*
+*Last updated: 2026-09-02 | Verified against: feature/tpwalke2/197-marker-polish (1745bc2)*
 

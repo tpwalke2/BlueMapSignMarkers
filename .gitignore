@@ -44,3 +44,6 @@ replay_*.log
 
 logs/
 .claude/settings.local.json
+.scratch/
+agent-context/reviews/
+agent-context/handoffs/

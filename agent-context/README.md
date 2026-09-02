@@ -33,4 +33,4 @@ method-level behavior, data-shape history — so an agent doesn't have to re-der
 | `context/testing.md` | `src/test/java/`, `.github/workflows/build.yml`, `.github/workflows/publish.yml` |
 
 ---
-*Last updated: 2026-08-22 | Verified against: feature/tpwalke2/67-map-bounds (217c17f)*
+*Last updated: 2026-08-22 | Verified against: docs/tpwalke2/refactor (f1d4730)*

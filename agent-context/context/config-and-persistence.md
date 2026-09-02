@@ -37,18 +37,26 @@ File: `config/bluemapsignmarkers/BMSM-Core.json`. Path is fixed (not per-world) 
      `core-pipeline.md` §3 — rather than duplicated separately) and convert each `LoadingMarkerGroupV2` to a
      runtime `MarkerGroup` via `convertToLoadedMarkerGroup`, which applies defaults per-field (`matchType` →
      `STARTS_WITH`, `type` → `POI`, `offsetX`/`offsetY` → `0`, `defaultHidden` → `false`, `minDistance` → `0.0`,
-     `maxDistance` → `10000000.0`, `lineWidth` → `2`, `lineColor` → `"#FF0000FF"`, `fillColor` → `"#FF000033"` — the
-     latter three are the `LINE`/`SHAPE`-marker additions, mirroring BlueMap's own `LineMarker`/`ShapeMarker`
-     defaults; `fillColor`'s default is translucent, unlike `lineColor`'s opaque one). `lineWidth`/`lineColor`/
-     `fillColor` each go through their own validating resolver (`resolveLineWidth`/`resolveLineColor`/
-     `resolveFillColor`) rather than a plain null-check default: a non-positive `lineWidth` (`<= 0`) or a
-     `lineColor`/`fillColor` that fails `ColorUtils.isValidHex` (accepts `#RRGGBB`/`#RRGGBBAA`, leading `#`
-     optional — the same shape `ColorUtils.parseHex` accepts) logs a warning naming the group and falls back to the
-     default, instead of the malformed value reaching `ActionFactory`/BlueMap's `LineMarker`/`ShapeMarker`
-     unnoticed (silently caught later only at dispatch time by `ColorUtils.parseHex`'s own fallback).
-     `resolveFillColor` only validates when the group's effective `type` is `SHAPE`; for any other type it returns
-     the raw configured value unvalidated (pass-through — `fillColor` isn't applied for non-`SHAPE` groups anyway).
-     This two-model split (`LoadingMarkerGroupV2`
+     `maxDistance` → `10000000.0`, `lineWidth` → `2`, `lineColor` → `"#FF0000FF"`, `fillColor` → `"#FF000033"`,
+     `sorting` → `0`, `toggleable` → `true`, `depthTest` → `true`, `cssClasses` → `List.of()` — the `lineWidth`/
+     `lineColor`/`fillColor` trio are the `LINE`/`SHAPE`-marker additions, mirroring BlueMap's own `LineMarker`/
+     `ShapeMarker` defaults; `fillColor`'s default is translucent, unlike `lineColor`'s opaque one).
+     `lineWidth`/`lineColor`/`fillColor`/`sorting`/`cssClasses` each go through their own validating resolver
+     (`resolveLineWidth`/`resolveLineColor`/`resolveFillColor`/`resolveSorting`/`resolveCssClasses`) rather than a
+     plain null-check default: a non-positive `lineWidth` (`<= 0`) or a `lineColor`/`fillColor` that fails
+     `ColorUtils.isValidHex` (accepts `#RRGGBB`/`#RRGGBBAA`, leading `#` optional — the same shape
+     `ColorUtils.parseHex` accepts) logs a warning naming the group and falls back to the default, instead of the
+     malformed value reaching `ActionFactory`/BlueMap's `LineMarker`/`ShapeMarker` unnoticed (silently caught later
+     only at dispatch time by `ColorUtils.parseHex`'s own fallback). `resolveFillColor` only validates when the
+     group's effective `type` is `SHAPE`; for any other type it returns the raw configured value unvalidated
+     (pass-through — `fillColor` isn't applied for non-`SHAPE` groups anyway). `sorting` is read off
+     `LoadingMarkerGroupV2` as a raw `JsonElement` rather than `Integer` specifically so a non-integer JSON value
+     (a string, an array, an out-of-`int`-range number) falls back to the default with a warning in
+     `resolveSorting` instead of failing Gson's parse for the *entire* config; `resolveCssClasses` drops any `null`
+     entries in the list (warning once) rather than propagating them to BlueMap's marker builder. `resolveToggleable` is plain null-coalescing (`toggleable == null || toggleable`), a simple boolean with no
+     malformed-value case to guard against. `resolveDepthTest` is not: an unset value defaults to `true`, but a
+     configured value is only honored for `LINE`/`SHAPE` groups — for any other type (`POI`) it forces `true`
+     regardless of what was configured, since depth-testing has no effect on a POI marker. This two-model split (`LoadingMarkerGroupV2`
      boxed/nullable vs. `MarkerGroup` primitive) exists so a partially-specified group in user JSON gets these
      explicit defaults rather than Gson silently zeroing missing primitive fields. `validateMarkerGroups` then fails
      fast (`IllegalArgumentException`, caught by the catch-all below) on an empty prefix, a `REGEX` prefix that
@@ -56,10 +64,11 @@ File: `config/bluemapsignmarkers/BMSM-Core.json`. Path is fixed (not per-world) 
      downstream in `SignLinesParser`/`SignManager`. A separate, non-fatal pass, `warnOnTypeFieldMismatches`, logs a
      warning (never throws) against the raw `LoadingMarkerGroupV2` (which still distinguishes "field omitted" via
      `null`) for a field set on a type it doesn't apply to: `POI` warns on an explicit `lineWidth`/`lineColor`/
-     `fillColor`; `LINE` warns on an explicit `icon`/`offsetX`/`offsetY`/`fillColor`; `SHAPE` warns on an explicit
-     `icon`/`offsetX`/`offsetY` (but *not* `lineWidth`/`lineColor`, which `SHAPE` also uses for its border) — those
-     fields are silently ignored for the group's actual type, so this just flags a likely config mistake rather
-     than rejecting it.
+     `fillColor`/`depthTest`; `LINE` warns on an explicit `icon`/`offsetX`/`offsetY`/`fillColor`/`cssClasses`;
+     `SHAPE` warns on an explicit `icon`/`offsetX`/`offsetY`/`cssClasses` (but *not* `lineWidth`/`lineColor`, which
+     `SHAPE` also uses for its border) — those fields are silently ignored for the group's actual type, so this
+     just flags a likely config mistake rather than rejecting it. `sorting`/`toggleable` apply to every group type
+     (thin `MarkerSet` passthroughs — see `core-pipeline.md` §6) so neither has a type-mismatch warning.
   4. Any exception during load (`Gson.fromJson` failure, I/O error, or a `validateMarkerGroups` failure) logs and
      returns `null`, and `ConfigManager.loadCoreConfig` falls back to `new BMSMConfigV2()` defaults — a broken
      config file never prevents server startup, it just silently reverts to a single default `[poi]` group.
@@ -221,5 +230,5 @@ in place. Old region files (or a not-yet-migrated legacy `signs.json`) on live s
 the version they were written with.
 
 ---
-*Last updated: 2026-08-22 | Verified against: feature/tpwalke2/67-map-bounds (217c17f)*
+*Last updated: 2026-09-02 | Verified against: feature/tpwalke2/197-marker-polish (1745bc2)*
 

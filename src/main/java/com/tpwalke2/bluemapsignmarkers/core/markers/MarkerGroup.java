@@ -1,5 +1,7 @@
 package com.tpwalke2.bluemapsignmarkers.core.markers;
 
+import java.util.List;
+
 public record MarkerGroup(
         String prefix,
         MarkerGroupMatchType matchType,
@@ -13,7 +15,11 @@ public record MarkerGroup(
         double maxDistance,
         int lineWidth,
         String lineColor,
-        String fillColor) {
+        String fillColor,
+        int sorting,
+        boolean toggleable,
+        boolean depthTest,
+        List<String> cssClasses) {
     public static final MarkerGroup DEFAULT_POI_GROUP = new MarkerGroup(
             "[poi]",
             MarkerGroupMatchType.STARTS_WITH,
@@ -27,9 +33,13 @@ public record MarkerGroup(
             10000000.0,
             2,
             "#FF0000FF",
-            "#FF000033");
+            "#FF000033",
+            0,
+            true,
+            true,
+            List.of());
 
     public MarkerGroup withType(MarkerGroupType type) {
-        return new MarkerGroup(prefix, matchType, type, name, icon, offsetX, offsetY, defaultHidden, minDistance, maxDistance, lineWidth, lineColor, fillColor);
+        return new MarkerGroup(prefix, matchType, type, name, icon, offsetX, offsetY, defaultHidden, minDistance, maxDistance, lineWidth, lineColor, fillColor, sorting, toggleable, depthTest, cssClasses);
     }
 }

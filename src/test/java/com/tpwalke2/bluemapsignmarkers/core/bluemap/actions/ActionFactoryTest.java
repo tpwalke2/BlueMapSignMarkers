@@ -208,18 +208,18 @@ class ActionFactoryTest {
     private static MarkerGroup markerGroup(String prefix) {
         return new MarkerGroup(
                 prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, prefix, "icon.png", 0, 0, false, 0, 0,
-                2, "#FF0000FF", "#FF000033");
+                2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
     }
 
     private static MarkerGroup lineMarkerGroup(String prefix) {
         return new MarkerGroup(
                 prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.LINE, prefix, "icon.png", 0, 0, false, 0, 0,
-                2, "#FF0000FF", "#FF000033");
+                2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
     }
 
     private static MarkerGroup shapeMarkerGroup(String prefix) {
         return new MarkerGroup(
                 prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.SHAPE, prefix, null, 0, 0, false, 0, 0,
-                2, "#FF0000FF", "#FF000033");
+                2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
     }
 }

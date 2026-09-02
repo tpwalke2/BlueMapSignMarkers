@@ -362,6 +362,7 @@ public class BlueMapAPIConnector {
                 .line(line)
                 .lineWidth(action.getLineWidth())
                 .lineColor(toBlueMapColor(color))
+                .depthTestEnabled(markerGroup.depthTest())
                 .build();
         marker.setMinDistance(markerGroup.minDistance());
         marker.setMaxDistance(markerGroup.maxDistance());
@@ -388,6 +389,7 @@ public class BlueMapAPIConnector {
                 .lineWidth(action.getLineWidth())
                 .lineColor(toBlueMapColor(lineColor))
                 .fillColor(toBlueMapColor(fillColor))
+                .depthTestEnabled(markerGroup.depthTest())
                 .build();
         marker.setMinDistance(markerGroup.minDistance());
         marker.setMaxDistance(markerGroup.maxDistance());
@@ -407,6 +409,10 @@ public class BlueMapAPIConnector {
 
             if (markerGroup.icon() != null && !markerGroup.icon().isEmpty()) {
                 markerBuilder.icon(markerGroup.icon(), markerGroup.offsetX(), markerGroup.offsetY());
+            }
+
+            if (!markerGroup.cssClasses().isEmpty()) {
+                markerBuilder.styleClasses(markerGroup.cssClasses().toArray(new String[0]));
             }
 
             LOGGER.debug("Adding marker (id {}) to marker set", identifier.getId());
@@ -462,8 +468,14 @@ public class BlueMapAPIConnector {
                         .builder()
                         .label(markerSetIdentifier.markerGroup().name())
                         .defaultHidden(markerSetIdentifier.markerGroup().defaultHidden())
+                        .sorting(markerSetIdentifier.markerGroup().sorting())
+                        .toggleable(markerSetIdentifier.markerGroup().toggleable())
                         .build();
                 blueMapMap.getMarkerSets().putIfAbsent(markerSetIdentifier.markerGroup().name(), markerSet);
+            } else {
+                markerSet.setDefaultHidden(markerSetIdentifier.markerGroup().defaultHidden());
+                markerSet.setSorting(markerSetIdentifier.markerGroup().sorting());
+                markerSet.setToggleable(markerSetIdentifier.markerGroup().toggleable());
             }
             markerSetsToReturn.add(new MappedMarkerSet(blueMapMap.getId(), markerSet));
         });

@@ -1,5 +1,6 @@
 package com.tpwalke2.bluemapsignmarkers.config.persistence;
 
+import com.google.gson.JsonPrimitive;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 
 public final class LoadingBMSMConfigV2 {
@@ -31,7 +32,11 @@ public final class LoadingBMSMConfigV2 {
                 defaultGroup.maxDistance(),
                 defaultGroup.lineWidth(),
                 defaultGroup.lineColor(),
-                defaultGroup.fillColor());
+                defaultGroup.fillColor(),
+                new JsonPrimitive(defaultGroup.sorting()),
+                defaultGroup.toggleable(),
+                defaultGroup.depthTest(),
+                defaultGroup.cssClasses());
     }
 
     public LoadingMarkerGroupV2[] getMarkerGroups() {
