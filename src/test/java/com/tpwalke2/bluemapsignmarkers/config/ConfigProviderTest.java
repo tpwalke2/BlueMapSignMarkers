@@ -676,6 +676,7 @@ class ConfigProviderTest {
         var config = result[0];
 
         assertEquals(1, config.getMarkerGroups().length);
+        assertTrue(config.getMarkerGroups()[0].depthTest());
         assertTrue(warnings.stream().anyMatch(m -> m.contains("depthTest")));
     }
 
@@ -695,6 +696,7 @@ class ConfigProviderTest {
         var config = result[0];
 
         assertEquals(1, config.getMarkerGroups().length);
+        assertTrue(config.getMarkerGroups()[0].cssClasses().isEmpty());
         assertTrue(warnings.stream().anyMatch(m -> m.contains("cssClasses")));
     }
 
@@ -714,6 +716,7 @@ class ConfigProviderTest {
         var config = result[0];
 
         assertEquals(1, config.getMarkerGroups().length);
+        assertTrue(config.getMarkerGroups()[0].cssClasses().isEmpty());
         assertTrue(warnings.stream().anyMatch(m -> m.contains("cssClasses")));
     }
 }

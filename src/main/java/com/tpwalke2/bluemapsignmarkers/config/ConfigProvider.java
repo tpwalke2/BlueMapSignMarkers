@@ -267,7 +267,12 @@ public class ConfigProvider {
     // both resolve to the BlueMap default of true - warnOnTypeFieldMismatches already warns on the POI case.
     private static boolean resolveDepthTest(LoadingMarkerGroupV2 markerGroup) {
         var depthTest = markerGroup.depthTest();
-        return depthTest == null || depthTest;
+        if (depthTest == null) return true;
+
+        var type = effectiveType(markerGroup);
+        if (type != MarkerGroupType.LINE && type != MarkerGroupType.SHAPE) return true;
+
+        return depthTest;
     }
 
     // cssClasses is POI-only; unset or set on a LINE/SHAPE group both resolve to an empty list -
@@ -275,6 +280,8 @@ public class ConfigProvider {
     private static List<String> resolveCssClasses(LoadingMarkerGroupV2 markerGroup) {
         var cssClasses = markerGroup.cssClasses();
         if (cssClasses == null) return List.of();
+
+        if (effectiveType(markerGroup) != MarkerGroupType.POI) return List.of();
 
         var filtered = cssClasses.stream().filter(Objects::nonNull).toList();
         if (filtered.size() != cssClasses.size()) {
