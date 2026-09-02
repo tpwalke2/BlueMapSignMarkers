@@ -128,7 +128,7 @@ restart alone does not trigger the upgrade sweep (only a genuine BlueMap disable
 `MarkerGroup` (record: prefix, matchType, type, name, icon, offsetX/Y, defaultHidden, minDistance/maxDistance,
 lineWidth, lineColor, fillColor, sorting, toggleable, depthTest, cssClasses) is the unit of configuration described
 in `README.md`. `type` (`MarkerGroupType`: `POI`, `LINE`, or `SHAPE`) picks which kind of marker the group's signs produce;
-`lineWidth`/`lineColor` only apply to `LINE` groups (setting them on a `POI` group is a warning, not an error).
+`lineWidth`/`lineColor` apply to `LINE`/`SHAPE` groups (setting them on a `POI` group is a warning, not an error).
 `sorting`/`toggleable` are thin BlueMap `MarkerSet` passthroughs (menu order, hideability) that apply to every group
 type; `depthTest` (terrain occlusion) is `LINE`/`SHAPE`-only and `cssClasses` (custom.css hooks) is `POI`-only, each
 resolved in `ConfigProvider` and wired into the corresponding BlueMap builder call in `BlueMapAPIConnector`.

@@ -53,9 +53,10 @@ File: `config/bluemapsignmarkers/BMSM-Core.json`. Path is fixed (not per-world) 
      `LoadingMarkerGroupV2` as a raw `JsonElement` rather than `Integer` specifically so a non-integer JSON value
      (a string, an array, an out-of-`int`-range number) falls back to the default with a warning in
      `resolveSorting` instead of failing Gson's parse for the *entire* config; `resolveCssClasses` drops any `null`
-     entries in the list (warning once) rather than propagating them to BlueMap's marker builder. `resolveToggleable`/
-     `resolveDepthTest` are plain null-coalescing (`toggleable == null || toggleable`, same for `depthTest`) since
-     both are simple booleans with no malformed-value case to guard against. This two-model split (`LoadingMarkerGroupV2`
+     entries in the list (warning once) rather than propagating them to BlueMap's marker builder. `resolveToggleable` is plain null-coalescing (`toggleable == null || toggleable`), a simple boolean with no
+     malformed-value case to guard against. `resolveDepthTest` is not: an unset value defaults to `true`, but a
+     configured value is only honored for `LINE`/`SHAPE` groups — for any other type (`POI`) it forces `true`
+     regardless of what was configured, since depth-testing has no effect on a POI marker. This two-model split (`LoadingMarkerGroupV2`
      boxed/nullable vs. `MarkerGroup` primitive) exists so a partially-specified group in user JSON gets these
      explicit defaults rather than Gson silently zeroing missing primitive fields. `validateMarkerGroups` then fails
      fast (`IllegalArgumentException`, caught by the catch-all below) on an empty prefix, a `REGEX` prefix that
