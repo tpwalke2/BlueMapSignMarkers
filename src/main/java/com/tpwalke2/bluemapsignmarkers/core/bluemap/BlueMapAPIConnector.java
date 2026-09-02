@@ -472,6 +472,10 @@ public class BlueMapAPIConnector {
                         .toggleable(markerSetIdentifier.markerGroup().toggleable())
                         .build();
                 blueMapMap.getMarkerSets().putIfAbsent(markerSetIdentifier.markerGroup().name(), markerSet);
+            } else {
+                markerSet.setDefaultHidden(markerSetIdentifier.markerGroup().defaultHidden());
+                markerSet.setSorting(markerSetIdentifier.markerGroup().sorting());
+                markerSet.setToggleable(markerSetIdentifier.markerGroup().toggleable());
             }
             markerSetsToReturn.add(new MappedMarkerSet(blueMapMap.getId(), markerSet));
         });
