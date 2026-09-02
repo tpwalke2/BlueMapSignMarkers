@@ -359,7 +359,9 @@ Two id schemes now exist side by side, unified behind one interface:
   now-corrected assignment point.
 - `getMarkerSets(identifier)` is `synchronized`; on cache miss it resolves `BlueMapAPI.getWorld(mapId)` →
   `.getMaps()`, and for each map either fetches an existing `MarkerSet` by `markerGroup.name()` or builds+registers
-  one (`label`, `defaultHidden` from the `MarkerGroup`). One `MarkerSetIdentifier` can map to *multiple*
+  one (`label`, `defaultHidden`, `sorting`, `toggleable` from the `MarkerGroup` — `sorting`/`toggleable` are thin
+  BlueMap `MarkerSet` passthroughs, unlike `depthTest`/`cssClasses` below which are per-marker). One
+  `MarkerSetIdentifier` can map to *multiple*
   `MarkerSet`s if a world has multiple BlueMap maps rendered for it — every dispatched action applies to all of them.
   The `markerSetsCache.putIfAbsent(...)`/debug-log call now happens **once, after** the per-map `forEach` loop
   (ticket 06) rather than repeated inside it against the same `markerSetsToReturn` list reference — the old
@@ -395,23 +397,28 @@ Two id schemes now exist side by side, unified behind one interface:
   (defensively — `SignManager` should never dispatch below 2 points) if `action.getPoints().size() < 2`, otherwise
   builds a `de.bluecolored.bluemap.api.math.Line` from the action's `LinePoint`s (via `Vector3d`), parses
   `action.getLineColor()` through `ColorUtils.parseHex` (`common`, plain Java) into `de.bluecolored.bluemap.api.math.Color`,
-  and `put`s a `LineMarker.builder().label(...).detail(HtmlUtils.toHtmlDetail(...)).line(line).lineWidth(...).lineColor(...).build()`
-  into each marker set's map, keyed by `action.getMarkerIdentifier().getId()` (the content-keyed `"line:" + label`
-  id, §5). `ColorUtils.parseHex` is the only conversion point from the persisted hex string to a real color object,
-  mirroring how `HtmlUtils` is the only conversion point for HTML-escaped `detail` — both convert at the BlueMap-API
-  call site, keeping the rest of the pipeline in plain-Java, unescaped/unconverted form.
+  and `put`s a `LineMarker.builder().label(...).detail(HtmlUtils.toHtmlDetail(...)).line(line).lineWidth(...).lineColor(...)
+  .depthTestEnabled(markerGroup.depthTest()).build()` into each marker set's map, keyed by
+  `action.getMarkerIdentifier().getId()` (the content-keyed `"line:" + label` id, §5). `ColorUtils.parseHex` is the
+  only conversion point from the persisted hex string to a real color object, mirroring how `HtmlUtils` is the only
+  conversion point for HTML-escaped `detail` — both convert at the BlueMap-API call site, keeping the rest of the
+  pipeline in plain-Java, unescaped/unconverted form.
 - `setShapeMarker(SetShapeMarkerAction, Stream<Map<String, Marker>>)` is the `SHAPE` counterpart: bails
   (defensively, mirroring `setLineMarker`) if `action.getPoints().size() < 3`, builds a 2D `Shape` footprint from
   the points' `x`/`z` only, and takes the marker's rendered height from the **tallest member**:
   `points.stream().mapToInt(LinePoint::y).max()`. Parses both `lineColor` and `fillColor` through `ColorUtils.parseHex`
   (fill defaults to a translucent red, `#FF000033`, unlike `lineColor`'s opaque default — see
   `config-and-persistence.md`), then `put`s a `ShapeMarker.builder().label(...).detail(...).shape(shape,
-  height).lineWidth(...).lineColor(...).fillColor(...).build()` into each marker set's map, keyed by
-  `action.getMarkerIdentifier().getId()` (the content-keyed `"shape:" + label` id, §5).
+  height).lineWidth(...).lineColor(...).fillColor(...).depthTestEnabled(markerGroup.depthTest()).build()` into each
+  marker set's map, keyed by `action.getMarkerIdentifier().getId()` (the content-keyed `"shape:" + label` id, §5).
 - `addMarker` only actually builds a marker `if (markerGroup.type() == MarkerGroupType.POI)` — this is a real,
   live branch now that `MarkerGroupType.LINE`/`SHAPE` exist (no longer future-proofing for values that didn't
   exist): a `LINE`- or `SHAPE`-typed group's signs never reach `addMarker` at all, since `SignManager`'s transition
-  table (§3) routes those representations to their own `Set`/`Remove` actions instead of `AddMarkerAction`.
+  table (§3) routes those representations to their own `Set`/`Remove` actions instead of `AddMarkerAction`. It also
+  conditionally calls `markerBuilder.styleClasses(markerGroup.cssClasses().toArray(new String[0]))` when
+  `cssClasses` is non-empty — the only marker-builder call gated on the field being present rather than always
+  called with a possibly-default value, since BlueMap's `styleClasses` has no meaningful "unset" default to fall
+  back to.
 - **HTML escaping (fixed)**: `addMarker`/`updateMarker` wrap `detail` with `HtmlUtils.toHtmlDetail(...)` (`common`
   package) before it reaches `POIMarker.builder().detail(...)` / `poiMarker.setDetail(...)` — BlueMap renders
   `detail` as raw HTML (unlike `label`, which BlueMap's own `Marker.setLabel()` escapes), and sign text is
@@ -530,5 +537,5 @@ gating" section. This section covers the code-level mechanics.
   themselves are otherwise unchanged — the fix is localized to `prepareGated`.
 
 ---
-*Last updated: 2026-08-22 | Verified against: docs/tpwalke2/refactor (f1d4730)*
+*Last updated: 2026-09-02 | Verified against: feature/tpwalke2/197-marker-polish (1745bc2)*
 
