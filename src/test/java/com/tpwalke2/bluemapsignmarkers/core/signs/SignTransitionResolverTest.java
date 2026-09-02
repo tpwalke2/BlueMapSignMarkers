@@ -32,12 +32,12 @@ class SignTransitionResolverTest {
 
     private static MarkerGroup poiGroup(String prefix) {
         return new MarkerGroup(prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI,
-                "name", null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033");
+                "name", null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
     }
 
     private static MarkerGroup lineGroup(String prefix) {
         return new MarkerGroup(prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.LINE,
-                "name", null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033");
+                "name", null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
     }
 
     private static MarkerGroup shapeGroup(String prefix) {
@@ -46,7 +46,7 @@ class SignTransitionResolverTest {
 
     private static MarkerGroup shapeGroup(String prefix, String name) {
         return new MarkerGroup(prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.SHAPE,
-                name, null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033");
+                name, null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
     }
 
     private static SignEntry signEntry(int x, int y, int z, String prefix, String label, String detail, long createdAtMillis) {

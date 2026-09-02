@@ -26,6 +26,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -179,6 +180,9 @@ public class ConfigProvider {
                 if (markerGroup.fillColor() != null) {
                     LOGGER.warn("Marker group '{}' is type POI but has 'fillColor' set; this field is ignored for POI groups", name);
                 }
+                if (markerGroup.depthTest() != null) {
+                    LOGGER.warn("Marker group '{}' is type POI but has 'depthTest' set; this field is ignored for POI groups", name);
+                }
             } else if (type == MarkerGroupType.LINE) {
                 if (markerGroup.icon() != null) {
                     LOGGER.warn("Marker group '{}' is type LINE but has 'icon' set; this field is ignored for LINE groups", name);
@@ -192,6 +196,9 @@ public class ConfigProvider {
                 if (markerGroup.fillColor() != null) {
                     LOGGER.warn("Marker group '{}' is type LINE but has 'fillColor' set; this field is ignored for LINE groups", name);
                 }
+                if (markerGroup.cssClasses() != null && !markerGroup.cssClasses().isEmpty()) {
+                    LOGGER.warn("Marker group '{}' is type LINE but has 'cssClasses' set; this field is ignored for LINE groups", name);
+                }
             } else if (type == MarkerGroupType.SHAPE) {
                 if (markerGroup.icon() != null) {
                     LOGGER.warn("Marker group '{}' is type SHAPE but has 'icon' set; this field is ignored for SHAPE groups", name);
@@ -201,6 +208,9 @@ public class ConfigProvider {
                 }
                 if (markerGroup.offsetY() != null) {
                     LOGGER.warn("Marker group '{}' is type SHAPE but has 'offsetY' set; this field is ignored for SHAPE groups", name);
+                }
+                if (markerGroup.cssClasses() != null && !markerGroup.cssClasses().isEmpty()) {
+                    LOGGER.warn("Marker group '{}' is type SHAPE but has 'cssClasses' set; this field is ignored for SHAPE groups", name);
                 }
             }
         }
@@ -222,8 +232,48 @@ public class ConfigProvider {
                 markerGroup.maxDistance() == null ? 10000000.0 : markerGroup.maxDistance(),
                 resolveLineWidth(markerGroup),
                 resolveLineColor(markerGroup),
-                resolveFillColor(markerGroup)
+                resolveFillColor(markerGroup),
+                resolveSorting(markerGroup),
+                resolveToggleable(markerGroup),
+                resolveDepthTest(markerGroup),
+                resolveCssClasses(markerGroup)
         );
+    }
+
+    private static final int DEFAULT_SORTING = 0;
+
+    // sorting is read as a raw JsonElement (see LoadingMarkerGroupV2) specifically so a non-integer value
+    // (e.g. a string) falls back here with a warning instead of failing Gson's parse for the entire config.
+    private static int resolveSorting(LoadingMarkerGroupV2 markerGroup) {
+        var sorting = markerGroup.sorting();
+        if (sorting == null || sorting.isJsonNull()) return DEFAULT_SORTING;
+
+        try {
+            return sorting.getAsInt();
+        } catch (NumberFormatException | UnsupportedOperationException e) {
+            LOGGER.warn("Marker group '{}' has a malformed 'sorting' ({}); falling back to default {}",
+                    markerGroup.name(), sorting, DEFAULT_SORTING);
+            return DEFAULT_SORTING;
+        }
+    }
+
+    private static boolean resolveToggleable(LoadingMarkerGroupV2 markerGroup) {
+        var toggleable = markerGroup.toggleable();
+        return toggleable == null || toggleable;
+    }
+
+    // depthTest is LINE/SHAPE-only (POI markers are always billboarded on top); unset or set on a POI group
+    // both resolve to the BlueMap default of true - warnOnTypeFieldMismatches already warns on the POI case.
+    private static boolean resolveDepthTest(LoadingMarkerGroupV2 markerGroup) {
+        var depthTest = markerGroup.depthTest();
+        return depthTest == null || depthTest;
+    }
+
+    // cssClasses is POI-only; unset or set on a LINE/SHAPE group both resolve to an empty list -
+    // warnOnTypeFieldMismatches already warns on the LINE/SHAPE case.
+    private static List<String> resolveCssClasses(LoadingMarkerGroupV2 markerGroup) {
+        var cssClasses = markerGroup.cssClasses();
+        return cssClasses == null ? List.of() : List.copyOf(cssClasses);
     }
 
     // Falls back to the default width on a non-positive value rather than throwing - a bad config value
@@ -311,6 +361,10 @@ public class ConfigProvider {
                         10000000.0,
                         2,
                         "#FF0000FF",
-                        "#FF000033"));
+                        "#FF000033",
+                        0,
+                        true,
+                        true,
+                        List.of()));
     }
 }

@@ -7,9 +7,9 @@ See `../spec.md` for full context.
 
 **Blocked by:** 01-marker-group-config-fields.md, 02-bluemapapiconnector-wiring.md
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `../../../../README.md` documents `sorting`, `toggleable`, `depthTest`, `cssClasses` — scope (which group types), default
+- [x] `../../../../README.md` documents `sorting`, `toggleable`, `depthTest`, `cssClasses` — scope (which group types), default
       value, and a one-line description of the effect, matching the existing entries for `lineWidth`/`fillColor`.
-- [ ] `../../../../AGENTS.md`'s Marker groups and config section mentions the new fields if warranted (short addition, not a
+- [x] `../../../../AGENTS.md`'s Marker groups and config section mentions the new fields if warranted (short addition, not a
       rewrite).

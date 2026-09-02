@@ -47,9 +47,14 @@ configuration contains the following options:
 - `lineWidth` - the width in pixels of the line/shape border; optional; default is `2`; `LINE`/`SHAPE` only
 - `lineColor` - the hex color (with alpha) of the line/shape border, e.g. `#FF0000FF`; optional; default is `#FF0000FF`; `LINE`/`SHAPE` only
 - `fillColor` - the hex color (with alpha) of a shape's interior, e.g. `#FF000033`; optional; default is `#FF000033` (translucent red); `SHAPE` only
+- `sorting` - the marker-set's order in the map's layer menu (lower sorts first); optional; default is `0`
+- `toggleable` - whether the marker-set can be hidden/shown by a player at all; optional; default is `true`
+- `depthTest` - whether terrain can occlude the marker (set `false` to keep an underground trail/region visible through terrain); optional; default is `true`; `LINE`/`SHAPE` only
+- `cssClasses` - a list of CSS classes added to the marker element, for styling via BlueMap's `custom.css`; optional; default is an empty list; `POI` only
 
-Setting a field on a group type it doesn't apply to (e.g. `icon` on a `LINE`/`SHAPE` group, or `fillColor` on a
-`POI`/`LINE` group) is not an error; the mod logs a warning and ignores the field.
+Setting a field on a group type it doesn't apply to (e.g. `icon` on a `LINE`/`SHAPE` group, `fillColor` on a
+`POI`/`LINE` group, `depthTest` on a `POI` group, or `cssClasses` on a `LINE`/`SHAPE` group) is not an error; the mod
+logs a warning and ignores the field.
 
 ## Example
 

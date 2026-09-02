@@ -5,6 +5,7 @@ import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupMatchType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -17,7 +18,7 @@ class SignEntryHelperTest {
     private static final SignEntryKey KEY = new SignEntryKey(1, 2, 3, "minecraft:overworld");
 
     private static MarkerGroup poiGroup(String prefix) {
-        return new MarkerGroup(prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, "Points of Interest", null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033");
+        return new MarkerGroup(prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, "Points of Interest", null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
     }
 
     private static SignEntry signEntry(SignLinesParseResult frontText, SignLinesParseResult backText) {
