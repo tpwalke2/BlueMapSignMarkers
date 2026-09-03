@@ -410,16 +410,33 @@ public class BlueMapAPIConnector {
         markers.put(action.getMarkerIdentifier().getId(), marker);
     }
 
+    // Floor/ceiling of an extrude volume - a plain value holder (no bluemap-api types), so
+    // resolveExtrudeHeightRange stays testable even though bluemap-api is compileOnly and not on the test
+    // classpath (see AGENTS.md's testable-vs-game-coupled split).
+    record ExtrudeHeightRange(float minY, float maxY) {}
+
+    // Floor/ceiling anchor to the lowest/tallest member respectively, so the volume always spans the full
+    // height range its members were placed at, independent of placement order. All members at the same Y
+    // (e.g. one floor) would otherwise collapse the extrusion to zero height, rendering nothing on the map
+    // with no indication why - so give it a one-block floor instead.
+    static ExtrudeHeightRange resolveExtrudeHeightRange(String label, List<LinePoint> points) {
+        var minY = (float) points.stream().mapToInt(LinePoint::y).min().orElseThrow();
+        var maxY = (float) points.stream().mapToInt(LinePoint::y).max().orElseThrow();
+        if (maxY <= minY) {
+            LOGGER.debug("Extrude marker label='{}' has all members at Y={}; giving it a minimum 1-block height",
+                    LogUtils.sanitizeForLog(label), minY);
+            maxY = minY + 1;
+        }
+        return new ExtrudeHeightRange(minY, maxY);
+    }
+
     private static void setExtrudeMarker(SetExtrudeMarkerAction action, Map<String, Marker> markers) {
         LOGGER.debug("Setting extrude marker...");
         if (action.getPoints().size() < 3) return; // defensive - SignManager should never dispatch below 3
 
         var points = action.getPoints();
         var shape = new Shape(points.stream().map(p -> new Vector2d(p.x(), p.z())).toList());
-        // Floor/ceiling anchor to the lowest/tallest member respectively, so the volume always spans the
-        // full height range its members were placed at, independent of placement order.
-        var minY = (float) points.stream().mapToInt(LinePoint::y).min().orElseThrow();
-        var maxY = (float) points.stream().mapToInt(LinePoint::y).max().orElseThrow();
+        var heightRange = resolveExtrudeHeightRange(action.getLabel(), points);
         var lineColor = ColorUtils.parseHex(action.getLineColor());
         var fillColor = ColorUtils.parseHex(action.getFillColor());
         var markerGroup = action.getMarkerIdentifier().parentSet().markerGroup();
@@ -427,7 +444,7 @@ public class BlueMapAPIConnector {
         var marker = ExtrudeMarker.builder()
                 .label(action.getLabel())
                 .detail(HtmlUtils.toHtmlDetail(action.getDetail()))
-                .shape(shape, minY, maxY)
+                .shape(shape, heightRange.minY(), heightRange.maxY())
                 .lineWidth(action.getLineWidth())
                 .lineColor(toBlueMapColor(lineColor))
                 .fillColor(toBlueMapColor(fillColor))
