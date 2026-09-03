@@ -15,7 +15,7 @@ in `build.gradle`.
 Only plain-Java classes with **no Minecraft/Fabric/BlueMap API types in their method signatures** are unit tested.
 Qualifying today: `SignLinesParser`/`ParsingContext`/`SignLinesParseResult`, `SignEntry`, `SignEntryHelper`,
 `SignChunkKey`/`SignChunkIndex`, `MarkerGroup`/`MarkerGroupMatchType`/`MarkerGroupType`, `ConfigManager`/`ConfigProvider`,
-`ReactiveQueue`, `HtmlUtils`, `FileUtils`, `ColorUtils`, `LineGroupResolver`/`ShapeGroupResolver`,
+`ReactiveQueue`, `HtmlUtils`, `FileUtils`, `ColorUtils`, `LineGroupResolver`/`ShapeGroupResolver`/`ExtrudeGroupResolver`,
 `SignTransitionResolver`, `RenderMaskEvaluator` (`core.bounds` — see `core-pipeline.md` §8), the
 sign-persistence loaders/converters/writer (`VersionedFileSignEntryLoader`, `Version1SignEntryLoader`,
 `Version3Converter`, `Version4Converter`, `Version5Converter`, `RegionShardedSignEntryLoader`,
@@ -23,6 +23,10 @@ sign-persistence loaders/converters/writer (`VersionedFileSignEntryLoader`, `Ver
 `ActionFactory`/`MarkerSetIdentifierCollection`. `SignManager` itself stays game-coupled (its constructor builds a
 `BlueMapAPIConnector`), but its `reparseFromRawLines`/`safeReparseFromRawLines` reparse-on-reload logic (§3 of
 `core-pipeline.md`) is extracted as a package-visible static specifically so it's directly testable.
+`BlueMapAPIConnector` itself stays game-coupled overall, but its `resolveExtrudeHeightRange` helper (§6 of
+`core-pipeline.md`) is a package-private static returning a plain `ExtrudeHeightRange` record with no
+`bluemap-api` types, specifically so it's directly testable (`BlueMapAPIConnectorTest`) without pulling
+`bluemap-api` (`compileOnly`) onto the test classpath.
 
 `Version1SignEntryLoader` used to be a partial exception — its legacy-shorthand (`"nether"`/`"end"`/`"overworld"`)
 dimension normalization branch read `net.minecraft.world.level.Level`'s static constants, requiring a running
@@ -31,7 +35,8 @@ e.g. `"minecraft:the_nether"`) specifically so `Version1SignEntryLoaderTest` cou
 branches directly instead of only via an already-namespaced dimension string.
 
 Excluded — anything that must reference live game types (`SignHelper`, the two mixins, `BlueMapSignMarkersMod`
-including its `ServerChunkEvents.CHUNK_LOAD` reconciliation handler, `BlueMapAPIConnector`, `SignProvider` itself,
+including its `ServerChunkEvents.CHUNK_LOAD` reconciliation handler, `BlueMapAPIConnector` (except its
+`resolveExtrudeHeightRange` static, see above), `SignProvider` itself,
 since loading/saving calls the game-coupled `SignManager` singleton) — these are thin glue and can only be
 verified manually: `./gradlew runServer` + placing/editing/breaking signs in-game (and, for chunk-load
 reconciliation specifically, removing a sign block without going through the mod — e.g. deleting its chunk's
@@ -39,7 +44,7 @@ region file to force a regen — then reloading that chunk), watching the BlueMa
 
 ## Current coverage
 
-As of `feature/tpwalke2/67-map-bounds` (`217c17f`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
+As of `feature/tpwalke2/196-extrude-markers` (`5b38852`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
 - `core/signs/SignLinesParserTest.java` — 12 `@Test` methods covering `SignLinesParser`: label-on-prefix-line vs.
   label-on-following-line, multi-line detail joining/trimming, leading/interstitial blank-line handling, no-match
   and all-blank sign results, `REGEX` match type's whole-line-match requirement (contrasted with `STARTS_WITH`),
@@ -124,7 +129,9 @@ As of `feature/tpwalke2/67-map-bounds` (`217c17f`), `src/test/java/com/tpwalke2/
   (`isFirstAppearance` true/false), below-threshold no-ops, SHAPE→NONE dropping to 2 members dispatching
   `RemoveShapeMarkerAction`, SHAPE↔SHAPE same-group/label recompute (no-op vs. detail-changed vs.
   reload-forced), and the full cross-type bundling matrix (POI↔SHAPE, LINE↔SHAPE) both for a live sign change and
-  for a config-reload-driven type flip/rename (`groupIdentityObsolete`).
+  for a config-reload-driven type flip/rename (`groupIdentityObsolete`). `EXTRUDE` coverage mirrors `SHAPE`'s
+  exactly (same `EXTRUDE_MIN_MEMBERS = 3` threshold, same no-op/first-appearance/recompute/cross-type-bundling
+  shape), confirming `extrudeJoinAction`/`extrudeLeaveAction` behave identically to their `SHAPE` counterparts.
 - `core/signs/LineGroupResolverTest.java` — `members` filters to signs sharing `(parentMap, prefix, label)` exactly
   (a different map, prefix, or label is excluded), orders results by `createdAtMillis` ascending, breaks ties on a
   duplicate `createdAtMillis` deterministically by position (`x`, then `y`, then `z` — the cross-region-file
@@ -134,6 +141,8 @@ As of `feature/tpwalke2/67-map-bounds` (`217c17f`), `src/test/java/com/tpwalke2/
   ordering, position tie-break, empty input), confirming `ShapeGroupResolver.members` behaves identically since it
   delegates straight to `LineGroupResolver.members` — the `SHAPE`/`LINE` difference is the caller-side minimum
   member count (`core-pipeline.md` §3), not resolver logic.
+- `core/signs/ExtrudeGroupResolverTest.java` — same four cases again (filtering, ordering, tie-break, empty input),
+  confirming `ExtrudeGroupResolver.members` also delegates straight to `LineGroupResolver.members` unchanged.
 - `core/signs/SignManagerTest.java` (reparse coverage) — targets `SignManager.reparseFromRawLines` directly:
   re-parses both sides under a changed config when `frontRawLines`/`backRawLines` are present; returns the *same*
   entry instance unchanged when either raw-lines array is `null` (pre-`V5` migrated data) or only one side has raw
@@ -162,7 +171,9 @@ As of `feature/tpwalke2/67-map-bounds` (`217c17f`), `src/test/java/com/tpwalke2/
   (a non-numeric string, a JSON array, a number outside `int` range — all fall back to `0` with a warning, per
   `resolveSorting` in `config-and-persistence.md`); `cssClasses` has a null-entry-dropped test and warning-only
   tests for `cssClasses` set on a `LINE`/`SHAPE` group; `depthTest` has a warning-only test for `depthTest` set on
-  a `POI` group.
+  a `POI` group. `EXTRUDE` (ticket 196) reuses `SHAPE`'s exact test shape for the fields it shares
+  defaults/validation with (`lineWidth`/`lineColor`/`fillColor`), plus its own `warnOnTypeFieldMismatches`
+  warning-only tests for `icon`/`offsetX`/`offsetY`/`cssClasses` set on an `EXTRUDE` group.
 - `config/ConfigManagerTest.java` — `get()` returns the config from the most recent `reload`; falls back to
   `new BMSMConfigV2()` defaults when the configured path fails to load; a second `reload()` replaces (not merges
   with) what an earlier `reload` cached.
@@ -177,7 +188,9 @@ As of `feature/tpwalke2/67-map-bounds` (`217c17f`), `src/test/java/com/tpwalke2/
   fields and `LineMarkerIdentifier`, plus a reuse test confirming line and POI actions for the same map/group share
   one `MarkerSetIdentifier` (ticket 11). `createSetShapeAction`/`createRemoveShapeAction` have the same shape of
   dedicated tests, additionally confirming `fillColor` is threaded from the `MarkerGroup` into the built
-  `SetShapeMarkerAction`, and that set/remove use independent `ShapeMarkerIdentifier`s.
+  `SetShapeMarkerAction`, and that set/remove use independent `ShapeMarkerIdentifier`s. `createSetExtrudeAction`/
+  `createRemoveExtrudeAction` (ticket 196) have the same shape of tests again, confirming `fillColor` threading and
+  independent `ExtrudeMarkerIdentifier`s.
 - `core/markers/MarkerSetIdentifierCollectionTest.java` — `getIdentifier` returns the same instance for a repeated
   `(mapId, markerGroup)` pair (case-insensitive on `mapId`), distinct pairs get distinct identifiers. Also includes
   `concurrentFirstTimeCallersForTheSameComboConvergeOnOneIdentifierInstance`, an active (not `@Disabled`) regression
@@ -248,6 +261,10 @@ As of `feature/tpwalke2/67-map-bounds` (`217c17f`), `src/test/java/com/tpwalke2/
   time rather than reaching `RenderMaskEllipse.contains()`'s division), and polygon (a non-convex "C" shape via ray
   casting); and `quotedBooleanAndNumericFieldsAreEquivalentToBareLiterals` confirming a quoted literal
   (`subtract: "true"`) parses identically to the bare form (the fix in commit `217c17f`).
+- `core/bluemap/BlueMapAPIConnectorTest.java` — the sole test class for otherwise-game-coupled `BlueMapAPIConnector`,
+  exercising only its package-private `resolveExtrudeHeightRange` static (ticket 196, see `core-pipeline.md` §6):
+  members all at the same Y get a minimum 1-block height instead of collapsing to zero; members at different Ys
+  span their actual lowest-to-tallest height.
 
 ## CI integration
 
@@ -263,5 +280,5 @@ JUnit reporter action** — those actions don't get `checks: write` permission o
 public repo, so the summary step was written to need no extra permissions.
 
 ---
-*Last updated: 2026-09-02 | Verified against: feature/tpwalke2/197-marker-polish (1745bc2)*
+*Last updated: 2026-09-02 | Verified against: feature/tpwalke2/196-extrude-markers (5b38852)*
 
