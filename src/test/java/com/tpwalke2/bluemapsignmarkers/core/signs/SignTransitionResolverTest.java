@@ -134,7 +134,7 @@ class SignTransitionResolverTest {
         var set = assertInstanceOf(SetLineMarkerAction.class, action);
         assertTrue(set.isFirstAppearance());
         assertEquals(2, set.getPoints().size());
-        assertEquals("Ridge", set.getDetail());
+        assertEquals("d2", set.getDetail());
     }
 
     @Test
@@ -149,7 +149,7 @@ class SignTransitionResolverTest {
 
         var set = assertInstanceOf(SetLineMarkerAction.class, action);
         assertTrue(!set.isFirstAppearance());
-        assertEquals("Ridge", set.getDetail());
+        assertEquals("d3", set.getDetail());
         assertEquals(3, set.getPoints().size());
     }
 
@@ -256,7 +256,7 @@ class SignTransitionResolverTest {
 
         var set = assertInstanceOf(SetLineMarkerAction.class, action);
         assertEquals(2, set.getPoints().size());
-        assertEquals("Ridge", set.getDetail());
+        assertEquals("d1", set.getDetail());
     }
 
     @Test
@@ -299,7 +299,7 @@ class SignTransitionResolverTest {
 
         var set = assertInstanceOf(SetLineMarkerAction.class, action);
         assertEquals(2, set.getPoints().size());
-        assertEquals("Ridge", set.getDetail());
+        assertEquals("detail", set.getDetail());
     }
 
     @Test
@@ -386,7 +386,7 @@ class SignTransitionResolverTest {
         var set = assertInstanceOf(SetShapeMarkerAction.class, action);
         assertTrue(set.isFirstAppearance());
         assertEquals(3, set.getPoints().size());
-        assertEquals("Plot", set.getDetail());
+        assertEquals("d3", set.getDetail());
     }
 
     @Test
@@ -445,7 +445,7 @@ class SignTransitionResolverTest {
 
         var set = assertInstanceOf(SetShapeMarkerAction.class, action);
         assertEquals(3, set.getPoints().size());
-        assertEquals("Plot", set.getDetail());
+        assertEquals("d1", set.getDetail());
     }
 
     @Test
@@ -491,7 +491,7 @@ class SignTransitionResolverTest {
 
         var set = assertInstanceOf(SetShapeMarkerAction.class, action);
         assertEquals(3, set.getPoints().size());
-        assertEquals("Plot", set.getDetail());
+        assertEquals("detail", set.getDetail());
     }
 
     @Test
@@ -759,7 +759,7 @@ class SignTransitionResolverTest {
         var set = assertInstanceOf(SetExtrudeMarkerAction.class, action);
         assertTrue(set.isFirstAppearance());
         assertEquals(3, set.getPoints().size());
-        assertEquals("Tower", set.getDetail());
+        assertEquals("d3", set.getDetail());
     }
 
     @Test
@@ -818,7 +818,7 @@ class SignTransitionResolverTest {
 
         var set = assertInstanceOf(SetExtrudeMarkerAction.class, action);
         assertEquals(3, set.getPoints().size());
-        assertEquals("Tower", set.getDetail());
+        assertEquals("d1", set.getDetail());
     }
 
     @Test
@@ -864,7 +864,7 @@ class SignTransitionResolverTest {
 
         var set = assertInstanceOf(SetExtrudeMarkerAction.class, action);
         assertEquals(3, set.getPoints().size());
-        assertEquals("Tower", set.getDetail());
+        assertEquals("detail", set.getDetail());
     }
 
     @Test

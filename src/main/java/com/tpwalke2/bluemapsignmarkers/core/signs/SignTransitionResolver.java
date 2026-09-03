@@ -167,7 +167,7 @@ public class SignTransitionResolver {
         if (members.size() < 2) return null;
 
         var isFirstAppearance = !sameGroupRecompute && members.size() == 2;
-        return actionFactory.createSetLineAction(parentMap, rep.group(), rep.label(), rep.label(), toPoints(members), isFirstAppearance);
+        return actionFactory.createSetLineAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), isFirstAppearance);
     }
 
     // Recomputes a line group excluding the current sign (it must already be removed from/no longer
@@ -182,7 +182,7 @@ public class SignTransitionResolver {
         var members = LineGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
 
         if (members.size() >= 2) {
-            return actionFactory.createSetLineAction(parentMap, rep.group(), rep.label(), rep.label(), toPoints(members), false);
+            return actionFactory.createSetLineAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), false);
         }
 
         if (members.size() == 1) {
@@ -207,7 +207,7 @@ public class SignTransitionResolver {
         if (members.size() < SHAPE_MIN_MEMBERS) return null;
 
         var isFirstAppearance = !sameGroupRecompute && members.size() == SHAPE_MIN_MEMBERS;
-        return actionFactory.createSetShapeAction(parentMap, rep.group(), rep.label(), rep.label(), toPoints(members), isFirstAppearance);
+        return actionFactory.createSetShapeAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), isFirstAppearance);
     }
 
     private static MarkerAction shapeLeaveAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, Map<String, MarkerGroup> currentPrefixGroupMap) {
@@ -218,7 +218,7 @@ public class SignTransitionResolver {
         var members = ShapeGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
 
         if (members.size() >= SHAPE_MIN_MEMBERS) {
-            return actionFactory.createSetShapeAction(parentMap, rep.group(), rep.label(), rep.label(), toPoints(members), false);
+            return actionFactory.createSetShapeAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), false);
         }
 
         if (members.size() == SHAPE_MIN_MEMBERS - 1) {
@@ -238,7 +238,7 @@ public class SignTransitionResolver {
         if (members.size() < EXTRUDE_MIN_MEMBERS) return null;
 
         var isFirstAppearance = !sameGroupRecompute && members.size() == EXTRUDE_MIN_MEMBERS;
-        return actionFactory.createSetExtrudeAction(parentMap, rep.group(), rep.label(), rep.label(), toPoints(members), isFirstAppearance);
+        return actionFactory.createSetExtrudeAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), isFirstAppearance);
     }
 
     private static MarkerAction extrudeLeaveAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, Map<String, MarkerGroup> currentPrefixGroupMap) {
@@ -249,7 +249,7 @@ public class SignTransitionResolver {
         var members = ExtrudeGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
 
         if (members.size() >= EXTRUDE_MIN_MEMBERS) {
-            return actionFactory.createSetExtrudeAction(parentMap, rep.group(), rep.label(), rep.label(), toPoints(members), false);
+            return actionFactory.createSetExtrudeAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), false);
         }
 
         if (members.size() == EXTRUDE_MIN_MEMBERS - 1) {

@@ -38,7 +38,7 @@ configuration contains the following options:
   - `POI` - a single point marker per sign;
   - `LINE` - signs sharing this group's prefix and the same first-line label become ordered points of one line marker (points ordered by placement time); requires at least 2 signs to appear;
   - `SHAPE` - signs sharing this group's prefix and the same first-line label become ordered points of one filled polygon marker (points ordered by placement time, height taken from the tallest member); requires at least 3 signs to appear;
-  - `EXTRUDE` - shares `SHAPE`'s exact membership model (same prefix/label grouping, 3+ signs, points ordered by placement time), but renders the polygon extruded as a solid volume: the floor is taken from the lowest member's Y, the ceiling from the tallest member's Y;
+  - `EXTRUDE` - shares `SHAPE`'s exact membership model (same prefix/label grouping, 3+ signs, points ordered by placement time), but renders the polygon extruded as a solid volume: the floor is taken from the lowest member's Y, the ceiling from the tallest member's Y (if all members share the same Y, the ceiling is bumped up by 1 block to avoid a zero-height volume);
 - `icon` - the icon path or URL to display for the marker; optional; default is `null` (BlueMap default POI icon); `POI` only
 - `offsetX` - the x offset of the marker; optional; default is `0` (corresponds with `anchor.x` in BlueMap base configuration); `POI` only
 - `offsetY` - the y offset of the marker; optional; default is `0` (corresponds with `anchor.y` in BlueMap base configuration); `POI` only
@@ -131,5 +131,6 @@ placement order into a line in the "Trails" marker group once 2 or more such sig
 prefix, sharing the same description line, will be connected in placement order into a filled polygon in the
 "Regions" marker group once 3 or more such signs exist. Signs with the `[building]` prefix, sharing the same
 description line, will be connected in placement order into a solid volume in the "Buildings" marker group once 3
-or more such signs exist, spanning from the lowest sign's height up to the tallest sign's height.
+or more such signs exist, spanning from the lowest sign's height up to the tallest sign's height (or 1 block tall if
+all members share the same height).
 
