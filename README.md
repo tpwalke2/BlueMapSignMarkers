@@ -38,23 +38,24 @@ configuration contains the following options:
   - `POI` - a single point marker per sign;
   - `LINE` - signs sharing this group's prefix and the same first-line label become ordered points of one line marker (points ordered by placement time); requires at least 2 signs to appear;
   - `SHAPE` - signs sharing this group's prefix and the same first-line label become ordered points of one filled polygon marker (points ordered by placement time, height taken from the tallest member); requires at least 3 signs to appear;
+  - `EXTRUDE` - shares `SHAPE`'s exact membership model (same prefix/label grouping, 3+ signs, points ordered by placement time), but renders the polygon extruded as a solid volume: the floor is taken from the lowest member's Y, the ceiling from the tallest member's Y (if all members share the same Y, the ceiling is bumped up by 1 block to avoid a zero-height volume);
 - `icon` - the icon path or URL to display for the marker; optional; default is `null` (BlueMap default POI icon); `POI` only
 - `offsetX` - the x offset of the marker; optional; default is `0` (corresponds with `anchor.x` in BlueMap base configuration); `POI` only
 - `offsetY` - the y offset of the marker; optional; default is `0` (corresponds with `anchor.y` in BlueMap base configuration); `POI` only
 - `defaultHidden` - If this is true, the marker-set will be hidden by default and can be enabled by the user; optional; default is `false`
 - `minDistance` - the minimum distance from the camera at which the marker will be displayed; optional; default is `0.0` (floating point, double precision)
 - `maxDistance` - the maximum distance from the camera at which the marker will be displayed; optional; default is `10000000.0` (floating point, double precision)
-- `lineWidth` - the width in pixels of the line/shape border; optional; default is `2`; `LINE`/`SHAPE` only
-- `lineColor` - the hex color (with alpha) of the line/shape border, e.g. `#FF0000FF`; optional; default is `#FF0000FF`; `LINE`/`SHAPE` only
-- `fillColor` - the hex color (with alpha) of a shape's interior, e.g. `#FF000033`; optional; default is `#FF000033` (translucent red); `SHAPE` only
+- `lineWidth` - the width in pixels of the line/shape/extrude border; optional; default is `2`; `LINE`/`SHAPE`/`EXTRUDE` only
+- `lineColor` - the hex color (with alpha) of the line/shape/extrude border, e.g. `#FF0000FF`; optional; default is `#FF0000FF`; `LINE`/`SHAPE`/`EXTRUDE` only
+- `fillColor` - the hex color (with alpha) of a shape's or extrude volume's interior, e.g. `#FF000033`; optional; default is `#FF000033` (translucent red); `SHAPE`/`EXTRUDE` only
 - `sorting` - the marker-set's order in the map's layer menu (lower sorts first); optional; default is `0`
 - `toggleable` - whether the marker-set can be hidden/shown by a player at all; optional; default is `true`
-- `depthTest` - whether terrain can occlude the marker (set `false` to keep an underground trail/region visible through terrain); optional; default is `true`; `LINE`/`SHAPE` only
+- `depthTest` - whether terrain can occlude the marker (set `false` to keep an underground trail/region visible through terrain); optional; default is `true`; `LINE`/`SHAPE`/`EXTRUDE` only
 - `cssClasses` - a list of CSS classes added to the marker element, for styling via BlueMap's `custom.css`; optional; default is an empty list; `POI` only
 
-Setting a field on a group type it doesn't apply to (e.g. `icon` on a `LINE`/`SHAPE` group, `fillColor` on a
-`POI`/`LINE` group, `depthTest` on a `POI` group, or `cssClasses` on a `LINE`/`SHAPE` group) is not an error; the mod
-logs a warning and ignores the field.
+Setting a field on a group type it doesn't apply to (e.g. `icon` on a `LINE`/`SHAPE`/`EXTRUDE` group, `fillColor` on a
+`POI`/`LINE` group, `depthTest` on a `POI` group, or `cssClasses` on a `LINE`/`SHAPE`/`EXTRUDE` group) is not an error;
+the mod logs a warning and ignores the field.
 
 ## Example
 
@@ -89,14 +90,22 @@ logs a warning and ignores the field.
       "lineWidth": 2,
       "lineColor": "#FFA500FF",
       "fillColor": "#FFA50040"
+    },
+    {
+      "prefix": "[building]",
+      "name": "Buildings",
+      "type": "EXTRUDE",
+      "lineWidth": 2,
+      "lineColor": "#4682B4FF",
+      "fillColor": "#4682B440"
     }
   ]
 }
 ```
 
-This example configuration creates 5 marker groups: one for `[poi]` signs, one for `[store]` signs, one for signs
-where the prefix is a regex match for villages (e.g. `[Village]` or `[VILLAGE]`), one for `[trail]` signs, and one
-for `[region]` signs.
+This example configuration creates 6 marker groups: one for `[poi]` signs, one for `[store]` signs, one for signs
+where the prefix is a regex match for villages (e.g. `[Village]` or `[VILLAGE]`), one for `[trail]` signs, one for
+`[region]` signs, and one for `[building]` signs.
 
 ## Troubleshooting
 
@@ -120,5 +129,8 @@ prefix will be displayed in the "Stores" marker group. Signs that match the vill
 'Villages' marker group. Signs with the `[trail]` prefix, sharing the same description line, will be connected in
 placement order into a line in the "Trails" marker group once 2 or more such signs exist. Signs with the `[region]`
 prefix, sharing the same description line, will be connected in placement order into a filled polygon in the
-"Regions" marker group once 3 or more such signs exist.
+"Regions" marker group once 3 or more such signs exist. Signs with the `[building]` prefix, sharing the same
+description line, will be connected in placement order into a solid volume in the "Buildings" marker group once 3
+or more such signs exist, spanning from the lowest sign's height up to the tallest sign's height (or 1 block tall if
+all members share the same height).
 

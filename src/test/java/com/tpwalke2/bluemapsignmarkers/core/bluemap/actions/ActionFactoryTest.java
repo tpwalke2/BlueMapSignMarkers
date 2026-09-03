@@ -205,6 +205,51 @@ class ActionFactoryTest {
         assertSame(set.getMarkerIdentifier().parentSet(), removed.getMarkerIdentifier().parentSet());
     }
 
+    @Test
+    void createSetExtrudeActionBuildsTheExtrudeMarkerIdentifierAndActionFields() {
+        var factory = new ActionFactory(new MarkerSetIdentifierCollection());
+        var group = extrudeMarkerGroup("[extrude]");
+        var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6), new LinePoint(7, 8, 9));
+
+        var action = factory.createSetExtrudeAction("world", group, "label", "detail", points, true);
+        var identifier = (com.tpwalke2.bluemapsignmarkers.core.markers.ExtrudeMarkerIdentifier) action.getMarkerIdentifier();
+
+        assertEquals("label", identifier.label());
+        assertEquals("world", identifier.parentSet().mapId());
+        assertEquals(group, identifier.parentSet().markerGroup());
+        assertEquals("label", action.getLabel());
+        assertEquals("detail", action.getDetail());
+        assertEquals(points, action.getPoints());
+        assertEquals(group.lineWidth(), action.getLineWidth());
+        assertEquals(group.lineColor(), action.getLineColor());
+        assertEquals(group.fillColor(), action.getFillColor());
+        assertTrue(action.isFirstAppearance());
+    }
+
+    @Test
+    void createRemoveExtrudeActionBuildsTheExtrudeMarkerIdentifier() {
+        var factory = new ActionFactory(new MarkerSetIdentifierCollection());
+        var group = extrudeMarkerGroup("[extrude]");
+
+        var action = factory.createRemoveExtrudeAction("world", group, "label");
+        var identifier = (com.tpwalke2.bluemapsignmarkers.core.markers.ExtrudeMarkerIdentifier) action.getMarkerIdentifier();
+
+        assertEquals("label", identifier.label());
+        assertEquals("world", identifier.parentSet().mapId());
+        assertEquals(group, identifier.parentSet().markerGroup());
+    }
+
+    @Test
+    void extrudeActionsForTheSameMapAndGroupReuseTheSameMarkerSetIdentifierAsPOIActions() {
+        var factory = new ActionFactory(new MarkerSetIdentifierCollection());
+        var group = extrudeMarkerGroup("[extrude]");
+
+        var set = factory.createSetExtrudeAction("world", group, "label", "detail", List.of(), true);
+        var removed = factory.createRemoveExtrudeAction("world", group, "other label");
+
+        assertSame(set.getMarkerIdentifier().parentSet(), removed.getMarkerIdentifier().parentSet());
+    }
+
     private static MarkerGroup markerGroup(String prefix) {
         return new MarkerGroup(
                 prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, prefix, "icon.png", 0, 0, false, 0, 0,
@@ -220,6 +265,12 @@ class ActionFactoryTest {
     private static MarkerGroup shapeMarkerGroup(String prefix) {
         return new MarkerGroup(
                 prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.SHAPE, prefix, null, 0, 0, false, 0, 0,
+                2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
+    }
+
+    private static MarkerGroup extrudeMarkerGroup(String prefix) {
+        return new MarkerGroup(
+                prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.EXTRUDE, prefix, null, 0, 0, false, 0, 0,
                 2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
     }
 }

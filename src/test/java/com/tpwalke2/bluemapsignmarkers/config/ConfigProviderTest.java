@@ -739,4 +739,109 @@ class ConfigProviderTest {
         assertTrue(config.getMarkerGroups()[0].cssClasses().isEmpty());
         assertTrue(warnings.stream().anyMatch(m -> m.contains("cssClasses")));
     }
+
+    @Test
+    void loadConfigAllowsExplicitLineWidthLineColorAndFillColorOnAnExtrudeGroup(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[extrude]", "name": "Extrude Group", "type": "EXTRUDE", "lineWidth": 5, "lineColor": "#00FF00FF", "fillColor": "#00FF0080" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(MarkerGroupType.EXTRUDE, group.type());
+        assertEquals(5, group.lineWidth());
+        assertEquals("#00FF00FF", group.lineColor());
+        assertEquals("#00FF0080", group.fillColor());
+    }
+
+    @Test
+    void loadConfigDefaultsFillColorForAnExtrudeGroupWhenOmitted(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[extrude]", "name": "Extrude Group", "type": "EXTRUDE" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals("#FF000033", group.fillColor());
+    }
+
+    @Test
+    void loadConfigFallsBackToDefaultLineWidthLineColorAndFillColorForAnExtrudeGroupWhenMalformed(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[extrude]", "name": "Extrude Group", "type": "EXTRUDE", "lineWidth": -5, "lineColor": "notacolor", "fillColor": "notacolor" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(2, group.lineWidth());
+        assertEquals("#FF0000FF", group.lineColor());
+        assertEquals("#FF000033", group.fillColor());
+    }
+
+    @Test
+    void loadConfigStillLoadsAnExtrudeGroupWithIconAndOffsetsSet(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[extrude]", "name": "Extrude Group", "type": "EXTRUDE", "icon": "icon.png", "offsetX": 1, "offsetY": 2 }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(1, config.getMarkerGroups().length);
+        var group = config.getMarkerGroups()[0];
+        assertEquals(MarkerGroupType.EXTRUDE, group.type());
+        assertEquals("icon.png", group.icon());
+        assertEquals(1, group.offsetX());
+        assertEquals(2, group.offsetY());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("icon")));
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("offsetX")));
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("offsetY")));
+    }
+
+    @Test
+    void loadConfigWarnsWhenCssClassesIsSetOnAnExtrudeGroup(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[extrude]", "name": "Extrude Group", "type": "EXTRUDE", "cssClasses": ["ignored"] }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(1, config.getMarkerGroups().length);
+        assertTrue(config.getMarkerGroups()[0].cssClasses().isEmpty());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("cssClasses")));
+    }
 }
