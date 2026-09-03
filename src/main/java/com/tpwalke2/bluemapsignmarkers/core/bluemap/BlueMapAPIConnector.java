@@ -9,13 +9,16 @@ import com.tpwalke2.bluemapsignmarkers.core.bounds.RenderMaskEvaluator;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.AddMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.GroupTransitionMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.MarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveExtrudeMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveLineMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveShapeMarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetExtrudeMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetLineMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetShapeMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.UpdateMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.markers.DispatchedMarkerIdentifier;
+import com.tpwalke2.bluemapsignmarkers.core.markers.ExtrudeMarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.LineMarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.LinePoint;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
@@ -26,6 +29,7 @@ import com.tpwalke2.bluemapsignmarkers.core.reactive.ReactiveQueue;
 import com.flowpowered.math.vector.Vector2d;
 import de.bluecolored.bluemap.api.BlueMapAPI;
 import de.bluecolored.bluemap.api.BlueMapMap;
+import de.bluecolored.bluemap.api.markers.ExtrudeMarker;
 import de.bluecolored.bluemap.api.markers.LineMarker;
 import de.bluecolored.bluemap.api.markers.Marker;
 import de.bluecolored.bluemap.api.markers.MarkerSet;
@@ -200,6 +204,8 @@ public class BlueMapAPIConnector {
                     prepareGated(setAction.getMarkerIdentifier(), setAction.getPoints(), markers -> setLineMarker(setAction, markers));
             case SetShapeMarkerAction setAction ->
                     prepareGated(setAction.getMarkerIdentifier(), setAction.getPoints(), markers -> setShapeMarker(setAction, markers));
+            case SetExtrudeMarkerAction setAction ->
+                    prepareGated(setAction.getMarkerIdentifier(), setAction.getPoints(), markers -> setExtrudeMarker(setAction, markers));
             // Explicit removes - the sign's representation is genuinely leaving, independent of
             // render bounds - so these apply unconditionally on every real map, no gating needed.
             case RemoveMarkerAction removeAction ->
@@ -207,6 +213,8 @@ public class BlueMapAPIConnector {
             case RemoveLineMarkerAction removeAction ->
                     prepareUngated(removeAction.getMarkerIdentifier(), markers -> removeMarkerById(removeAction.getMarkerIdentifier().getId(), markers));
             case RemoveShapeMarkerAction removeAction ->
+                    prepareUngated(removeAction.getMarkerIdentifier(), markers -> removeMarkerById(removeAction.getMarkerIdentifier().getId(), markers));
+            case RemoveExtrudeMarkerAction removeAction ->
                     prepareUngated(removeAction.getMarkerIdentifier(), markers -> removeMarkerById(removeAction.getMarkerIdentifier().getId(), markers));
             default -> {
                 LOGGER.warn("Unknown marker action: {}", markerAction);
@@ -286,6 +294,8 @@ public class BlueMapAPIConnector {
             case SetLineMarkerAction setAction -> setAction.isFirstAppearance() ? "Adding" : "Updating";
             case RemoveShapeMarkerAction ignored -> "Removing";
             case SetShapeMarkerAction setAction -> setAction.isFirstAppearance() ? "Adding" : "Updating";
+            case RemoveExtrudeMarkerAction ignored -> "Removing";
+            case SetExtrudeMarkerAction setAction -> setAction.isFirstAppearance() ? "Adding" : "Updating";
             default -> "Processing";
         };
 
@@ -308,6 +318,10 @@ public class BlueMapAPIConnector {
             position = String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
         } else if (identifier instanceof ShapeMarkerIdentifier shapeMarkerIdentifier) {
             position = String.format(" label='%s'", LogUtils.sanitizeForLog(shapeMarkerIdentifier.label()));
+        } else if (identifier instanceof ExtrudeMarkerIdentifier && action instanceof SetExtrudeMarkerAction setAction) {
+            position = String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
+        } else if (identifier instanceof ExtrudeMarkerIdentifier extrudeMarkerIdentifier) {
+            position = String.format(" label='%s'", LogUtils.sanitizeForLog(extrudeMarkerIdentifier.label()));
         }
 
         LOGGER.debug("{} {} type marker in {}{}{}",
@@ -386,6 +400,51 @@ public class BlueMapAPIConnector {
                 .label(action.getLabel())
                 .detail(HtmlUtils.toHtmlDetail(action.getDetail()))
                 .shape(shape, shapeY)
+                .lineWidth(action.getLineWidth())
+                .lineColor(toBlueMapColor(lineColor))
+                .fillColor(toBlueMapColor(fillColor))
+                .depthTestEnabled(markerGroup.depthTest())
+                .build();
+        marker.setMinDistance(markerGroup.minDistance());
+        marker.setMaxDistance(markerGroup.maxDistance());
+        markers.put(action.getMarkerIdentifier().getId(), marker);
+    }
+
+    // Floor/ceiling of an extrude volume - a plain value holder (no bluemap-api types), so
+    // resolveExtrudeHeightRange stays testable even though bluemap-api is compileOnly and not on the test
+    // classpath (see AGENTS.md's testable-vs-game-coupled split).
+    record ExtrudeHeightRange(float minY, float maxY) {}
+
+    // Floor/ceiling anchor to the lowest/tallest member respectively, so the volume always spans the full
+    // height range its members were placed at, independent of placement order. All members at the same Y
+    // (e.g. one floor) would otherwise collapse the extrusion to zero height, rendering nothing on the map
+    // with no indication why - so give it a one-block floor instead.
+    static ExtrudeHeightRange resolveExtrudeHeightRange(String label, List<LinePoint> points) {
+        var minY = (float) points.stream().mapToInt(LinePoint::y).min().orElseThrow();
+        var maxY = (float) points.stream().mapToInt(LinePoint::y).max().orElseThrow();
+        if (maxY <= minY) {
+            LOGGER.debug("Extrude marker label='{}' has all members at Y={}; giving it a minimum 1-block height",
+                    LogUtils.sanitizeForLog(label), minY);
+            maxY = minY + 1;
+        }
+        return new ExtrudeHeightRange(minY, maxY);
+    }
+
+    private static void setExtrudeMarker(SetExtrudeMarkerAction action, Map<String, Marker> markers) {
+        LOGGER.debug("Setting extrude marker...");
+        if (action.getPoints().size() < 3) return; // defensive - SignManager should never dispatch below 3
+
+        var points = action.getPoints();
+        var shape = new Shape(points.stream().map(p -> new Vector2d(p.x(), p.z())).toList());
+        var heightRange = resolveExtrudeHeightRange(action.getLabel(), points);
+        var lineColor = ColorUtils.parseHex(action.getLineColor());
+        var fillColor = ColorUtils.parseHex(action.getFillColor());
+        var markerGroup = action.getMarkerIdentifier().parentSet().markerGroup();
+
+        var marker = ExtrudeMarker.builder()
+                .label(action.getLabel())
+                .detail(HtmlUtils.toHtmlDetail(action.getDetail()))
+                .shape(shape, heightRange.minY(), heightRange.maxY())
                 .lineWidth(action.getLineWidth())
                 .lineColor(toBlueMapColor(lineColor))
                 .fillColor(toBlueMapColor(fillColor))

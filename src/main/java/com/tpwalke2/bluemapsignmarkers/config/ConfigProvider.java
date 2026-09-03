@@ -213,6 +213,19 @@ public class ConfigProvider {
                 if (markerGroup.cssClasses() != null && !markerGroup.cssClasses().isEmpty()) {
                     LOGGER.warn("Marker group '{}' is type SHAPE but has 'cssClasses' set; this field is ignored for SHAPE groups", name);
                 }
+            } else if (type == MarkerGroupType.EXTRUDE) {
+                if (markerGroup.icon() != null) {
+                    LOGGER.warn("Marker group '{}' is type EXTRUDE but has 'icon' set; this field is ignored for EXTRUDE groups", name);
+                }
+                if (markerGroup.offsetX() != null) {
+                    LOGGER.warn("Marker group '{}' is type EXTRUDE but has 'offsetX' set; this field is ignored for EXTRUDE groups", name);
+                }
+                if (markerGroup.offsetY() != null) {
+                    LOGGER.warn("Marker group '{}' is type EXTRUDE but has 'offsetY' set; this field is ignored for EXTRUDE groups", name);
+                }
+                if (markerGroup.cssClasses() != null && !markerGroup.cssClasses().isEmpty()) {
+                    LOGGER.warn("Marker group '{}' is type EXTRUDE but has 'cssClasses' set; this field is ignored for EXTRUDE groups", name);
+                }
             }
         }
     }
@@ -266,14 +279,15 @@ public class ConfigProvider {
         return toggleable == null || toggleable;
     }
 
-    // depthTest is LINE/SHAPE-only (POI markers are always billboarded on top); unset or set on a POI group
-    // both resolve to the BlueMap default of true - warnOnTypeFieldMismatches already warns on the POI case.
+    // depthTest is LINE/SHAPE/EXTRUDE-only (POI markers are always billboarded on top); unset or set on a
+    // POI group both resolve to the BlueMap default of true - warnOnTypeFieldMismatches already warns on
+    // the POI case.
     private static boolean resolveDepthTest(LoadingMarkerGroupV2 markerGroup) {
         var depthTest = markerGroup.depthTest();
         if (depthTest == null) return true;
 
         var type = effectiveType(markerGroup);
-        if (type != MarkerGroupType.LINE && type != MarkerGroupType.SHAPE) return true;
+        if (type != MarkerGroupType.LINE && type != MarkerGroupType.SHAPE && type != MarkerGroupType.EXTRUDE) return true;
 
         return depthTest;
     }
@@ -295,14 +309,15 @@ public class ConfigProvider {
 
     // Falls back to the default width on a non-positive value rather than throwing - a bad config value
     // must not crash the server (same treatment as ColorUtils.parseHex's fallback on a malformed color).
-    // Only validated for LINE/SHAPE groups - lineWidth is ignored for POI groups (warnOnTypeFieldMismatches
-    // already warns about it being set), so validating it here too would just be a second, confusing warning.
+    // Only validated for LINE/SHAPE/EXTRUDE groups - lineWidth is ignored for POI groups
+    // (warnOnTypeFieldMismatches already warns about it being set), so validating it here too would just be
+    // a second, confusing warning.
     private static int resolveLineWidth(LoadingMarkerGroupV2 markerGroup) {
         var lineWidth = markerGroup.lineWidth();
         if (lineWidth == null) return DEFAULT_LINE_WIDTH;
 
         var type = effectiveType(markerGroup);
-        if (type != MarkerGroupType.LINE && type != MarkerGroupType.SHAPE) return lineWidth;
+        if (type != MarkerGroupType.LINE && type != MarkerGroupType.SHAPE && type != MarkerGroupType.EXTRUDE) return lineWidth;
 
         if (lineWidth <= 0) {
             LOGGER.warn("Marker group '{}' has a non-positive 'lineWidth' ({}); falling back to default {}",
@@ -315,7 +330,7 @@ public class ConfigProvider {
 
     // Warns and falls back to the default color at load time (rather than silently at dispatch time via
     // ColorUtils.parseHex's fallback) so a malformed color gets a clear, attributable log message.
-    // Only validated for LINE/SHAPE groups - see resolveLineWidth above.
+    // Only validated for LINE/SHAPE/EXTRUDE groups - see resolveLineWidth above.
     private static final String DEFAULT_LINE_COLOR = "#FF0000FF";
 
     private static String resolveLineColor(LoadingMarkerGroupV2 markerGroup) {
@@ -323,7 +338,7 @@ public class ConfigProvider {
         if (lineColor == null) return DEFAULT_LINE_COLOR;
 
         var type = effectiveType(markerGroup);
-        if (type != MarkerGroupType.LINE && type != MarkerGroupType.SHAPE) return lineColor;
+        if (type != MarkerGroupType.LINE && type != MarkerGroupType.SHAPE && type != MarkerGroupType.EXTRUDE) return lineColor;
 
         if (!ColorUtils.isValidHex(lineColor)) {
             LOGGER.warn("Marker group '{}' has a malformed 'lineColor' ({}); falling back to default {}",
@@ -334,9 +349,9 @@ public class ConfigProvider {
         return lineColor;
     }
 
-    // fillColor is SHAPE-only; its default is translucent (unlike lineColor's opaque default) so a SHAPE
-    // group configured without styling doesn't blot out the map underneath it. Only validated for SHAPE
-    // groups - see resolveLineWidth above.
+    // fillColor is SHAPE/EXTRUDE-only; its default is translucent (unlike lineColor's opaque default) so a
+    // SHAPE/EXTRUDE group configured without styling doesn't blot out the map underneath it. Only validated
+    // for SHAPE/EXTRUDE groups - see resolveLineWidth above.
     private static final String DEFAULT_FILL_COLOR = "#FF000033";
 
     private static String resolveFillColor(LoadingMarkerGroupV2 markerGroup) {
@@ -344,7 +359,7 @@ public class ConfigProvider {
         if (fillColor == null) return DEFAULT_FILL_COLOR;
 
         var type = effectiveType(markerGroup);
-        if (type != MarkerGroupType.SHAPE) return fillColor;
+        if (type != MarkerGroupType.SHAPE && type != MarkerGroupType.EXTRUDE) return fillColor;
 
         if (!ColorUtils.isValidHex(fillColor)) {
             LOGGER.warn("Marker group '{}' has a malformed 'fillColor' ({}); falling back to default {}",

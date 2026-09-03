@@ -108,7 +108,7 @@ contention the way locking around `processMarkerAction` would.
 
 A private record `Representation(MarkerGroup group, String label, String detail)` captures what a sign currently
 *is* to the marker layer: `null` means the sign matches no configured group (NONE); a non-null `Representation`
-whose `group.type()` is `POI`, `LINE`, or `SHAPE` says which kind. `computeRepresentation(SignEntry, prefixGroupMap)` derives
+whose `group.type()` is `POI`, `LINE`, `SHAPE`, or `EXTRUDE` says which kind. `computeRepresentation(SignEntry, prefixGroupMap)` derives
 it from `SignEntryHelper.getPrefix`/`getLabel`/`getDetail`, returning `null` if the entry has no resolvable prefix
 or the prefix isn't in `prefixGroupMap` (an operator removed/renamed that group's prefix since this sign was last
 dispatched — logged as a warning, not thrown).
@@ -126,31 +126,33 @@ their own `getAllSigns()` snapshot in as the `allSigns` parameter rather than th
 single already-taken snapshot can be reused across every sign's diff during a config reload (§ below) instead of
 re-querying the cache once per sign.
 
-`computeTransitionAction`'s logic (mirrors the table in the spec, generalized to a third `SHAPE` row/column
-alongside `POI`/`LINE`):
+`computeTransitionAction`'s logic (mirrors the table in the spec, generalized to a 4x4 grid of `POI`/`LINE`/`SHAPE`/
+`EXTRUDE` alongside `NONE` — see `docs/adr/0002-shape-duplicates-line-pattern.md` for why each new multi-point type
+duplicates the same pattern rather than generalizing it):
 
-| Old ＼ New | NONE | POI | LINE | SHAPE |
-|---|---|---|---|---|
-| **NONE** | no-op (`null`) | dispatch `createAddPOIAction` | `lineJoinAction` (recompute group *including* this sign; dispatch `SetLineMarkerAction` if ≥2 members, else no-op) | `shapeJoinAction` (same shape, gated on `SHAPE_MIN_MEMBERS = 3` instead of 2) |
-| **POI** | dispatch `createRemovePOIAction` | same group (prefix unchanged): label/detail both unchanged is a no-op, either changed dispatches `createUpdatePOIAction`. Different group (prefix changed): leave-effect + join-effect, bundled | leave-effect (Remove POI) + join-effect (`lineJoinAction`) | leave-effect (Remove POI) + join-effect (`shapeJoinAction`) |
-| **LINE** | `lineLeaveAction` (recompute group *excluding* this sign; `SetLineMarkerAction` if ≥2 remain, `RemoveLineMarkerAction` if exactly 1 remains, no-op if 0) | leave-effect (as above) + join-effect (Add POI) | same group+label: `lineJoinAction` with `sameGroupRecompute=true` (refreshes detail/points — always dispatches `Set` since ≥2 members necessarily already existed); different group/label: leave-effect + join-effect | leave-effect (`lineLeaveAction`) + join-effect (`shapeJoinAction`) |
-| **SHAPE** | `shapeLeaveAction` (mirrors `lineLeaveAction`, but `RemoveShapeMarkerAction` once membership drops below 3) | leave-effect (`shapeLeaveAction`) + join-effect (Add POI) | leave-effect (`shapeLeaveAction`) + join-effect (`lineJoinAction`) | same group+label: `shapeJoinAction` with `sameGroupRecompute=true` (mirrors `LINE`/`LINE`); different group/label: leave-effect + join-effect |
+| Old ＼ New | NONE | POI | LINE | SHAPE | EXTRUDE |
+|---|---|---|---|---|---|
+| **NONE** | no-op (`null`) | dispatch `createAddPOIAction` | `lineJoinAction` (recompute group *including* this sign; dispatch `SetLineMarkerAction` if ≥2 members, else no-op) | `shapeJoinAction` (same shape, gated on `SHAPE_MIN_MEMBERS = 3` instead of 2) | `extrudeJoinAction` (same shape again, gated on `EXTRUDE_MIN_MEMBERS = 3`) |
+| **POI** | dispatch `createRemovePOIAction` | same group (prefix unchanged): label/detail both unchanged is a no-op, either changed dispatches `createUpdatePOIAction`. Different group (prefix changed): leave-effect + join-effect, bundled | leave-effect (Remove POI) + join-effect (`lineJoinAction`) | leave-effect (Remove POI) + join-effect (`shapeJoinAction`) | leave-effect (Remove POI) + join-effect (`extrudeJoinAction`) |
+| **LINE** | `lineLeaveAction` (recompute group *excluding* this sign; `SetLineMarkerAction` if ≥2 remain, `RemoveLineMarkerAction` if exactly 1 remains, no-op if 0) | leave-effect (as above) + join-effect (Add POI) | same group+label: `lineJoinAction` with `sameGroupRecompute=true` (refreshes detail/points — always dispatches `Set` since ≥2 members necessarily already existed); different group/label: leave-effect + join-effect | leave-effect (`lineLeaveAction`) + join-effect (`shapeJoinAction`) | leave-effect (`lineLeaveAction`) + join-effect (`extrudeJoinAction`) |
+| **SHAPE** | `shapeLeaveAction` (mirrors `lineLeaveAction`, but `RemoveShapeMarkerAction` once membership drops below 3) | leave-effect (`shapeLeaveAction`) + join-effect (Add POI) | leave-effect (`shapeLeaveAction`) + join-effect (`lineJoinAction`) | same group+label: `shapeJoinAction` with `sameGroupRecompute=true` (mirrors `LINE`/`LINE`); different group/label: leave-effect + join-effect | leave-effect (`shapeLeaveAction`) + join-effect (`extrudeJoinAction`) |
+| **EXTRUDE** | `extrudeLeaveAction` (mirrors `shapeLeaveAction`, `RemoveExtrudeMarkerAction` once membership drops below 3) | leave-effect (`extrudeLeaveAction`) + join-effect (Add POI) | leave-effect (`extrudeLeaveAction`) + join-effect (`lineJoinAction`) | leave-effect (`extrudeLeaveAction`) + join-effect (`shapeJoinAction`) | same group+label: `extrudeJoinAction` with `sameGroupRecompute=true` (mirrors `SHAPE`/`SHAPE`); different group/label: leave-effect + join-effect |
 
 The POI/POI cell deliberately compares only `group().prefix()`, not label — a label-only edit on an unchanged group
 used to fall through to the different-group (leave+join) branch, because the older check compared
 `sameGroupAndLabel` (group *and* label) before deciding whether to update-in-place; that made an ordinary label
-edit dispatch a bundled remove+add instead of a single `UpdateMarkerAction`. The LINE/LINE and SHAPE/SHAPE cells
-both use `sameGroupAndLabel(a, b)` (compares `group().prefix()` and `label()`) — the same-group-recompute shortcut
-condition is `oldType == newType && oldType != MarkerGroupType.POI && sameGroupAndLabel(...)`, generalized to cover
-either non-`POI` type rather than naming `LINE` explicitly, since a `LINE`/`SHAPE` group's identity (and marker id,
-§5) is keyed on group+label either way. When a transition needs both a leave-effect and a join-effect (a
-group/label/type change, for any pair of the three types), each effect is computed independently (`null` if that
-half is a no-op, e.g. leaving a `LINE` group that still has ≥2 members after removal dispatches a `Set`, not a
-leave at all) and both are collected into a `List<MarkerAction>`: zero effects → `null`, one effect → dispatch it
-directly, two → bundle into a `GroupTransitionMarkerAction` (see §5/§6) so `ReactiveQueue`'s lack of
-message-ordering guarantees (§7) can't transiently show a sign in two places. `groupIdentityObsolete` (used by the
-config-reload path, below) is likewise type-agnostic, detecting a config-only type flip or rename for any of the
-three types.
+edit dispatch a bundled remove+add instead of a single `UpdateMarkerAction`. The LINE/LINE, SHAPE/SHAPE, and
+EXTRUDE/EXTRUDE cells all use `sameGroupAndLabel(a, b)` (compares `group().prefix()` and `label()`) — the
+same-group-recompute shortcut condition is `oldType == newType && oldType != MarkerGroupType.POI &&
+sameGroupAndLabel(...)`, generalized to cover any non-`POI` type rather than naming `LINE` explicitly, since a
+`LINE`/`SHAPE`/`EXTRUDE` group's identity (and marker id, §5) is keyed on group+label either way. When a transition
+needs both a leave-effect and a join-effect (a group/label/type change, for any pair of the four types), each
+effect is computed independently (`null` if that half is a no-op, e.g. leaving a `LINE` group that still has ≥2
+members after removal dispatches a `Set`, not a leave at all) and both are collected into a `List<MarkerAction>`:
+zero effects → `null`, one effect → dispatch it directly, two → bundle into a `GroupTransitionMarkerAction` (see
+§5/§6) so `ReactiveQueue`'s lack of message-ordering guarantees (§7) can't transiently show a sign in two places.
+`groupIdentityObsolete` (used by the config-reload path, below) is likewise type-agnostic, detecting a config-only
+type flip or rename for any of the four types.
 
 `lineJoinAction(allSigns, parentMap, rep, actionFactory, sameGroupRecompute)` and `lineLeaveAction(allSigns,
 parentMap, rep, actionFactory)` both call `LineGroupResolver.members(allSigns, parentMap, rep.group().prefix(),
@@ -158,11 +160,12 @@ rep.label())` against the caller-supplied snapshot — because `signCache` is a 
 for a config reload, see below), a snapshot taken once per dispatch always scans every sign currently known, so a
 `LINE` group recompute is always complete and order-independent regardless of which member triggered it.
 `lineJoinAction`'s `isFirstAppearance` flag (`!sameGroupRecompute && members.size() == 2`) is log-only — see §6 —
-not a distinct dispatch type. `shapeJoinAction`/`shapeLeaveAction` are the direct `SHAPE` counterparts: they call
-`ShapeGroupResolver.members(...)`, which itself just delegates to `LineGroupResolver.members(...)` (identical
-filtering/ordering — the only real difference between `LINE` and `SHAPE` group resolution is the caller-side
-minimum-member count, `2` vs. `SHAPE_MIN_MEMBERS = 3`), and dispatch via `actionFactory.createSetShapeAction`/
-`createRemoveShapeAction` instead of the line equivalents.
+not a distinct dispatch type. `shapeJoinAction`/`shapeLeaveAction` and `extrudeJoinAction`/`extrudeLeaveAction` are
+the direct `SHAPE`/`EXTRUDE` counterparts: they call `ShapeGroupResolver.members(...)`/`ExtrudeGroupResolver.members(...)`,
+both of which just delegate to `LineGroupResolver.members(...)` (identical filtering/ordering — the only real
+difference between `LINE`, `SHAPE`, and `EXTRUDE` group resolution is the caller-side minimum-member count, `2` vs.
+`SHAPE_MIN_MEMBERS = 3` vs. `EXTRUDE_MIN_MEMBERS = 3`), and dispatch via `actionFactory.createSetShapeAction`/
+`createRemoveShapeAction` or `createSetExtrudeAction`/`createRemoveExtrudeAction` instead of the line equivalents.
 
 `addOrUpdateSign(signEntry)` (called for every add/update event, from entry points 1-3 above — not §1.4's chunk-load
 reconciliation, which only ever calls `removeByKey` directly): first runs the incoming `signEntry` through
@@ -260,7 +263,7 @@ surgery) — the removal mixin (§1.3) only fires for an in-game block change on
 
 ## 5. Marker identity — `DispatchedMarkerIdentifier` / `MarkerIdentifier` / `LineMarkerIdentifier` / `MarkerSetIdentifier` / `MarkerSetIdentifierCollection`
 
-Two id schemes now exist side by side, unified behind one interface:
+Two id schemes now exist side by side (position-keyed and content-keyed), unified behind one interface:
 
 - `DispatchedMarkerIdentifier` (`core.markers`) — `{ MarkerSetIdentifier parentSet(); String getId(); }`. `MarkerAction`
   holds one of these (widened from the concrete `MarkerIdentifier` it used to hold) so a single dispatch hierarchy
@@ -273,10 +276,12 @@ Two id schemes now exist side by side, unified behind one interface:
   **content-keyed**, not position-keyed: a line's points move as members join/leave, but its id stays stable as
   long as the (group, label) key doesn't change. This is exactly the id-scheme difference that motivated
   `SignManager.reloadConfig()`'s rewrite (§3) — a naive replay only ever adds under a marker's *current* id, so an
-  id scheme changing between reloads (e.g. a group's `type` flipping `POI`↔`LINE`↔`SHAPE`) needs an explicit
+  id scheme changing between reloads (e.g. a group's `type` flipping `POI`↔`LINE`↔`SHAPE`↔`EXTRUDE`) needs an explicit
   dispatch removing the *old* id, not just adding the new one.
 - `ShapeMarkerIdentifier(label, parentSet)` (record) is the `SHAPE`-type counterpart, structurally identical to
   `LineMarkerIdentifier` — same two fields, same interface — with `getId()` returning `"shape:" + label` instead.
+  `ExtrudeMarkerIdentifier(label, parentSet)` (record) is the `EXTRUDE`-type counterpart, same shape again, with
+  `getId()` returning `"extrude:" + label`.
 - `MarkerSetIdentifier(mapId, markerGroup)` — one BlueMap marker-set per (map, marker-group) pair, unchanged by the
   line-markers work.
 - `ActionFactory.createChangeGroupPOIAction(x, y, z, mapId, label, detail, oldMarkerGroup, newMarkerGroup)` now
@@ -288,7 +293,9 @@ Two id schemes now exist side by side, unified behind one interface:
   a `LineMarkerIdentifier(label, ...)` and carries `markerGroup.lineWidth()`/`lineColor()` through unchanged.
   `createSetShapeAction(mapId, markerGroup, label, detail, points, isFirstAppearance)`/`createRemoveShapeAction(mapId,
   markerGroup, label)` mirror those two exactly but build a `ShapeMarkerIdentifier` and additionally carry
-  `markerGroup.fillColor()` into `SetShapeMarkerAction`.
+  `markerGroup.fillColor()` into `SetShapeMarkerAction`. `createSetExtrudeAction`/`createRemoveExtrudeAction` are
+  structurally identical to the `SHAPE` pair (same parameters, same `fillColor` threading) but build an
+  `ExtrudeMarkerIdentifier` and the resulting `SetExtrudeMarkerAction`/`RemoveExtrudeMarkerAction`.
 - `MarkerSetIdentifierCollection` is a per-`SignManager`-instance cache that guarantees the *same*
   `MarkerSetIdentifier` object is returned for a given `(mapId, markerGroup)` pair (indexed both by map and by
   marker group, intersected) — `ActionFactory` always goes through this rather than constructing
@@ -386,13 +393,14 @@ Two id schemes now exist side by side, unified behind one interface:
   `UpdateMarkerAction`/`SetLineMarkerAction`/`RemoveLineMarkerAction` each have a `case` arm — **`MarkerAction` is a
   plain abstract class, not `sealed`**, so adding a new subtype without adding a `case` here (and in
   `logProcessingMessage`'s switch) silently falls through to `default` instead of failing to compile — see
-  `AGENTS.md`'s "Adding a new marker/BlueMap action" section. All five cases resolve their marker sets via a shared
+  `AGENTS.md`'s "Adding a new marker/BlueMap action" section. All cases resolve their marker sets via a shared
   `applyToMarkerSets(markerIdentifier, consumer)` helper (parameter type `DispatchedMarkerIdentifier`, needs only
   `.parentSet()` — looks up via `getMarkerSets`, no-ops with a debug log if none found, otherwise hands the
-  consumer a `Stream<Map<String, Marker>>`); `RemoveMarkerAction`, `RemoveLineMarkerAction`, and
-  `RemoveShapeMarkerAction` all route through an id-based `removeMarkerById(String id, Stream<...>)` helper
-  extracted out of the old `removeMarker` body. `SetShapeMarkerAction`/`RemoveShapeMarkerAction` have their own
-  `case` arms alongside the line ones (both in `processMarkerAction`'s switch and in `logProcessingMessage`).
+  consumer a `Stream<Map<String, Marker>>`); `RemoveMarkerAction`, `RemoveLineMarkerAction`, `RemoveShapeMarkerAction`,
+  and `RemoveExtrudeMarkerAction` all route through an id-based `removeMarkerById(String id, Stream<...>)` helper
+  extracted out of the old `removeMarker` body. `SetShapeMarkerAction`/`RemoveShapeMarkerAction` and
+  `SetExtrudeMarkerAction`/`RemoveExtrudeMarkerAction` have their own `case` arms alongside the line ones (both in
+  `processMarkerAction`'s switch and in `logProcessingMessage`).
 - `setLineMarker(SetLineMarkerAction, Stream<Map<String, Marker>>)` builds/replaces a BlueMap `LineMarker`: bails
   (defensively — `SignManager` should never dispatch below 2 points) if `action.getPoints().size() < 2`, otherwise
   builds a `de.bluecolored.bluemap.api.math.Line` from the action's `LinePoint`s (via `Vector3d`), parses
@@ -411,10 +419,25 @@ Two id schemes now exist side by side, unified behind one interface:
   `config-and-persistence.md`), then `put`s a `ShapeMarker.builder().label(...).detail(...).shape(shape,
   height).lineWidth(...).lineColor(...).fillColor(...).depthTestEnabled(markerGroup.depthTest()).build()` into each
   marker set's map, keyed by `action.getMarkerIdentifier().getId()` (the content-keyed `"shape:" + label` id, §5).
+- `setExtrudeMarker(SetExtrudeMarkerAction, Map<String, Marker>)` is the `EXTRUDE` counterpart: bails (defensively,
+  mirroring `setShapeMarker`) if `action.getPoints().size() < 3`, builds the same 2D `Shape` footprint from the
+  points' `x`/`z` as `setShapeMarker`, but instead of a single tallest-member height calls package-private
+  `resolveExtrudeHeightRange(label, points)` for the volume's floor/ceiling: `minY`/`maxY` are the lowest/tallest
+  member's Y independently (not both from the tallest member), so the extrusion spans the full height range its
+  members were placed at regardless of placement order; if every member is at the same Y (`maxY <= minY`, e.g. one
+  flat floor), it logs at debug and bumps `maxY` to `minY + 1` rather than building a zero-height (invisible)
+  volume. `resolveExtrudeHeightRange` returns a private `ExtrudeHeightRange(float minY, float maxY)` record — a
+  plain value holder with no `bluemap-api` types, so it stays directly unit-testable
+  (`BlueMapAPIConnectorTest`, `testing.md`) even though `BlueMapAPIConnector` itself is otherwise game-coupled and
+  excluded from coverage. Parses both `lineColor` and `fillColor` through `ColorUtils.parseHex` the same way
+  `setShapeMarker` does, then `put`s an `ExtrudeMarker.builder().label(...).detail(...).shape(shape, minY,
+  maxY).lineWidth(...).lineColor(...).fillColor(...).depthTestEnabled(markerGroup.depthTest()).build()` into each
+  marker set's map, keyed by `action.getMarkerIdentifier().getId()` (the content-keyed `"extrude:" + label` id, §5).
 - `addMarker` only actually builds a marker `if (markerGroup.type() == MarkerGroupType.POI)` — this is a real,
-  live branch now that `MarkerGroupType.LINE`/`SHAPE` exist (no longer future-proofing for values that didn't
-  exist): a `LINE`- or `SHAPE`-typed group's signs never reach `addMarker` at all, since `SignManager`'s transition
-  table (§3) routes those representations to their own `Set`/`Remove` actions instead of `AddMarkerAction`. It also
+  live branch now that `MarkerGroupType.LINE`/`SHAPE`/`EXTRUDE` exist (no longer future-proofing for values that
+  didn't exist): a `LINE`-, `SHAPE`-, or `EXTRUDE`-typed group's signs never reach `addMarker` at all, since
+  `SignManager`'s transition table (§3) routes those representations to their own `Set`/`Remove` actions instead of
+  `AddMarkerAction`. It also
   conditionally calls `markerBuilder.styleClasses(markerGroup.cssClasses().toArray(new String[0]))` when
   `cssClasses` is non-empty — the only marker-builder call gated on the field being present rather than always
   called with a possibly-default value, since BlueMap's `styleClasses` has no meaningful "unset" default to fall
@@ -537,5 +560,5 @@ gating" section. This section covers the code-level mechanics.
   themselves are otherwise unchanged — the fix is localized to `prepareGated`.
 
 ---
-*Last updated: 2026-09-02 | Verified against: feature/tpwalke2/197-marker-polish (1745bc2)*
+*Last updated: 2026-09-02 | Verified against: feature/tpwalke2/196-extrude-markers (5b38852)*
 
