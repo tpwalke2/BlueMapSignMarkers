@@ -13,11 +13,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 class SignLinesParserTest {
 
     private static MarkerGroup startsWithGroup(String prefix, String name) {
-        return new MarkerGroup(prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, name, null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
+        return new MarkerGroup(prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, name, null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of(), false);
     }
 
     private static MarkerGroup regexGroup(String pattern, String name) {
-        return new MarkerGroup(pattern, MarkerGroupMatchType.REGEX, MarkerGroupType.POI, name, null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
+        return new MarkerGroup(pattern, MarkerGroupMatchType.REGEX, MarkerGroupType.POI, name, null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of(), false);
     }
 
     @Test

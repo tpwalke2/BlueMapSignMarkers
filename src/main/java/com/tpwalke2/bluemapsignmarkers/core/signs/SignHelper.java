@@ -40,7 +40,9 @@ public class SignHelper {
                 signLinesParser.parse(backRawLines),
                 System.currentTimeMillis(),
                 frontRawLines,
-                backRawLines);
+                backRawLines,
+                signBlockEntity.getFrontText().getColor().name(),
+                signBlockEntity.getBackText().getColor().name());
     }
 
     public static String getSignParentMap(Level world) {

@@ -22,8 +22,11 @@ public class SignTransitionResolver {
     }
 
     // A sign's marker representation under the current config: null means the sign matches no marker
-    // group (NONE); otherwise group.type() says whether it's a POI or a LINE member.
-    record Representation(MarkerGroup group, String label, String detail) {
+    // group (NONE); otherwise group.type() says whether it's a POI or a LINE member. dye is the sign's
+    // own raw dye (see SignEntryHelper.getDye) - not a resolved marker-wide colour, since
+    // computeRepresentation only ever sees one SignEntry at a time. See spec.md "Representation:
+    // carrying dye through the diff".
+    record Representation(MarkerGroup group, String label, String detail, String dye) {
     }
 
     static Representation computeRepresentation(SignEntry entry, Map<String, MarkerGroup> prefixGroupMap) {
@@ -32,11 +35,13 @@ public class SignTransitionResolver {
         String prefix;
         String label;
         String detail;
+        String dye;
         try {
             prefix = SignEntryHelper.getPrefix(entry);
             if (prefix == null) return null;
             label = SignEntryHelper.getLabel(entry);
             detail = SignEntryHelper.getDetail(entry);
+            dye = SignEntryHelper.getDye(entry);
         } catch (Exception e) {
             LOGGER.error("Failed to compute representation for malformed sign entry {}; skipping.", entry, e);
             return null;
@@ -48,7 +53,7 @@ public class SignTransitionResolver {
             return null;
         }
 
-        return new Representation(group, label, detail);
+        return new Representation(group, label, detail, dye);
     }
 
     static boolean sameGroupAndLabel(Representation a, Representation b) {
@@ -102,7 +107,7 @@ public class SignTransitionResolver {
         // rename - moves the marker to a different BlueMap marker set (see groupIdentityObsolete) and must go
         // through the general leave+join bundling below instead, or the old marker set would never get cleared.
         if (oldType == newType && oldType != MarkerGroupType.POI && sameGroupAndLabel(oldRep, newRep)) {
-            if (oldRep.detail().equals(newRep.detail()) && !isReload) return null;
+            if (oldRep.detail().equals(newRep.detail()) && oldRep.dye().equals(newRep.dye()) && !isReload) return null;
             return joinEffect(allSignsSupplier, key, newRep, actionFactory, true);
         }
 
@@ -167,7 +172,8 @@ public class SignTransitionResolver {
         if (members.size() < 2) return null;
 
         var isFirstAppearance = !sameGroupRecompute && members.size() == 2;
-        return actionFactory.createSetLineAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), isFirstAppearance);
+        var colors = ColorResolver.resolve(members, rep.group());
+        return actionFactory.createSetLineAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), isFirstAppearance);
     }
 
     // Recomputes a line group excluding the current sign (it must already be removed from/no longer
@@ -182,7 +188,8 @@ public class SignTransitionResolver {
         var members = LineGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
 
         if (members.size() >= 2) {
-            return actionFactory.createSetLineAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), false);
+            var colors = ColorResolver.resolve(members, rep.group());
+            return actionFactory.createSetLineAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), false);
         }
 
         if (members.size() == 1) {
@@ -207,7 +214,8 @@ public class SignTransitionResolver {
         if (members.size() < SHAPE_MIN_MEMBERS) return null;
 
         var isFirstAppearance = !sameGroupRecompute && members.size() == SHAPE_MIN_MEMBERS;
-        return actionFactory.createSetShapeAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), isFirstAppearance);
+        var colors = ColorResolver.resolve(members, rep.group());
+        return actionFactory.createSetShapeAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), colors.fillColor(), isFirstAppearance);
     }
 
     private static MarkerAction shapeLeaveAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, Map<String, MarkerGroup> currentPrefixGroupMap) {
@@ -218,7 +226,8 @@ public class SignTransitionResolver {
         var members = ShapeGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
 
         if (members.size() >= SHAPE_MIN_MEMBERS) {
-            return actionFactory.createSetShapeAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), false);
+            var colors = ColorResolver.resolve(members, rep.group());
+            return actionFactory.createSetShapeAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), colors.fillColor(), false);
         }
 
         if (members.size() == SHAPE_MIN_MEMBERS - 1) {
@@ -238,7 +247,8 @@ public class SignTransitionResolver {
         if (members.size() < EXTRUDE_MIN_MEMBERS) return null;
 
         var isFirstAppearance = !sameGroupRecompute && members.size() == EXTRUDE_MIN_MEMBERS;
-        return actionFactory.createSetExtrudeAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), isFirstAppearance);
+        var colors = ColorResolver.resolve(members, rep.group());
+        return actionFactory.createSetExtrudeAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), colors.fillColor(), isFirstAppearance);
     }
 
     private static MarkerAction extrudeLeaveAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, Map<String, MarkerGroup> currentPrefixGroupMap) {
@@ -249,7 +259,8 @@ public class SignTransitionResolver {
         var members = ExtrudeGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
 
         if (members.size() >= EXTRUDE_MIN_MEMBERS) {
-            return actionFactory.createSetExtrudeAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), false);
+            var colors = ColorResolver.resolve(members, rep.group());
+            return actionFactory.createSetExtrudeAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), colors.fillColor(), false);
         }
 
         if (members.size() == EXTRUDE_MIN_MEMBERS - 1) {

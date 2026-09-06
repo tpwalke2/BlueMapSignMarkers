@@ -29,6 +29,11 @@ public class ColorUtils {
         return DEFAULT_COLOR.clone();
     }
 
+    // Formats r/g/b/a (each 0-255) back to "#RRGGBBAA", the inverse of parseHex.
+    public static String toHex(int r, int g, int b, int a) {
+        return String.format("#%02X%02X%02X%02X", r, g, b, a);
+    }
+
     // True for "#RRGGBB"/"#RRGGBBAA" (leading '#' optional), same shape parseHex accepts.
     public static boolean isValidHex(String hex) {
         if (hex == null) return false;

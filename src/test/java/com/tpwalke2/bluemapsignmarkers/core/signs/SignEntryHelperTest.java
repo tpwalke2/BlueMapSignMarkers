@@ -18,11 +18,15 @@ class SignEntryHelperTest {
     private static final SignEntryKey KEY = new SignEntryKey(1, 2, 3, "minecraft:overworld");
 
     private static MarkerGroup poiGroup(String prefix) {
-        return new MarkerGroup(prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, "Points of Interest", null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
+        return new MarkerGroup(prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, "Points of Interest", null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of(), false);
     }
 
     private static SignEntry signEntry(SignLinesParseResult frontText, SignLinesParseResult backText) {
-        return new SignEntry(KEY, "unknown", frontText, backText, 1000L, null, null);
+        return signEntry(frontText, backText, "BLACK", "BLACK");
+    }
+
+    private static SignEntry signEntry(SignLinesParseResult frontText, SignLinesParseResult backText, String frontDye, String backDye) {
+        return new SignEntry(KEY, "unknown", frontText, backText, 1000L, null, null, frontDye, backDye);
     }
 
     private static SignLinesParseResult parsed(String prefix, String label, String detail) {
@@ -126,5 +130,19 @@ class SignEntryHelperTest {
         var entry = signEntry(parsed("[poi]", "Town Hall", "Open 9-5"), parsed("[event]", "Fair", "Ask for Bob"));
 
         assertEquals("Open 9-5", SignEntryHelper.getDetail(entry));
+    }
+
+    @Test
+    void getDyePrefersFrontTextSide() {
+        var entry = signEntry(parsed("[poi]", "Town Hall", "Town Hall"), parsed("[event]", "Fair", "Fair"), "RED", "BLUE");
+
+        assertEquals("RED", SignEntryHelper.getDye(entry));
+    }
+
+    @Test
+    void getDyeFallsBackToBackTextSideWhenFrontDoesNotMatch() {
+        var entry = signEntry(empty(), parsed("[event]", "Fair", "Fair"), "RED", "BLUE");
+
+        assertEquals("BLUE", SignEntryHelper.getDye(entry));
     }
 }

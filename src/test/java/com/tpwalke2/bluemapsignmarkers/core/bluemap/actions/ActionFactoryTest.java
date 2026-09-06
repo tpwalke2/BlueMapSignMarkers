@@ -98,7 +98,7 @@ class ActionFactoryTest {
         var group = lineMarkerGroup("[line]");
         var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6));
 
-        var action = factory.createSetLineAction("world", group, "label", "detail", points, true);
+        var action = factory.createSetLineAction("world", group, "label", "detail", points, group.lineColor(), true);
         var identifier = (LineMarkerIdentifier) action.getMarkerIdentifier();
 
         assertEquals("label", identifier.label());
@@ -155,7 +155,7 @@ class ActionFactoryTest {
         var group = shapeMarkerGroup("[shape]");
         var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6), new LinePoint(7, 8, 9));
 
-        var action = factory.createSetShapeAction("world", group, "label", "detail", points, true);
+        var action = factory.createSetShapeAction("world", group, "label", "detail", points, group.lineColor(), group.fillColor(), true);
         var identifier = (com.tpwalke2.bluemapsignmarkers.core.markers.ShapeMarkerIdentifier) action.getMarkerIdentifier();
 
         assertEquals("label", identifier.label());
@@ -188,7 +188,7 @@ class ActionFactoryTest {
         var factory = new ActionFactory(new MarkerSetIdentifierCollection());
         var group = shapeMarkerGroup("[shape]");
 
-        var set = factory.createSetShapeAction("world", group, "label", "detail", List.of(), true);
+        var set = factory.createSetShapeAction("world", group, "label", "detail", List.of(), group.lineColor(), group.fillColor(), true);
         var removed = factory.createRemoveShapeAction("world", group, "other label");
 
         assertSame(set.getMarkerIdentifier().parentSet(), removed.getMarkerIdentifier().parentSet());
@@ -199,7 +199,7 @@ class ActionFactoryTest {
         var factory = new ActionFactory(new MarkerSetIdentifierCollection());
         var group = lineMarkerGroup("[line]");
 
-        var set = factory.createSetLineAction("world", group, "label", "detail", List.of(), true);
+        var set = factory.createSetLineAction("world", group, "label", "detail", List.of(), group.lineColor(), true);
         var removed = factory.createRemoveLineAction("world", group, "other label");
 
         assertSame(set.getMarkerIdentifier().parentSet(), removed.getMarkerIdentifier().parentSet());
@@ -211,7 +211,7 @@ class ActionFactoryTest {
         var group = extrudeMarkerGroup("[extrude]");
         var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6), new LinePoint(7, 8, 9));
 
-        var action = factory.createSetExtrudeAction("world", group, "label", "detail", points, true);
+        var action = factory.createSetExtrudeAction("world", group, "label", "detail", points, group.lineColor(), group.fillColor(), true);
         var identifier = (com.tpwalke2.bluemapsignmarkers.core.markers.ExtrudeMarkerIdentifier) action.getMarkerIdentifier();
 
         assertEquals("label", identifier.label());
@@ -244,7 +244,7 @@ class ActionFactoryTest {
         var factory = new ActionFactory(new MarkerSetIdentifierCollection());
         var group = extrudeMarkerGroup("[extrude]");
 
-        var set = factory.createSetExtrudeAction("world", group, "label", "detail", List.of(), true);
+        var set = factory.createSetExtrudeAction("world", group, "label", "detail", List.of(), group.lineColor(), group.fillColor(), true);
         var removed = factory.createRemoveExtrudeAction("world", group, "other label");
 
         assertSame(set.getMarkerIdentifier().parentSet(), removed.getMarkerIdentifier().parentSet());
@@ -253,24 +253,24 @@ class ActionFactoryTest {
     private static MarkerGroup markerGroup(String prefix) {
         return new MarkerGroup(
                 prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, prefix, "icon.png", 0, 0, false, 0, 0,
-                2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
+                2, "#FF0000FF", "#FF000033", 0, true, true, List.of(), false);
     }
 
     private static MarkerGroup lineMarkerGroup(String prefix) {
         return new MarkerGroup(
                 prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.LINE, prefix, "icon.png", 0, 0, false, 0, 0,
-                2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
+                2, "#FF0000FF", "#FF000033", 0, true, true, List.of(), false);
     }
 
     private static MarkerGroup shapeMarkerGroup(String prefix) {
         return new MarkerGroup(
                 prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.SHAPE, prefix, null, 0, 0, false, 0, 0,
-                2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
+                2, "#FF0000FF", "#FF000033", 0, true, true, List.of(), false);
     }
 
     private static MarkerGroup extrudeMarkerGroup(String prefix) {
         return new MarkerGroup(
                 prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.EXTRUDE, prefix, null, 0, 0, false, 0, 0,
-                2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
+                2, "#FF0000FF", "#FF000033", 0, true, true, List.of(), false);
     }
 }

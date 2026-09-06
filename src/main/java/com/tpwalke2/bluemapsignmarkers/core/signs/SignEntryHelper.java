@@ -6,6 +6,11 @@ import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import java.util.Map;
 
 public class SignEntryHelper {
+    // The dye name a sign side has when it's never been dyed (SignText.getColor() defaults to
+    // DyeColor.BLACK) - also what Version6Converter backfills pre-V6 entries to, so both a genuinely
+    // undyed sign and a migrated one read as "no player color chosen" with no null-handling.
+    public static final String UNDYED_DYE = "BLACK";
+
     private SignEntryHelper() {
     }
 
@@ -20,6 +25,12 @@ public class SignEntryHelper {
         if (prefix == null) return false;
         var group = prefixGroupMap.get(prefix);
         return group != null && group.type() == markerGroupType;
+    }
+
+    // The sign's dye follows the same side-selection rule as getPrefix: whichever side produced the sign's
+    // matching representation (front, unless only the back matched a group) is the side whose dye counts.
+    public static String getDye(SignEntry signEntry) {
+        return signEntry.frontText().prefix() != null ? signEntry.frontDye() : signEntry.backDye();
     }
 
     public static String getLabel(SignEntry signEntry) {

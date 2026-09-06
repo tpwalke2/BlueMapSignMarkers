@@ -9,6 +9,7 @@ import com.tpwalke2.bluemapsignmarkers.core.signs.SignEntryKey;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV2;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV3;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV4;
+import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV5;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,9 +42,14 @@ public class Version1SignEntryLoader {
             signEntriesV4[i] = Version4Converter.convertToV4(signEntries.get(i), i, fileLastModifiedMillis);
         }
 
-        var result = new SignEntry[signEntriesV4.length];
+        var signEntriesV5 = new SignEntryV5[signEntriesV4.length];
         for (var i = 0; i < signEntriesV4.length; i++) {
-            result[i] = Version5Converter.convertToV5(signEntriesV4[i]);
+            signEntriesV5[i] = Version5Converter.convertToV5(signEntriesV4[i]);
+        }
+
+        var result = new SignEntry[signEntriesV5.length];
+        for (var i = 0; i < signEntriesV5.length; i++) {
+            result[i] = Version6Converter.convertToV6(signEntriesV5[i]);
         }
 
         if (!FileUtils.createBackup(path, ".v1.bak", "markers file")) {

@@ -18,7 +18,9 @@ class ShapeGroupResolverTest {
                 new SignLinesParseResult(null, "", ""),
                 createdAtMillis,
                 null,
-                null);
+                null,
+                "BLACK",
+                "BLACK");
     }
 
     @Test

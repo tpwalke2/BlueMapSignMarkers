@@ -13,6 +13,7 @@ import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.MarkerTypeV
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV2;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV3;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV4;
+import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV5;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignLinesParseResultV2;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -38,25 +39,48 @@ class VersionedFileSignEntryLoaderTest {
     private static MarkerGroup poiGroup(String prefix) {
         return new MarkerGroup(
                 prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, prefix, null, 0, 0, false, 0, 0,
-                2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
+                2, "#FF0000FF", "#FF000033", 0, true, true, List.of(), false);
     }
 
     @Test
-    void v5ContentIsParsedDirectlyWithoutCreatingABackup(@TempDir Path tempDir) throws IOException {
+    void v6ContentIsParsedDirectlyWithoutCreatingABackup(@TempDir Path tempDir) throws IOException {
         var path = tempDir.resolve("signs.json").toString();
         var entry = new SignEntry(KEY, "player-1", new SignLinesParseResult("[poi]", "label", "detail"),
-                new SignLinesParseResult(null, "", ""), 1000L, new String[]{"[poi]", "label"}, new String[]{});
-        var content = GSON.toJson(new VersionedSignFile(SignFileVersions.V5, GSON.toJson(new SignEntry[]{entry})));
+                new SignLinesParseResult(null, "", ""), 1000L, new String[]{"[poi]", "label"}, new String[]{}, "RED", "BLACK");
+        var content = GSON.toJson(new VersionedSignFile(SignFileVersions.V6, GSON.toJson(new SignEntry[]{entry})));
         Files.writeString(Path.of(path), content, StandardCharsets.UTF_8);
 
         var result = VersionedFileSignEntryLoader.loadSignEntries(path, content, NO_GROUPS, GSON);
 
         assertArrayEquals(new SignEntry[]{entry}, result);
-        assertFalse(Files.exists(Path.of(path + ".v4.bak")), "a V5 file should not be backed up as a V4 file");
+        assertFalse(Files.exists(Path.of(path + ".v5.bak")), "a V6 file should not be backed up as a V5 file");
     }
 
     @Test
-    void v4ContentIsConvertedThroughVersion5ConverterAndBackedUp(@TempDir Path tempDir) throws IOException {
+    void v5ContentIsConvertedThroughVersion6ConverterAndBackedUp(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("signs.json").toString();
+        var v5Entry = new SignEntryV5(KEY, "player-1", new SignLinesParseResult("[poi]", "label", "detail"),
+                new SignLinesParseResult(null, "", ""), 1000L, new String[]{"[poi]", "label"}, new String[]{});
+        var content = GSON.toJson(new VersionedSignFile(SignFileVersions.V5, GSON.toJson(new SignEntryV5[]{v5Entry})));
+        Files.writeString(Path.of(path), content, StandardCharsets.UTF_8);
+
+        var result = VersionedFileSignEntryLoader.loadSignEntries(path, content, NO_GROUPS, GSON);
+
+        assertEquals(1, result.length);
+        assertEquals(KEY, result[0].key());
+        assertEquals("player-1", result[0].playerId());
+        assertEquals("[poi]", result[0].frontText().prefix());
+        assertEquals(1000L, result[0].createdAtMillis());
+        assertEquals("BLACK", result[0].frontDye(), "a V5 entry has no dye on disk - backfills to undyed");
+        assertEquals("BLACK", result[0].backDye(), "a V5 entry has no dye on disk - backfills to undyed");
+
+        var backup = Path.of(path + ".v5.bak");
+        assertTrue(Files.exists(backup), "the original V5 file should be backed up before being replaced");
+        assertEquals(content, Files.readString(backup));
+    }
+
+    @Test
+    void v4ContentIsConvertedThroughVersion5And6ConvertersAndBackedUp(@TempDir Path tempDir) throws IOException {
         var path = tempDir.resolve("signs.json").toString();
         var v4Entry = new SignEntryV4(KEY, "player-1", new SignLinesParseResult("[poi]", "label", "detail"),
                 new SignLinesParseResult(null, "", ""), 1000L);
@@ -72,6 +96,8 @@ class VersionedFileSignEntryLoaderTest {
         assertEquals(1000L, result[0].createdAtMillis());
         assertNull(result[0].frontRawLines(), "a V4 entry has no raw sign text to backfill from");
         assertNull(result[0].backRawLines(), "a V4 entry has no raw sign text to backfill from");
+        assertEquals("BLACK", result[0].frontDye(), "a V4 entry has no dye on disk - backfills to undyed");
+        assertEquals("BLACK", result[0].backDye(), "a V4 entry has no dye on disk - backfills to undyed");
 
         var backup = Path.of(path + ".v4.bak");
         assertTrue(Files.exists(backup), "the original V4 file should be backed up before being replaced");
@@ -94,6 +120,8 @@ class VersionedFileSignEntryLoaderTest {
         assertEquals("[poi]", result[0].frontText().prefix());
         assertNull(result[0].frontRawLines());
         assertNull(result[0].backRawLines());
+        assertEquals("BLACK", result[0].frontDye());
+        assertEquals("BLACK", result[0].backDye());
 
         var backup = Path.of(path + ".v3.bak");
         assertTrue(Files.exists(backup), "the original V3 file should be backed up before being replaced");
