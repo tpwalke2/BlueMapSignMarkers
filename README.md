@@ -57,7 +57,7 @@ Setting a field on a group type it doesn't apply to (e.g. `icon` on a `LINE`/`SH
 `POI`/`LINE` group, `depthTest` on a `POI` group, or `cssClasses` on a `LINE`/`SHAPE`/`EXTRUDE` group) is not an error;
 the mod logs a warning and ignores the field.
 
-## Example
+## Examples
 
 ```json
 {
@@ -133,4 +133,3 @@ prefix, sharing the same description line, will be connected in placement order 
 description line, will be connected in placement order into a solid volume in the "Buildings" marker group once 3
 or more such signs exist, spanning from the lowest sign's height up to the tallest sign's height (or 1 block tall if
 all members share the same height).
-
