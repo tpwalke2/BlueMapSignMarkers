@@ -130,6 +130,11 @@ no additional wiring.
 - Glowing ink (`hasGlowingText`) as a player-controlled channel.
 - Per-dye admin override of the dye→hex table.
 - Inline hex override on a sign line, and a `/bmsm color` command — later, additive tickets if ever needed.
+- Dyeing a sign black as a deliberate colour choice: `SignText.getColor()` returns `DyeColor.BLACK` both for an
+  undyed sign and one a player dyed black (see `SignEntryHelper.UNDYED_DYE`), so `ColorResolver` can't tell the
+  two apart and always treats black as "not dyed." A player who dyes a member sign black sees no colour change
+  and no error — documented as a known limitation (README `allowPlayerColors` note) rather than fixed, since
+  fixing it needs a new persisted "explicitly dyed" flag distinct from the raw dye value.
 
 ## Implementation checklist
 
