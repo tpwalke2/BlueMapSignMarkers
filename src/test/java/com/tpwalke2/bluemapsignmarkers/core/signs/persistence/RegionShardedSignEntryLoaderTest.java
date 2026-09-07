@@ -66,6 +66,8 @@ class RegionShardedSignEntryLoaderTest {
                 new SignLinesParseResult(null, "", ""),
                 1000L,
                 null,
-                null);
+                null,
+                "BLACK",
+                "BLACK");
     }
 }

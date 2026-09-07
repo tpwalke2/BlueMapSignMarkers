@@ -15,10 +15,11 @@ in `build.gradle`.
 Only plain-Java classes with **no Minecraft/Fabric/BlueMap API types in their method signatures** are unit tested.
 Qualifying today: `SignLinesParser`/`ParsingContext`/`SignLinesParseResult`, `SignEntry`, `SignEntryHelper`,
 `SignChunkKey`/`SignChunkIndex`, `MarkerGroup`/`MarkerGroupMatchType`/`MarkerGroupType`, `ConfigManager`/`ConfigProvider`,
-`ReactiveQueue`, `HtmlUtils`, `FileUtils`, `ColorUtils`, `LineGroupResolver`/`ShapeGroupResolver`/`ExtrudeGroupResolver`,
+`ReactiveQueue`, `HtmlUtils`, `FileUtils`, `ColorUtils`, `ColorResolver`,
+`LineGroupResolver`/`ShapeGroupResolver`/`ExtrudeGroupResolver`,
 `SignTransitionResolver`, `RenderMaskEvaluator` (`core.bounds` — see `core-pipeline.md` §8), the
 sign-persistence loaders/converters/writer (`VersionedFileSignEntryLoader`, `Version1SignEntryLoader`,
-`Version3Converter`, `Version4Converter`, `Version5Converter`, `RegionShardedSignEntryLoader`,
+`Version3Converter`, `Version4Converter`, `Version5Converter`, `Version6Converter`, `RegionShardedSignEntryLoader`,
 `RegionShardedSignEntryWriter`, `SignRegionKey`, `SignRegionPartitioner`, `LegacySignFileMigrator`),
 `ActionFactory`/`MarkerSetIdentifierCollection`. `SignManager` itself stays game-coupled (its constructor builds a
 `BlueMapAPIConnector`), but its `reparseFromRawLines`/`safeReparseFromRawLines` reparse-on-reload logic (§3 of
@@ -40,11 +41,13 @@ including its `ServerChunkEvents.CHUNK_LOAD` reconciliation handler, `BlueMapAPI
 since loading/saving calls the game-coupled `SignManager` singleton) — these are thin glue and can only be
 verified manually: `./gradlew runServer` + placing/editing/breaking signs in-game (and, for chunk-load
 reconciliation specifically, removing a sign block without going through the mod — e.g. deleting its chunk's
-region file to force a regen — then reloading that chunk), watching the BlueMap web UI update.
+region file to force a regen — then reloading that chunk; for dye/ink-sac/glow-ink-sac detection, GitHub issue
+#198, dyeing an existing multi-sign `LINE`/`SHAPE`/`EXTRUDE` group's member and confirming the marker's colour
+updates), watching the BlueMap web UI update.
 
 ## Current coverage
 
-As of `feature/tpwalke2/196-extrude-markers` (`5b38852`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
+As of `feature/tpwalke2/198-dye-colors` (`535bb13`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
 - `core/signs/SignLinesParserTest.java` — 12 `@Test` methods covering `SignLinesParser`: label-on-prefix-line vs.
   label-on-following-line, multi-line detail joining/trimming, leading/interstitial blank-line handling, no-match
   and all-blank sign results, `REGEX` match type's whole-line-match requirement (contrasted with `STARTS_WITH`),
@@ -84,6 +87,7 @@ As of `feature/tpwalke2/196-extrude-markers` (`5b38852`), `src/test/java/com/tpw
   `getLabel`/`getDetail` front/back precedence and combining, plus `getDetail`'s ticket-07 fix
   (`getDetailUsesOnlyFrontWhenSidesMatchDifferentGroups`): when front and back match *different* marker groups,
   only the front's detail is used rather than merging both — see `core-pipeline.md`'s `SignEntryHelper` paragraph.
+  `getDye` (GitHub issue #198) has front-preferred/back-fallback tests mirroring `getPrefix`'s precedence rule.
 - `core/signs/SignEntryTest.java` — standard `equals`/`hashCode` contract on the hand-written implementation
   (reflexive, symmetric, per-field inequality including the added `createdAtMillis` field, not equal to
   `null`/another type), `withKey` returning a new instance with only the key changed (`createdAtMillis` carried
@@ -92,7 +96,9 @@ As of `feature/tpwalke2/196-extrude-markers` (`5b38852`), `src/test/java/com/tpw
   `Objects.equals`/`Objects.hash` instead of unguarded field-level `.equals()`/`.hashCode()` calls. Extended for
   `V5`'s raw-lines fields: `equalsReturnsFalseForDifferentFrontRawLines`/`...BackRawLines` (array-content
   comparison via `Arrays.equals`, not reference equality), `equalsToleratesNullRawLines`, and confirming
-  `withParsedText`/`withKey` both carry `frontRawLines`/`backRawLines` through unchanged.
+  `withParsedText`/`withKey` both carry `frontRawLines`/`backRawLines` through unchanged. Extended again for `V6`'s
+  dye fields (GitHub issue #198): per-field inequality tests for `frontDye`/`backDye`, and confirming
+  `withParsedText`/`withKey` carry both through unchanged too.
 - `core/signs/ParsingContextTest.java` — the `(null, "", "")` sentinel when no marker group is ever set,
   `buildResult()` using the set group's `prefix()` plus the current label, multiple `appendDetail` calls joining
   with `\n`, and that the final `trim()` only strips the outermost whitespace of the joined detail, not per-line
@@ -131,7 +137,24 @@ As of `feature/tpwalke2/196-extrude-markers` (`5b38852`), `src/test/java/com/tpw
   reload-forced), and the full cross-type bundling matrix (POI↔SHAPE, LINE↔SHAPE) both for a live sign change and
   for a config-reload-driven type flip/rename (`groupIdentityObsolete`). `EXTRUDE` coverage mirrors `SHAPE`'s
   exactly (same `EXTRUDE_MIN_MEMBERS = 3` threshold, same no-op/first-appearance/recompute/cross-type-bundling
-  shape), confirming `extrudeJoinAction`/`extrudeLeaveAction` behave identically to their `SHAPE` counterparts.
+  shape), confirming `extrudeJoinAction`/`extrudeLeaveAction` behave identically to their `SHAPE` counterparts. Every
+  `LINE`/`SHAPE`/`EXTRUDE` dispatched-`Set` assertion now checks `set.getDetail()` against each member's *own*
+  detail text, not the group label — this test-suite-wide update caught the `rep.label()`-passed-as-detail bug
+  fixed alongside GitHub issue #198 (see `core-pipeline.md` §3's join/leave paragraph). Player-controlled colours
+  (GitHub issue #198, `../plans/player-marker-colors/spec.md`) add a dedicated block:
+  `lineToLineSameGroupAndLabelDyeOnlyChangeDispatchesSetInsteadOfNoOp` confirms a dye-only edit (detail unchanged)
+  on an `allowPlayerColors`-enabled `LINE` group defeats the same-group-and-label no-op guard and dispatches a
+  `Set` with the dye-derived `lineColor`; `lineToLineSameGroupAndLabelSameDyeIsStillNoOp` confirms an unchanged dye
+  (and unchanged detail) still no-ops; `lineToLineSameGroupAndLabelDyeOnlyChangeIsNoOpWhenAllowPlayerColorsIsOff`
+  confirms a dye-only edit on an `allowPlayerColors`-disabled group stays a no-op instead of paying the full
+  recompute cost; `lineJoinResolvesColorFromTheEarliestPlacedDyedMember` confirms a fresh join recomputes colour
+  via `ColorResolver` across the full current membership.
+- `core/signs/ColorResolverTest.java` — `resolve` (GitHub issue #198): `allowPlayerColors` off returns the group's
+  configured `lineColor`/`fillColor` unchanged even when a member is dyed; on with no dyed members (all `"BLACK"`)
+  also returns them unchanged; on with a dyed member replaces the hue but keeps the configured alpha byte for both
+  `lineColor` and `fillColor`; the earliest-placed dyed member wins over a later-dyed one regardless of the order
+  members are passed in (not just placement order); an earlier *undyed* member doesn't block a later dyed member
+  from winning; removing the earliest-placed winner hands off to the next-earliest remaining dyed member.
 - `core/signs/LineGroupResolverTest.java` — `members` filters to signs sharing `(parentMap, prefix, label)` exactly
   (a different map, prefix, or label is excluded), orders results by `createdAtMillis` ascending, breaks ties on a
   duplicate `createdAtMillis` deterministically by position (`x`, then `y`, then `z` — the cross-region-file
@@ -173,7 +196,11 @@ As of `feature/tpwalke2/196-extrude-markers` (`5b38852`), `src/test/java/com/tpw
   tests for `cssClasses` set on a `LINE`/`SHAPE` group; `depthTest` has a warning-only test for `depthTest` set on
   a `POI` group. `EXTRUDE` (ticket 196) reuses `SHAPE`'s exact test shape for the fields it shares
   defaults/validation with (`lineWidth`/`lineColor`/`fillColor`), plus its own `warnOnTypeFieldMismatches`
-  warning-only tests for `icon`/`offsetX`/`offsetY`/`cssClasses` set on an `EXTRUDE` group.
+  warning-only tests for `icon`/`offsetX`/`offsetY`/`cssClasses` set on an `EXTRUDE` group. `allowPlayerColors`
+  (GitHub issue #198) has `loadConfigDefaultsAllowPlayerColorsToFalseWhenOmitted` and
+  `loadConfigPreservesExplicitAllowPlayerColorsOnALineGroup` for a `LINE` group, plus
+  `loadConfigWarnsWhenAllowPlayerColorsIsSetOnAPOIGroup` (warning-only, not a load failure, per
+  `warnOnTypeFieldMismatches`).
 - `config/ConfigManagerTest.java` — `get()` returns the config from the most recent `reload`; falls back to
   `new BMSMConfigV2()` defaults when the configured path fails to load; a second `reload()` replaces (not merges
   with) what an earlier `reload` cached.
@@ -190,7 +217,10 @@ As of `feature/tpwalke2/196-extrude-markers` (`5b38852`), `src/test/java/com/tpw
   dedicated tests, additionally confirming `fillColor` is threaded from the `MarkerGroup` into the built
   `SetShapeMarkerAction`, and that set/remove use independent `ShapeMarkerIdentifier`s. `createSetExtrudeAction`/
   `createRemoveExtrudeAction` (ticket 196) have the same shape of tests again, confirming `fillColor` threading and
-  independent `ExtrudeMarkerIdentifier`s.
+  independent `ExtrudeMarkerIdentifier`s. `createSetLineAction`/`createSetShapeAction`/`createSetExtrudeAction`
+  (GitHub issue #198) now take an explicit `lineColor`/`fillColor` parameter instead of reading it off
+  `MarkerGroup` — every existing call site in this test class passes `group.lineColor()`/`group.fillColor()`
+  explicitly, so the assertions on the built actions' colour fields are unchanged.
 - `core/markers/MarkerSetIdentifierCollectionTest.java` — `getIdentifier` returns the same instance for a repeated
   `(mapId, markerGroup)` pair (case-insensitive on `mapId`), distinct pairs get distinct identifiers. Also includes
   `concurrentFirstTimeCallersForTheSameComboConvergeOnOneIdentifierInstance`, an active (not `@Disabled`) regression
@@ -228,19 +258,26 @@ As of `feature/tpwalke2/196-extrude-markers` (`5b38852`), `src/test/java/com/tpw
   `differentIndicesInTheSameFileProduceDifferentButStableTimestamps` confirm the arbitrary-but-stable
   `fileLastModifiedMillis + indexInFile` formula (no real placement history exists for pre-existing signs, see the
   persistence-doc `Version4Converter` paragraph).
-- `core/signs/persistence/loaders/VersionedFileSignEntryLoaderTest.java` — `v5ContentIsParsedDirectlyWithoutCreatingABackup`
-  (renamed from the pre-self-heal V4-passthrough test — no backup written for a file already at the current
-  version); `v4ContentIsConvertedThroughVersion5ConverterAndBackedUp` (new — a `V4` file converts via
-  `Version5Converter` to `null` `frontRawLines`/`backRawLines`, backs up to `.v4.bak`);
-  `v3ContentIsConvertedThroughVersion4ConverterAndBackedUp` (a `V3` file converts via `Version4Converter` then
-  `Version5Converter`, backs up to `.v3.bak`); the `V2` branch converts via `Version3Converter` then
-  `Version4Converter` then `Version5Converter` in the same pass, backs up to `.v2.bak`, and is per-entry-isolated:
-  one malformed V2 entry is skipped rather than losing the whole file (ticket 05); the catch-all fallback returning
-  `null` rather than throwing, for both malformed JSON and empty content (which parses to `null` and NPEs on
-  `.version()`, caught by the same generic `catch`); a structurally-valid document missing `version`/`data` (e.g.
-  `"{}"`) explicitly falling back to V1 rather than relying on Gson's nulls to coincidentally route there (ticket
-  05); and the `V2`/`V3`/`V4` branches returning `null` (falls through to the V1 loader) rather than proceeding, if
-  backing up to `.v2.bak`/`.v3.bak`/`.v4.bak` fails (ticket 02).
+- `core/signs/persistence/loaders/Version6ConverterTest.java` — `convertToV6` (`SignEntryV5` → current `SignEntry`)
+  copies every pre-existing field unchanged, and `backfillsBothSidesToUndyed` confirms both `frontDye`/`backDye`
+  backfill to `"BLACK"` (`SignEntryHelper.UNDYED_DYE`) for a pre-V6 entry with no dye data on disk.
+- `core/signs/persistence/loaders/VersionedFileSignEntryLoaderTest.java` — `v6ContentIsParsedDirectlyWithoutCreatingABackup`
+  (renamed for the `V6` bump — no backup written for a file already at the current version);
+  `v5ContentIsConvertedThroughVersion6ConverterAndBackedUp` (new — a `V5` file converts via `Version6Converter` to
+  `"BLACK"` `frontDye`/`backDye`, backs up to `.v5.bak`); `v4ContentIsConvertedThroughVersion5And6ConvertersAndBackedUp`
+  (a `V4` file converts via `Version5Converter` then `Version6Converter`, backs up to `.v4.bak`);
+  `v3ContentIsConvertedThroughVersion4And5ConvertersAndBackedUp` (a `V3` file converts via `Version4Converter` then
+  `Version5Converter` then `Version6Converter`, backs up to `.v3.bak`); the `V2` branch converts via
+  `Version3Converter` then `Version4Converter` then `Version5Converter` then `Version6Converter` in the same pass,
+  backs up to `.v2.bak`, and is per-entry-isolated: one malformed V2 entry is skipped rather than losing the whole
+  file (ticket 05); the catch-all fallback returning `null` rather than throwing, for both malformed JSON and empty
+  content (which parses to `null` and NPEs on `.version()`, caught by the same generic `catch`); a
+  structurally-valid document missing `version`/`data` (e.g. `"{}"`) explicitly falling back to V1 rather than
+  relying on Gson's nulls to coincidentally route there (ticket 05); the `V2`/`V3`/`V4`/`V5` branches logging
+  the backup failure and still proceeding with the in-memory migration (rather than aborting) if backing up to
+  `.v2.bak`/`.v3.bak`/`.v4.bak`/`.v5.bak` fails, per `v2ContentStillMigratesWhenTheBackupFails` (ticket 02); and
+  `v5ContentWithANullEntryIsSkippedRatherThanLosingTheWholeFile` confirming a JSON `null` entry in a V5 array is
+  skipped rather than throwing out of `Version6Converter.convertToV6` and discarding every other entry in the file.
 - `core/signs/persistence/loaders/Version1SignEntryLoaderTest.java` — the three recognized legacy shorthand
   strings (`"nether"`/`"end"`/`"overworld"`) *and* the canonical-but-unnamespaced resource paths
   (`"the_nether"`/`"the_end"`, ticket 05) normalizing to their canonical namespaced identifiers, case-insensitively,
@@ -248,7 +285,9 @@ As of `feature/tpwalke2/196-extrude-markers` (`5b38852`), `src/test/java/com/tpw
   through unchanged; backup creation to `.v1.bak`, throwing `IllegalStateException` (aborting the migration,
   ticket 02) if that backup fails; one malformed entry being skipped rather than losing the whole file (ticket 05,
   `loadEntry`'s per-entry try/catch); and a documented Low-severity finding that an unrecognized dimension string
-  is still silently lowercased on the `default` branch rather than preserved as-is.
+  is still silently lowercased on the `default` branch rather than preserved as-is. The V1 chain now runs through
+  `Version6Converter` too (GitHub issue #198), backfilling `frontDye`/`backDye` to `"BLACK"` the same as any other
+  pre-`V6` migration path.
 - `core/bounds/RenderMaskEvaluatorTest.java` — 23 tests. A real-world fixture (`NETHER_ROOF_RENDER_MASK`) checks
   min-y cutoff and subtract-range behavior; fail-open coverage for a missing `render-mask` key, an empty shape
   array, a missing config file, an unreadable file (gated with `assumeTrue` for cross-platform reliability), a
@@ -280,5 +319,5 @@ JUnit reporter action** — those actions don't get `checks: write` permission o
 public repo, so the summary step was written to need no extra permissions.
 
 ---
-*Last updated: 2026-09-02 | Verified against: feature/tpwalke2/196-extrude-markers (5b38852)*
+*Last updated: 2026-09-06 | Verified against: feature/tpwalke2/198-dye-colors (535bb13)*
 

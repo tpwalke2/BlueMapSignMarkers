@@ -184,6 +184,9 @@ public class ConfigProvider {
                 if (markerGroup.depthTest() != null) {
                     LOGGER.warn("Marker group '{}' is type POI but has 'depthTest' set; this field is ignored for POI groups", name);
                 }
+                if (markerGroup.allowPlayerColors() != null) {
+                    LOGGER.warn("Marker group '{}' is type POI but has 'allowPlayerColors' set; this field is ignored for POI groups", name);
+                }
             } else if (type == MarkerGroupType.LINE) {
                 if (markerGroup.icon() != null) {
                     LOGGER.warn("Marker group '{}' is type LINE but has 'icon' set; this field is ignored for LINE groups", name);
@@ -250,7 +253,8 @@ public class ConfigProvider {
                 resolveSorting(markerGroup),
                 resolveToggleable(markerGroup),
                 resolveDepthTest(markerGroup),
-                resolveCssClasses(markerGroup)
+                resolveCssClasses(markerGroup),
+                resolveAllowPlayerColors(markerGroup)
         );
     }
 
@@ -290,6 +294,18 @@ public class ConfigProvider {
         if (type != MarkerGroupType.LINE && type != MarkerGroupType.SHAPE && type != MarkerGroupType.EXTRUDE) return true;
 
         return depthTest;
+    }
+
+    // allowPlayerColors is LINE/SHAPE/EXTRUDE-only; unset or set on a POI group both resolve to false -
+    // warnOnTypeFieldMismatches already warns on the POI case.
+    private static boolean resolveAllowPlayerColors(LoadingMarkerGroupV2 markerGroup) {
+        var allowPlayerColors = markerGroup.allowPlayerColors();
+        if (allowPlayerColors == null) return false;
+
+        var type = effectiveType(markerGroup);
+        if (type != MarkerGroupType.LINE && type != MarkerGroupType.SHAPE && type != MarkerGroupType.EXTRUDE) return false;
+
+        return allowPlayerColors;
     }
 
     // cssClasses is POI-only; unset or set on a LINE/SHAPE group both resolve to an empty list -
@@ -397,6 +413,7 @@ public class ConfigProvider {
                         0,
                         true,
                         true,
-                        List.of()));
+                        List.of(),
+                        false));
     }
 }

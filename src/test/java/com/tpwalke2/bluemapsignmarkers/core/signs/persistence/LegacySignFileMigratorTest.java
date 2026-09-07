@@ -65,7 +65,7 @@ class LegacySignFileMigratorTest {
         var storageRoot = tempDir.resolve("storage");
         var poiGroup = new MarkerGroup(
                 "[poi]", MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI,
-                "Points of Interest", null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
+                "Points of Interest", null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of(), false);
 
         // Already-namespaced dimension string: Version1SignEntryLoader's legacy-shorthand ("overworld"/"nether"/
         // "end") normalization branch reaches into net.minecraft.world.level.Level's static constants, which
@@ -106,6 +106,8 @@ class LegacySignFileMigratorTest {
                 new SignLinesParseResult(null, "", ""),
                 1000L,
                 null,
-                null);
+                null,
+                "BLACK",
+                "BLACK");
     }
 }

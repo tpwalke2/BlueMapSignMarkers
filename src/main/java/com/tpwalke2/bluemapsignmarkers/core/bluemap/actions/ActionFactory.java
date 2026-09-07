@@ -80,6 +80,7 @@ public class ActionFactory {
             String label,
             String detail,
             List<LinePoint> points,
+            String lineColor,
             boolean isFirstAppearance) {
         return new SetLineMarkerAction(
                 new LineMarkerIdentifier(label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
@@ -87,7 +88,7 @@ public class ActionFactory {
                 detail,
                 points,
                 markerGroup.lineWidth(),
-                markerGroup.lineColor(),
+                lineColor,
                 isFirstAppearance);
     }
 
@@ -102,6 +103,8 @@ public class ActionFactory {
             String label,
             String detail,
             List<LinePoint> points,
+            String lineColor,
+            String fillColor,
             boolean isFirstAppearance) {
         return new SetShapeMarkerAction(
                 new ShapeMarkerIdentifier(label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
@@ -109,8 +112,8 @@ public class ActionFactory {
                 detail,
                 points,
                 markerGroup.lineWidth(),
-                markerGroup.lineColor(),
-                markerGroup.fillColor(),
+                lineColor,
+                fillColor,
                 isFirstAppearance);
     }
 
@@ -125,6 +128,8 @@ public class ActionFactory {
             String label,
             String detail,
             List<LinePoint> points,
+            String lineColor,
+            String fillColor,
             boolean isFirstAppearance) {
         return new SetExtrudeMarkerAction(
                 new ExtrudeMarkerIdentifier(label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
@@ -132,8 +137,8 @@ public class ActionFactory {
                 detail,
                 points,
                 markerGroup.lineWidth(),
-                markerGroup.lineColor(),
-                markerGroup.fillColor(),
+                lineColor,
+                fillColor,
                 isFirstAppearance);
     }
 

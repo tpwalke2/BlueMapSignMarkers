@@ -78,5 +78,5 @@ dev source for `runServer`/`runClient`.
   (release, from a `v*` tag dispatch)
 
 ---
-*Last updated: 2026-09-02 | Verified against: feature/tpwalke2/196-extrude-markers (5b38852)*
+*Last updated: 2026-09-06 | Verified against: feature/tpwalke2/198-dye-colors (535bb13)*
 

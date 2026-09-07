@@ -133,7 +133,9 @@ public class SignManager implements IResetHandler {
                         signEntry.backText(),
                         existing.createdAtMillis(),
                         signEntry.frontRawLines(),
-                        signEntry.backRawLines());
+                        signEntry.backRawLines(),
+                        signEntry.frontDye(),
+                        signEntry.backDye());
 
         if (newRep == null) {
             if (existing != null) {
