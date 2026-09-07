@@ -17,8 +17,17 @@ builds/adds) an entry:
    constant is the single canonical source for that sentinel (ticket 08 consolidated a second, independent
    `"unknown"` literal duplicated in `SignManager`; both now reference `WorldMap.UNKNOWN`).
 3. **Mixins** (`src/main/resources/bluemapsignmarkers.mixins.json`, server-only, `JAVA_21` compat level):
-   - `SignBlockEntityInject` injects `SignBlockEntity.updateSignText` at `TAIL` → a player edited a sign →
-     `SignManager.addOrUpdate(SignHelper.createSignEntry(this, player.getStringUUID()))`.
+   - `SignBlockEntityInject` injects `SignBlockEntity.updateSignText` at `HEAD` (sets a `@Unique` guard flag,
+     `bluemapsignmarkers$inUpdateSignText`) and at `TAIL` (clears the flag) → a player edited a sign →
+     `SignManager.addOrUpdate(SignHelper.createSignEntry(this, player.getStringUUID()))`. The same mixin also
+     injects `SignBlockEntity.updateText(UnaryOperator<SignText>, boolean)` at `RETURN`, gated on a `true` return
+     value and on the guard flag being `false` — `updateSignText` calls `updateText` internally, so without the
+     guard a plain text edit would dispatch twice (harmless but wasteful). This second hook is what makes
+     dyeing/glowing/un-glowing an already-placed sign (right-clicking it with a dye, ink sac, or glow ink sac —
+     none of which call `updateSignText`) visible to the mod at all: `SignManager.addOrUpdate(SignHelper.createSignEntry(this,
+     WorldMap.UNKNOWN))`, `WorldMap.UNKNOWN` because no `Player` is available at this injection point. See
+     `../plans/player-marker-colors/spec.md` "Detecting a dye change: mixin" for why a mixin (not a Fabric API
+     event) is the only clean hook for this.
    - `AbstractBlockInject` injects `BlockBehaviour.affectNeighborsAfterRemoval` at `HEAD`, but only proceeds
      `if (state.getBlock() instanceof SignBlock)` → `SignManager.remove(new SignEntryKey(...))`.
 4. **Chunk-load reconciliation** — `BlueMapSignMarkersMod.onChunkLoad` (registered on
@@ -31,9 +40,11 @@ builds/adds) an entry:
 `ConfigManager.get().getMarkerGroups()` at class-init), and also captures each side's raw, unparsed lines
 (`getRawLines(SignText)`) into `SignEntry.frontRawLines`/`backRawLines` — this raw text is what lets a config
 reload later re-parse the sign against a changed prefix instead of trusting the parse it produced at creation time
-(§3's reload self-heal). `SignHelper.reloadParser()` rebuilds the parser from the current config — called from
-`SignManager.reloadConfig()` (see §3) on every BlueMap reset, so a sign parsed *after* `/bluemap reload` picks up
-an edited prefix/matchType rather than a stale one.
+(§3's reload self-heal). It also reads each side's `SignText.getColor()` (a `DyeColor`, defaulting to `BLACK` for
+an undyed sign) into `SignEntry.frontDye`/`backDye` as the enum name string — see `config-and-persistence.md`'s
+`V6` section and `../plans/player-marker-colors/spec.md`. `SignHelper.reloadParser()` rebuilds the parser from the
+current config — called from `SignManager.reloadConfig()` (see §3) on every BlueMap reset, so a sign parsed *after*
+`/bluemap reload` picks up an edited prefix/matchType rather than a stale one.
 
 ## 2. Parsing: `SignLinesParser`
 
@@ -106,12 +117,15 @@ contention the way locking around `processMarkerAction` would.
 
 ### Representation and the transition table (`../plans/line-markers/spec.md` §6)
 
-A private record `Representation(MarkerGroup group, String label, String detail)` captures what a sign currently
-*is* to the marker layer: `null` means the sign matches no configured group (NONE); a non-null `Representation`
-whose `group.type()` is `POI`, `LINE`, `SHAPE`, or `EXTRUDE` says which kind. `computeRepresentation(SignEntry, prefixGroupMap)` derives
-it from `SignEntryHelper.getPrefix`/`getLabel`/`getDetail`, returning `null` if the entry has no resolvable prefix
-or the prefix isn't in `prefixGroupMap` (an operator removed/renamed that group's prefix since this sign was last
-dispatched — logged as a warning, not thrown).
+A private record `Representation(MarkerGroup group, String label, String detail, String dye)` captures what a sign
+currently *is* to the marker layer: `null` means the sign matches no configured group (NONE); a non-null
+`Representation` whose `group.type()` is `POI`, `LINE`, `SHAPE`, or `EXTRUDE` says which kind. `dye` is the sign's
+own raw dye (`SignEntryHelper.getDye`, GitHub issue #198) — **not** a resolved marker-wide colour, since
+`computeRepresentation` only ever sees one `SignEntry` at a time; conflict resolution across a marker's members
+happens separately, in `ColorResolver` (below). `computeRepresentation(SignEntry, prefixGroupMap)` derives
+it from `SignEntryHelper.getPrefix`/`getLabel`/`getDetail`/`getDye`, returning `null` if the entry has no resolvable
+prefix or the prefix isn't in `prefixGroupMap` (an operator removed/renamed that group's prefix since this sign was
+last dispatched — logged as a warning, not thrown).
 
 Every sign change — edit, removal, or a config reload (§ below) — reduces to a single lookup: compute the sign's
 `Representation` under the *old* state and under the *new* state, then pass the `(oldRep, newRep)` pair to
@@ -145,7 +159,12 @@ edit dispatch a bundled remove+add instead of a single `UpdateMarkerAction`. The
 EXTRUDE/EXTRUDE cells all use `sameGroupAndLabel(a, b)` (compares `group().prefix()` and `label()`) — the
 same-group-recompute shortcut condition is `oldType == newType && oldType != MarkerGroupType.POI &&
 sameGroupAndLabel(...)`, generalized to cover any non-`POI` type rather than naming `LINE` explicitly, since a
-`LINE`/`SHAPE`/`EXTRUDE` group's identity (and marker id, §5) is keyed on group+label either way. When a transition
+`LINE`/`SHAPE`/`EXTRUDE` group's identity (and marker id, §5) is keyed on group+label either way. The recompute
+shortcut's no-op guard is `oldRep.detail().equals(newRep.detail()) && oldRep.dye().equals(newRep.dye()) &&
+!isReload` — `dye` was added to that guard (GitHub issue #198) alongside `detail` precisely so a dye-only edit
+(detail unchanged) doesn't get silently swallowed: it makes `oldRep != newRep`, defeats the no-op check, and falls
+through to the normal recompute path (`joinEffect`), which re-derives the marker's colour from the *current full
+membership* via `ColorResolver` regardless of which member's dye actually changed. When a transition
 needs both a leave-effect and a join-effect (a group/label/type change, for any pair of the four types), each
 effect is computed independently (`null` if that half is a no-op, e.g. leaving a `LINE` group that still has ≥2
 members after removal dispatches a `Set`, not a leave at all) and both are collected into a `List<MarkerAction>`:
@@ -166,6 +185,38 @@ both of which just delegate to `LineGroupResolver.members(...)` (identical filte
 difference between `LINE`, `SHAPE`, and `EXTRUDE` group resolution is the caller-side minimum-member count, `2` vs.
 `SHAPE_MIN_MEMBERS = 3` vs. `EXTRUDE_MIN_MEMBERS = 3`), and dispatch via `actionFactory.createSetShapeAction`/
 `createRemoveShapeAction` or `createSetExtrudeAction`/`createRemoveExtrudeAction` instead of the line equivalents.
+Every join/leave-recompute call site calls `ColorResolver.resolve(members, rep.group())` (see below) immediately
+before dispatching, and passes the resolved `lineColor`/`fillColor` into `createSetLineAction`/
+`createSetShapeAction`/`createSetExtrudeAction` as explicit parameters — `ActionFactory` no longer reads
+`markerGroup.lineColor()`/`fillColor()` itself for these three factory methods, keeping it a dumb builder while
+`SignTransitionResolver` owns colour resolution. These call sites also now pass `rep.detail()` (not `rep.label()`)
+as the dispatched detail text — fixing a bug where a `LINE`/`SHAPE`/`EXTRUDE` marker's rendered detail was always
+just its label repeated, since detail text on these signs was never actually threaded through.
+
+### Conflict resolution: `ColorResolver` (player-controlled marker colours, GitHub issue #198)
+
+`ColorResolver` (`core.signs`, plain Java, same shape as `LineGroupResolver`/`ShapeGroupResolver`/
+`ExtrudeGroupResolver` — directly unit-testable) resolves a `LINE`/`SHAPE`/`EXTRUDE` marker's rendered
+`lineColor`/`fillColor` from its current membership. Full design: `../plans/player-marker-colors/spec.md`.
+
+- `resolve(List<SignEntry> members, MarkerGroup group)` returns the group's configured `lineColor`/`fillColor`
+  unchanged (`ResolvedColors`) if `group.allowPlayerColors()` is `false`, or if no member has a non-`"BLACK"` dye
+  (`SignEntryHelper.UNDYED_DYE`) — zero behavior change for a group that hasn't opted in, or where nobody's dyed
+  anything.
+- Otherwise: sorts `members` by `createdAtMillis` itself (doesn't trust the caller's ordering, even though
+  `LineGroupResolver.members` happens to already return earliest-first) and picks the **earliest-placed member with
+  a non-default dye** as the winner — re-evaluated fresh on every call against the current membership snapshot, not
+  cached, so removing or redyeing the winner hands off to the next-earliest dyed survivor automatically.
+- Looks up the winner's dye in a fixed `DYE_RGB` map (duplicating `net.minecraft.world.item.DyeColor
+  .getTextureDiffuseColor()`'s values from the decompiled source for the pinned Minecraft version, so this class
+  stays plain Java with no Minecraft type dependency) and combines that RGB with the **alpha byte already present in
+  the group's configured** `lineColor`/`fillColor` (via `ColorUtils.parseHex`/`toHex`) — only the hue comes from the
+  dye, never the alpha.
+- Called from `SignTransitionResolver` at every join/leave-recompute call site above, for all three multi-point
+  types, both when a sign joins a group and when the leave-recompute path re-derives colour after a member leaves.
+- Known limitation (by design, not a bug): `SignText.getColor()` returns `DyeColor.BLACK` both for a genuinely
+  undyed sign and one a player explicitly dyed black, so a black-dyed sign can never win — documented in `README.md`
+  and the spec's "Out of scope" section.
 
 `addOrUpdateSign(signEntry)` (called for every add/update event, from entry points 1-3 above — not §1.4's chunk-load
 reconciliation, which only ever calls `removeByKey` directly): first runs the incoming `signEntry` through
@@ -287,15 +338,18 @@ Two id schemes now exist side by side (position-keyed and content-keyed), unifie
 - `ActionFactory.createChangeGroupPOIAction(x, y, z, mapId, label, detail, oldMarkerGroup, newMarkerGroup)` now
   builds a `GroupTransitionMarkerAction` wrapping `List.of(new RemoveMarkerAction(oldIdentifier), new
   AddMarkerAction(newIdentifier, label, detail))` — two full `MarkerAction`s, not the older single action carrying
-  two identifiers. `createSetLineAction(mapId, markerGroup, label, detail, points, isFirstAppearance)` and
-  `createRemoveLineAction(mapId, markerGroup, label)` are the `LINE`-side counterparts, following the same
+  two identifiers. `createSetLineAction(mapId, markerGroup, label, detail, points, lineColor, isFirstAppearance)`
+  and `createRemoveLineAction(mapId, markerGroup, label)` are the `LINE`-side counterparts, following the same
   `MarkerSetIdentifierCollection.getIdentifier` pattern as every other factory method; `createSetLineAction` builds
-  a `LineMarkerIdentifier(label, ...)` and carries `markerGroup.lineWidth()`/`lineColor()` through unchanged.
-  `createSetShapeAction(mapId, markerGroup, label, detail, points, isFirstAppearance)`/`createRemoveShapeAction(mapId,
-  markerGroup, label)` mirror those two exactly but build a `ShapeMarkerIdentifier` and additionally carry
-  `markerGroup.fillColor()` into `SetShapeMarkerAction`. `createSetExtrudeAction`/`createRemoveExtrudeAction` are
-  structurally identical to the `SHAPE` pair (same parameters, same `fillColor` threading) but build an
-  `ExtrudeMarkerIdentifier` and the resulting `SetExtrudeMarkerAction`/`RemoveExtrudeMarkerAction`.
+  a `LineMarkerIdentifier(label, ...)` and carries `markerGroup.lineWidth()` plus the caller-supplied `lineColor`
+  through — the caller (`SignTransitionResolver`, via `ColorResolver`, GitHub issue #198) passes the *resolved*
+  colour explicitly rather than `ActionFactory` reading `markerGroup.lineColor()` itself, since a group with
+  `allowPlayerColors` set may render a dye-derived colour instead of the configured one.
+  `createSetShapeAction(mapId, markerGroup, label, detail, points, lineColor, fillColor, isFirstAppearance)`/
+  `createRemoveShapeAction(mapId, markerGroup, label)` mirror those two exactly but build a `ShapeMarkerIdentifier`
+  and take both resolved colours as explicit parameters. `createSetExtrudeAction`/`createRemoveExtrudeAction` are
+  structurally identical to the `SHAPE` pair (same parameters) but build an `ExtrudeMarkerIdentifier` and the
+  resulting `SetExtrudeMarkerAction`/`RemoveExtrudeMarkerAction`.
 - `MarkerSetIdentifierCollection` is a per-`SignManager`-instance cache that guarantees the *same*
   `MarkerSetIdentifier` object is returned for a given `(mapId, markerGroup)` pair (indexed both by map and by
   marker group, intersected) — `ActionFactory` always goes through this rather than constructing
@@ -560,5 +614,5 @@ gating" section. This section covers the code-level mechanics.
   themselves are otherwise unchanged — the fix is localized to `prepareGated`.
 
 ---
-*Last updated: 2026-09-02 | Verified against: feature/tpwalke2/196-extrude-markers (5b38852)*
+*Last updated: 2026-09-06 | Verified against: feature/tpwalke2/198-dye-colors (535bb13)*
 

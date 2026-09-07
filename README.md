@@ -82,7 +82,8 @@ Setting a field on a group type it doesn't apply to (e.g. `icon` on a `LINE`/`SH
       "name": "Trails",
       "type": "LINE",
       "lineWidth": 3,
-      "lineColor": "#00A2FFFF"
+      "lineColor": "#00A2FFFF",
+      "allowPlayerColors": true
     },
     {
       "prefix": "[region]",
@@ -90,7 +91,8 @@ Setting a field on a group type it doesn't apply to (e.g. `icon` on a `LINE`/`SH
       "type": "SHAPE",
       "lineWidth": 2,
       "lineColor": "#FFA500FF",
-      "fillColor": "#FFA50040"
+      "fillColor": "#FFA50040",
+      "allowPlayerColors": true
     },
     {
       "prefix": "[building]",
@@ -98,7 +100,8 @@ Setting a field on a group type it doesn't apply to (e.g. `icon` on a `LINE`/`SH
       "type": "EXTRUDE",
       "lineWidth": 2,
       "lineColor": "#4682B4FF",
-      "fillColor": "#4682B440"
+      "fillColor": "#4682B440",
+      "allowPlayerColors": true
     }
   ]
 }
