@@ -184,7 +184,7 @@ signature (like `SignLinesParser`/`ParsingContext`, `SignEntry`/`SignEntryHelper
 `MarkerGroup`/`MarkerGroupMatchType`, `ConfigManager`/`ConfigProvider`, `ReactiveQueue`, `HtmlUtils`, `FileUtils`,
 the persistence loaders/converters (including `Version1SignEntryLoader`, `Version4Converter`),
 `ActionFactory`/`MarkerSetIdentifierCollection`, `LineGroupResolver`, `SignTransitionResolver`, `ColorUtils`,
-`DispatchedMarkerIdentifier`/`LineMarkerIdentifier`/`LinePoint`, `RenderMaskEvaluator`) — these can be unit tested
+`DispatchedMarkerIdentifier`/`MultiPointMarkerIdentifier`/`LinePoint`, `RenderMaskEvaluator`) — these can be unit tested
 directly (see
 `src/test/java/.../core/signs/SignLinesParserTest.java` for the pattern).
 Code that must reference game types (`SignHelper`, the mixins, `BlueMapSignMarkersMod`, `BlueMapAPIConnector`)

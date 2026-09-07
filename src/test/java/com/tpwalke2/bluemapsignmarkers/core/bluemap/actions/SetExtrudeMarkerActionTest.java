@@ -1,11 +1,11 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap.actions;
 
-import com.tpwalke2.bluemapsignmarkers.core.markers.ExtrudeMarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.LinePoint;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupMatchType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifier;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointMarkerIdentifier;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -65,10 +65,10 @@ class SetExtrudeMarkerActionTest {
         return List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6), new LinePoint(7, 8, 9));
     }
 
-    private static ExtrudeMarkerIdentifier identifier() {
+    private static MultiPointMarkerIdentifier identifier() {
         var group = new MarkerGroup(
                 "[extrude]", MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.EXTRUDE, "[extrude]", null, 0, 0,
                 false, 0, 0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of(), false);
-        return new ExtrudeMarkerIdentifier("label", new MarkerSetIdentifier("world", group));
+        return new MultiPointMarkerIdentifier("extrude", "label", new MarkerSetIdentifier("world", group));
     }
 }

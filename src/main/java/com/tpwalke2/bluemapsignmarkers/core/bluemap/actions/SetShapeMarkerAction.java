@@ -1,7 +1,7 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap.actions;
 
 import com.tpwalke2.bluemapsignmarkers.core.markers.LinePoint;
-import com.tpwalke2.bluemapsignmarkers.core.markers.ShapeMarkerIdentifier;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointMarkerIdentifier;
 
 import java.util.List;
 
@@ -22,7 +22,7 @@ public class SetShapeMarkerAction extends MarkerAction {
     private final boolean isFirstAppearance;
 
     public SetShapeMarkerAction(
-            ShapeMarkerIdentifier markerIdentifier,
+            MultiPointMarkerIdentifier markerIdentifier,
             String label,
             String detail,
             List<LinePoint> points,

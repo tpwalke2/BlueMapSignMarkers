@@ -5,7 +5,7 @@ import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupMatchType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifier;
-import com.tpwalke2.bluemapsignmarkers.core.markers.ShapeMarkerIdentifier;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointMarkerIdentifier;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -65,10 +65,10 @@ class SetShapeMarkerActionTest {
         return List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6), new LinePoint(7, 8, 9));
     }
 
-    private static ShapeMarkerIdentifier identifier() {
+    private static MultiPointMarkerIdentifier identifier() {
         var group = new MarkerGroup(
                 "[shape]", MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.SHAPE, "[shape]", null, 0, 0, false, 0,
                 0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of(), false);
-        return new ShapeMarkerIdentifier("label", new MarkerSetIdentifier("world", group));
+        return new MultiPointMarkerIdentifier("shape", "label", new MarkerSetIdentifier("world", group));
     }
 }

@@ -18,13 +18,11 @@ import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetLineMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetShapeMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.UpdateMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.markers.DispatchedMarkerIdentifier;
-import com.tpwalke2.bluemapsignmarkers.core.markers.ExtrudeMarkerIdentifier;
-import com.tpwalke2.bluemapsignmarkers.core.markers.LineMarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.LinePoint;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifier;
-import com.tpwalke2.bluemapsignmarkers.core.markers.ShapeMarkerIdentifier;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointMarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.reactive.ReactiveQueue;
 import com.flowpowered.math.vector.Vector2d;
 import de.bluecolored.bluemap.api.BlueMapAPI;
@@ -310,18 +308,13 @@ public class BlueMapAPIConnector {
         var position = "";
         if (identifier instanceof MarkerIdentifier markerIdentifier) {
             position = String.format(" at x=%d y=%d z=%d", markerIdentifier.x(), markerIdentifier.y(), markerIdentifier.z());
-        } else if (identifier instanceof LineMarkerIdentifier && action instanceof SetLineMarkerAction setAction) {
-            position = String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
-        } else if (identifier instanceof LineMarkerIdentifier lineMarkerIdentifier) {
-            position = String.format(" label='%s'", LogUtils.sanitizeForLog(lineMarkerIdentifier.label()));
-        } else if (identifier instanceof ShapeMarkerIdentifier && action instanceof SetShapeMarkerAction setAction) {
-            position = String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
-        } else if (identifier instanceof ShapeMarkerIdentifier shapeMarkerIdentifier) {
-            position = String.format(" label='%s'", LogUtils.sanitizeForLog(shapeMarkerIdentifier.label()));
-        } else if (identifier instanceof ExtrudeMarkerIdentifier && action instanceof SetExtrudeMarkerAction setAction) {
-            position = String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
-        } else if (identifier instanceof ExtrudeMarkerIdentifier extrudeMarkerIdentifier) {
-            position = String.format(" label='%s'", LogUtils.sanitizeForLog(extrudeMarkerIdentifier.label()));
+        } else if (identifier instanceof MultiPointMarkerIdentifier multiPointMarkerIdentifier) {
+            position = switch (action) {
+                case SetLineMarkerAction setAction -> String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
+                case SetShapeMarkerAction setAction -> String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
+                case SetExtrudeMarkerAction setAction -> String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
+                default -> String.format(" label='%s'", LogUtils.sanitizeForLog(multiPointMarkerIdentifier.label()));
+            };
         }
 
         LOGGER.debug("{} {} type marker in {}{}{}",
