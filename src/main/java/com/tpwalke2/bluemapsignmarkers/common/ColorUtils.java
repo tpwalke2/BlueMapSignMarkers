@@ -13,6 +13,7 @@ public class ColorUtils {
         var stripped = hex.startsWith("#") ? hex.substring(1) : hex;
 
         if (stripped.length() != 6 && stripped.length() != 8) return defaultColor();
+        if (!isHexChars(stripped)) return defaultColor();
 
         try {
             var r = Integer.parseInt(stripped.substring(0, 2), 16);
@@ -42,14 +43,16 @@ public class ColorUtils {
 
         if (stripped.length() != 6 && stripped.length() != 8) return false;
 
-        try {
-            Integer.parseInt(stripped.substring(0, 2), 16);
-            Integer.parseInt(stripped.substring(2, 4), 16);
-            Integer.parseInt(stripped.substring(4, 6), 16);
-            if (stripped.length() == 8) Integer.parseInt(stripped.substring(6, 8), 16);
-            return true;
-        } catch (NumberFormatException e) {
-            return false;
+        return isHexChars(stripped);
+    }
+
+    // Integer.parseInt(s, 16) also accepts a leading '-'/'+' sign (e.g. "-1" parses to -1 under radix 16),
+    // so a 2-char component like "-1" passes parseInt without a NumberFormatException even though it isn't
+    // a valid hex byte. Checking every character is an actual hex digit first closes that gap.
+    private static boolean isHexChars(String stripped) {
+        for (var i = 0; i < stripped.length(); i++) {
+            if (Character.digit(stripped.charAt(i), 16) == -1) return false;
         }
+        return true;
     }
 }

@@ -895,6 +895,115 @@ class ConfigProviderTest {
         assertTrue(warnings.stream().anyMatch(m -> m.contains("offsetY")));
     }
 
+    // finding 41: matchType is part of the duplicate-prefix key, so a STARTS_WITH "[a]" group and a REGEX
+    // "[a]" group (which match different sign text) aren't wrongly rejected as duplicates of each other.
+    @Test
+    void loadConfigAllowsTheSamePrefixTextAcrossDifferentMatchTypes(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[a]", "matchType": "STARTS_WITH", "name": "First" },
+                    { "prefix": "[a]", "matchType": "REGEX", "name": "Second" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(2, config.getMarkerGroups().length);
+    }
+
+    // finding 6: a v1 config with an empty/blank poiPrefix must not migrate into a v2 group whose empty
+    // STARTS_WITH "" prefix would silently match every sign's text - it should fall back to defaults instead.
+    @Test
+    void loadConfigFallsBackToDefaultsWhenAV1ConfigHasABlankPoiPrefix(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                { "poiPrefix": "" }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        assertEquals("[poi]", config.getMarkerGroups()[0].prefix());
+        assertTrue(
+                Files.exists(tempDir.resolve("BMSM-Core.json.v1.bak")),
+                "original v1 file should still have been backed up even though migration was rejected");
+    }
+
+    // finding 7: a single group with a malformed 'type' must degrade just that group's type to POI (with a
+    // warning) rather than throwing out of GSON.fromJson and wiping every group in the config back to one
+    // default [poi] group.
+    @Test
+    void loadConfigDegradesJustOneGroupWhenItsTypeIsMalformedRatherThanWipingTheWholeConfig(
+            @TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[good]", "name": "Good Group" },
+                    { "prefix": "[bad]", "name": "Bad Group", "type": "NOT_A_TYPE" }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(2, config.getMarkerGroups().length);
+        assertEquals("[good]", config.getMarkerGroups()[0].prefix());
+        assertEquals("[bad]", config.getMarkerGroups()[1].prefix());
+        assertEquals(MarkerGroupType.POI, config.getMarkerGroups()[1].type());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("type")));
+    }
+
+    // Same as above, but for a malformed 'matchType' rather than 'type'.
+    @Test
+    void loadConfigDegradesJustOneGroupWhenItsMatchTypeIsMalformedRatherThanWipingTheWholeConfig(
+            @TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[bad]", "name": "Bad Group", "matchType": "NOT_A_MATCH_TYPE" }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(1, config.getMarkerGroups().length);
+        assertEquals(MarkerGroupMatchType.STARTS_WITH, config.getMarkerGroups()[0].matchType());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("matchType")));
+    }
+
+    // Same as above, but for a malformed 'offsetX' (a non-numeric value rather than a wrong-shaped enum).
+    @Test
+    void loadConfigDegradesJustOneGroupWhenItsOffsetXIsMalformedRatherThanWipingTheWholeConfig(
+            @TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[good]", "name": "Good Group" },
+                    { "prefix": "[bad]", "name": "Bad Group", "offsetX": "notanumber" }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(2, config.getMarkerGroups().length);
+        assertEquals(0, config.getMarkerGroups()[1].offsetX());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("offsetX")));
+    }
+
     @Test
     void loadConfigWarnsWhenCssClassesIsSetOnAnExtrudeGroup(@TempDir Path tempDir) throws IOException {
         var path = tempDir.resolve("BMSM-Core.json");

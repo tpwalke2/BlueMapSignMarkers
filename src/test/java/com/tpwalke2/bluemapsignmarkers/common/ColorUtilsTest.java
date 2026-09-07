@@ -64,4 +64,16 @@ class ColorUtilsTest {
     void isValidHexRejectsNonHexCharacters() {
         assertFalse(ColorUtils.isValidHex("#ZZZZZZ"));
     }
+
+    // "-1-1-1-1" is length 8 (passes the length check) and each 2-char component parses as decimal -1
+    // under radix 16 with no NumberFormatException, so a naive Integer.parseInt-only check wrongly accepts it.
+    @Test
+    void isValidHexRejectsAMinusSignInAComponent() {
+        assertFalse(ColorUtils.isValidHex("#-1-1-1-1"));
+    }
+
+    @Test
+    void parseHexFallsBackToOpaqueRedForAMinusSignInAComponent() {
+        assertArrayEquals(new int[]{255, 0, 0, 255}, ColorUtils.parseHex("#-1-1-1-1"));
+    }
 }
