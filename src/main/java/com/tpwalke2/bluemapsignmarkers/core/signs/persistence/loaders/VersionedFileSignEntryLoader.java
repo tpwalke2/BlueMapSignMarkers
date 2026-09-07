@@ -10,6 +10,7 @@ import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.VersionedSignFile;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV2;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV3;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV4;
+import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.models.SignEntryV5;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,36 +53,55 @@ public class VersionedFileSignEntryLoader {
 
                 if (!FileUtils.createBackup(path, ".v2.bak", "markers file")) {
                     LOGGER.error(
-                            "Failed to back up markers file {} before v2-to-v5 migration; continuing to load the "
+                            "Failed to back up markers file {} before v2-to-v6 migration; continuing to load the "
                                     + "entries in-memory without a backup", path);
                 }
 
-                return convertV3EntriesToV5(signEntriesV3, path);
+                return convertV3EntriesToV6(signEntriesV3, path);
             } else if (versionedSignFile.version() == SignFileVersions.V3) {
                 LOGGER.info("Loading version 3 markers file...");
-                var signEntriesV3 = Arrays.asList(gson.fromJson(versionedSignFile.data(), SignEntryV3[].class));
+                var signEntriesV3 = Arrays.stream(gson.fromJson(versionedSignFile.data(), SignEntryV3[].class))
+                        .filter(Objects::nonNull)
+                        .toList();
 
                 if (!FileUtils.createBackup(path, ".v3.bak", "markers file")) {
                     LOGGER.error(
-                            "Failed to back up markers file {} before v3-to-v5 migration; continuing to load the "
+                            "Failed to back up markers file {} before v3-to-v6 migration; continuing to load the "
                                     + "entries in-memory without a backup", path);
                 }
 
-                return convertV3EntriesToV5(signEntriesV3, path);
+                return convertV3EntriesToV6(signEntriesV3, path);
             } else if (versionedSignFile.version() == SignFileVersions.V4) {
                 LOGGER.info("Loading version 4 markers file...");
-                var signEntriesV4 = Arrays.asList(gson.fromJson(versionedSignFile.data(), SignEntryV4[].class));
+                var signEntriesV4 = Arrays.stream(gson.fromJson(versionedSignFile.data(), SignEntryV4[].class))
+                        .filter(Objects::nonNull)
+                        .toList();
 
                 if (!FileUtils.createBackup(path, ".v4.bak", "markers file")) {
                     LOGGER.error(
-                            "Failed to back up markers file {} before v4-to-v5 migration; continuing to load the "
+                            "Failed to back up markers file {} before v4-to-v6 migration; continuing to load the "
                                     + "entries in-memory without a backup", path);
                 }
 
-                return convertV4EntriesToV5(signEntriesV4);
+                return convertV4EntriesToV6(signEntriesV4);
+            } else if (versionedSignFile.version() == SignFileVersions.V5) {
+                LOGGER.info("Loading version 5 markers file...");
+                var signEntriesV5 = Arrays.stream(gson.fromJson(versionedSignFile.data(), SignEntryV5[].class))
+                        .filter(Objects::nonNull)
+                        .toList();
+
+                if (!FileUtils.createBackup(path, ".v5.bak", "markers file")) {
+                    LOGGER.error(
+                            "Failed to back up markers file {} before v5-to-v6 migration; continuing to load the "
+                                    + "entries in-memory without a backup", path);
+                }
+
+                return convertV5EntriesToV6(signEntriesV5);
             } else {
-                LOGGER.info("Loading version 5+ markers file...");
-                return gson.fromJson(versionedSignFile.data(), SignEntry[].class);
+                LOGGER.info("Loading version 6+ markers file...");
+                return Arrays.stream(gson.fromJson(versionedSignFile.data(), SignEntry[].class))
+                        .filter(Objects::nonNull)
+                        .toArray(SignEntry[]::new);
             }
         } catch (Exception e) {
             LOGGER.warn("Failed to load versioned sign file {}, falling back to version 1", path, e);
@@ -89,19 +109,27 @@ public class VersionedFileSignEntryLoader {
         return null;
     }
 
-    private static SignEntry[] convertV3EntriesToV5(List<SignEntryV3> signEntriesV3, String path) {
+    private static SignEntry[] convertV3EntriesToV6(List<SignEntryV3> signEntriesV3, String path) {
         var fileLastModifiedMillis = getLastModifiedMillis(path);
         var signEntriesV4 = new SignEntryV4[signEntriesV3.size()];
         for (var i = 0; i < signEntriesV3.size(); i++) {
             signEntriesV4[i] = Version4Converter.convertToV4(signEntriesV3.get(i), i, fileLastModifiedMillis);
         }
-        return convertV4EntriesToV5(Arrays.asList(signEntriesV4));
+        return convertV4EntriesToV6(Arrays.asList(signEntriesV4));
     }
 
-    private static SignEntry[] convertV4EntriesToV5(List<SignEntryV4> signEntriesV4) {
-        var result = new SignEntry[signEntriesV4.size()];
+    private static SignEntry[] convertV4EntriesToV6(List<SignEntryV4> signEntriesV4) {
+        var signEntriesV5 = new SignEntryV5[signEntriesV4.size()];
         for (var i = 0; i < signEntriesV4.size(); i++) {
-            result[i] = Version5Converter.convertToV5(signEntriesV4.get(i));
+            signEntriesV5[i] = Version5Converter.convertToV5(signEntriesV4.get(i));
+        }
+        return convertV5EntriesToV6(Arrays.asList(signEntriesV5));
+    }
+
+    private static SignEntry[] convertV5EntriesToV6(List<SignEntryV5> signEntriesV5) {
+        var result = new SignEntry[signEntriesV5.size()];
+        for (var i = 0; i < signEntriesV5.size(); i++) {
+            result[i] = Version6Converter.convertToV6(signEntriesV5.get(i));
         }
         return result;
     }

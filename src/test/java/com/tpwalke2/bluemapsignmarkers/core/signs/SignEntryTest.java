@@ -17,9 +17,11 @@ class SignEntryTest {
     private static final long CREATED_AT_MILLIS = 1000L;
     private static final String[] FRONT_RAW_LINES = new String[]{"[poi]", "label"};
     private static final String[] BACK_RAW_LINES = new String[]{"", "", "", ""};
+    private static final String FRONT_DYE = "BLACK";
+    private static final String BACK_DYE = "BLACK";
 
     private static SignEntry baseEntry() {
-        return new SignEntry(KEY, PLAYER_ID, FRONT, BACK, CREATED_AT_MILLIS, FRONT_RAW_LINES, BACK_RAW_LINES);
+        return new SignEntry(KEY, PLAYER_ID, FRONT, BACK, CREATED_AT_MILLIS, FRONT_RAW_LINES, BACK_RAW_LINES, FRONT_DYE, BACK_DYE);
     }
 
     @Test
@@ -39,7 +41,9 @@ class SignEntryTest {
                 new SignLinesParseResult(null, "", ""),
                 CREATED_AT_MILLIS,
                 new String[]{"[poi]", "label"},
-                new String[]{"", "", "", ""});
+                new String[]{"", "", "", ""},
+                "BLACK",
+                "BLACK");
 
         assertEquals(first, second);
         assertEquals(first.hashCode(), second.hashCode());
@@ -64,7 +68,7 @@ class SignEntryTest {
     @Test
     void equalsReturnsFalseForADifferentPlayerId() {
         var entry = baseEntry();
-        var differentPlayerId = new SignEntry(KEY, "player-2", FRONT, BACK, CREATED_AT_MILLIS, FRONT_RAW_LINES, BACK_RAW_LINES);
+        var differentPlayerId = new SignEntry(KEY, "player-2", FRONT, BACK, CREATED_AT_MILLIS, FRONT_RAW_LINES, BACK_RAW_LINES, FRONT_DYE, BACK_DYE);
 
         assertNotEquals(entry, differentPlayerId);
     }
@@ -72,7 +76,7 @@ class SignEntryTest {
     @Test
     void equalsReturnsFalseForADifferentFrontText() {
         var entry = baseEntry();
-        var differentFrontText = new SignEntry(KEY, PLAYER_ID, new SignLinesParseResult("[poi]", "other", "detail"), BACK, CREATED_AT_MILLIS, FRONT_RAW_LINES, BACK_RAW_LINES);
+        var differentFrontText = new SignEntry(KEY, PLAYER_ID, new SignLinesParseResult("[poi]", "other", "detail"), BACK, CREATED_AT_MILLIS, FRONT_RAW_LINES, BACK_RAW_LINES, FRONT_DYE, BACK_DYE);
 
         assertNotEquals(entry, differentFrontText);
     }
@@ -80,7 +84,7 @@ class SignEntryTest {
     @Test
     void equalsReturnsFalseForADifferentBackText() {
         var entry = baseEntry();
-        var differentBackText = new SignEntry(KEY, PLAYER_ID, FRONT, new SignLinesParseResult(null, "other", ""), CREATED_AT_MILLIS, FRONT_RAW_LINES, BACK_RAW_LINES);
+        var differentBackText = new SignEntry(KEY, PLAYER_ID, FRONT, new SignLinesParseResult(null, "other", ""), CREATED_AT_MILLIS, FRONT_RAW_LINES, BACK_RAW_LINES, FRONT_DYE, BACK_DYE);
 
         assertNotEquals(entry, differentBackText);
     }
@@ -88,7 +92,7 @@ class SignEntryTest {
     @Test
     void equalsReturnsFalseForADifferentCreatedAtMillis() {
         var entry = baseEntry();
-        var differentCreatedAtMillis = new SignEntry(KEY, PLAYER_ID, FRONT, BACK, CREATED_AT_MILLIS + 1, FRONT_RAW_LINES, BACK_RAW_LINES);
+        var differentCreatedAtMillis = new SignEntry(KEY, PLAYER_ID, FRONT, BACK, CREATED_AT_MILLIS + 1, FRONT_RAW_LINES, BACK_RAW_LINES, FRONT_DYE, BACK_DYE);
 
         assertNotEquals(entry, differentCreatedAtMillis);
     }
@@ -97,7 +101,7 @@ class SignEntryTest {
     void equalsReturnsFalseForDifferentFrontRawLines() {
         var entry = baseEntry();
         var differentFrontRawLines = new SignEntry(KEY, PLAYER_ID, FRONT, BACK, CREATED_AT_MILLIS,
-                new String[]{"[poi]", "other"}, BACK_RAW_LINES);
+                new String[]{"[poi]", "other"}, BACK_RAW_LINES, FRONT_DYE, BACK_DYE);
 
         assertNotEquals(entry, differentFrontRawLines);
     }
@@ -106,15 +110,33 @@ class SignEntryTest {
     void equalsReturnsFalseForDifferentBackRawLines() {
         var entry = baseEntry();
         var differentBackRawLines = new SignEntry(KEY, PLAYER_ID, FRONT, BACK, CREATED_AT_MILLIS,
-                FRONT_RAW_LINES, new String[]{"other"});
+                FRONT_RAW_LINES, new String[]{"other"}, FRONT_DYE, BACK_DYE);
 
         assertNotEquals(entry, differentBackRawLines);
     }
 
     @Test
+    void equalsReturnsFalseForADifferentFrontDye() {
+        var entry = baseEntry();
+        var differentFrontDye = new SignEntry(KEY, PLAYER_ID, FRONT, BACK, CREATED_AT_MILLIS,
+                FRONT_RAW_LINES, BACK_RAW_LINES, "RED", BACK_DYE);
+
+        assertNotEquals(entry, differentFrontDye);
+    }
+
+    @Test
+    void equalsReturnsFalseForADifferentBackDye() {
+        var entry = baseEntry();
+        var differentBackDye = new SignEntry(KEY, PLAYER_ID, FRONT, BACK, CREATED_AT_MILLIS,
+                FRONT_RAW_LINES, BACK_RAW_LINES, FRONT_DYE, "RED");
+
+        assertNotEquals(entry, differentBackDye);
+    }
+
+    @Test
     void equalsToleratesNullRawLines() {
-        var entryWithNullRawLines = new SignEntry(KEY, PLAYER_ID, FRONT, BACK, CREATED_AT_MILLIS, null, null);
-        var otherEntryWithNullRawLines = new SignEntry(KEY, PLAYER_ID, FRONT, BACK, CREATED_AT_MILLIS, null, null);
+        var entryWithNullRawLines = new SignEntry(KEY, PLAYER_ID, FRONT, BACK, CREATED_AT_MILLIS, null, null, FRONT_DYE, BACK_DYE);
+        var otherEntryWithNullRawLines = new SignEntry(KEY, PLAYER_ID, FRONT, BACK, CREATED_AT_MILLIS, null, null, FRONT_DYE, BACK_DYE);
 
         assertEquals(entryWithNullRawLines, otherEntryWithNullRawLines);
         assertEquals(entryWithNullRawLines.hashCode(), otherEntryWithNullRawLines.hashCode());
@@ -172,13 +194,13 @@ class SignEntryTest {
 
     @Test
     void equalsAndHashCodeToleratesNullFields() {
-        var entryWithNullKey = new SignEntry(null, PLAYER_ID, FRONT, BACK, CREATED_AT_MILLIS, FRONT_RAW_LINES, BACK_RAW_LINES);
+        var entryWithNullKey = new SignEntry(null, PLAYER_ID, FRONT, BACK, CREATED_AT_MILLIS, FRONT_RAW_LINES, BACK_RAW_LINES, FRONT_DYE, BACK_DYE);
 
         assertFalse(entryWithNullKey.equals(baseEntry()));
         assertDoesNotThrow(entryWithNullKey::hashCode);
 
-        var entryWithAllNullFields = new SignEntry(null, null, null, null, 0L, null, null);
-        var otherEntryWithAllNullFields = new SignEntry(null, null, null, null, 0L, null, null);
+        var entryWithAllNullFields = new SignEntry(null, null, null, null, 0L, null, null, null, null);
+        var otherEntryWithAllNullFields = new SignEntry(null, null, null, null, 0L, null, null, null, null);
 
         assertEquals(entryWithAllNullFields, otherEntryWithAllNullFields);
         assertEquals(entryWithAllNullFields.hashCode(), otherEntryWithAllNullFields.hashCode());

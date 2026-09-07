@@ -19,7 +19,8 @@ public record MarkerGroup(
         int sorting,
         boolean toggleable,
         boolean depthTest,
-        List<String> cssClasses) {
+        List<String> cssClasses,
+        boolean allowPlayerColors) {
     public static final MarkerGroup DEFAULT_POI_GROUP = new MarkerGroup(
             "[poi]",
             MarkerGroupMatchType.STARTS_WITH,
@@ -37,9 +38,10 @@ public record MarkerGroup(
             0,
             true,
             true,
-            List.of());
+            List.of(),
+            false);
 
     public MarkerGroup withType(MarkerGroupType type) {
-        return new MarkerGroup(prefix, matchType, type, name, icon, offsetX, offsetY, defaultHidden, minDistance, maxDistance, lineWidth, lineColor, fillColor, sorting, toggleable, depthTest, cssClasses);
+        return new MarkerGroup(prefix, matchType, type, name, icon, offsetX, offsetY, defaultHidden, minDistance, maxDistance, lineWidth, lineColor, fillColor, sorting, toggleable, depthTest, cssClasses, allowPlayerColors);
     }
 }

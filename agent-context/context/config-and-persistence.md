@@ -38,10 +38,11 @@ File: `config/bluemapsignmarkers/BMSM-Core.json`. Path is fixed (not per-world) 
      runtime `MarkerGroup` via `convertToLoadedMarkerGroup`, which applies defaults per-field (`matchType` →
      `STARTS_WITH`, `type` → `POI`, `offsetX`/`offsetY` → `0`, `defaultHidden` → `false`, `minDistance` → `0.0`,
      `maxDistance` → `10000000.0`, `lineWidth` → `2`, `lineColor` → `"#FF0000FF"`, `fillColor` → `"#FF000033"`,
-     `sorting` → `0`, `toggleable` → `true`, `depthTest` → `true`, `cssClasses` → `List.of()` — the `lineWidth`/
-     `lineColor`/`fillColor` trio are the `LINE`/`SHAPE`/`EXTRUDE`-marker additions, mirroring BlueMap's own
-     `LineMarker`/`ShapeMarker`/`ExtrudeMarker` defaults; `fillColor`'s default is translucent, unlike `lineColor`'s
-     opaque one; `EXTRUDE` reuses `SHAPE`'s exact defaults/validation for every one of these fields, see below).
+     `sorting` → `0`, `toggleable` → `true`, `depthTest` → `true`, `cssClasses` → `List.of()`, `allowPlayerColors` →
+     `false` — the `lineWidth`/`lineColor`/`fillColor` trio are the `LINE`/`SHAPE`/`EXTRUDE`-marker additions,
+     mirroring BlueMap's own `LineMarker`/`ShapeMarker`/`ExtrudeMarker` defaults; `fillColor`'s default is
+     translucent, unlike `lineColor`'s opaque one; `EXTRUDE` reuses `SHAPE`'s exact defaults/validation for every one
+     of these fields, see below).
      `lineWidth`/`lineColor`/`fillColor`/`sorting`/`cssClasses` each go through their own validating resolver
      (`resolveLineWidth`/`resolveLineColor`/`resolveFillColor`/`resolveSorting`/`resolveCssClasses`) rather than a
      plain null-check default: a non-positive `lineWidth` (`<= 0`) or a `lineColor`/`fillColor` that fails
@@ -74,7 +75,11 @@ File: `config/bluemapsignmarkers/BMSM-Core.json`. Path is fixed (not per-world) 
      `lineWidth`/`lineColor`, which both also use for their border) — those fields are silently ignored for the
      group's actual type, so this just flags a likely config mistake rather than rejecting it. `sorting`/`toggleable`
      apply to every group type (thin `MarkerSet` passthroughs — see `core-pipeline.md` §6) so neither has a
-     type-mismatch warning.
+     type-mismatch warning. `allowPlayerColors` (GitHub issue #198) is `LINE`/`SHAPE`/`EXTRUDE`-only, resolved by
+     `resolveAllowPlayerColors`: unset or set on a `POI` group both resolve to `false` (`warnOnTypeFieldMismatches`
+     warns on the `POI` case, alongside `lineWidth`/`lineColor`/`fillColor`/`depthTest`). It lets a player set a
+     multi-point marker's rendered colour by dyeing one of its member signs instead of an admin editing
+     `lineColor`/`fillColor` — see `core-pipeline.md` §3's `ColorResolver` coverage for the resolution logic.
   4. Any exception during load (`Gson.fromJson` failure, I/O error, or a `validateMarkerGroups` failure) logs and
      returns `null`, and `ConfigManager.loadCoreConfig` falls back to `new BMSMConfigV2()` defaults — a broken
      config file never prevents server startup, it just silently reverts to a single default `[poi]` group.
@@ -108,9 +113,9 @@ Loaded on `SERVER_STARTING`, saved on `SERVER_STOPPING` (then `SignManager.stop(
 
 Format envelope per region file is unchanged: `VersionedSignFile(SignFileVersions version, String data)` where
 `data` is itself a JSON-encoded string of that region's entry array (double-encoded — the envelope is parsed first,
-then `data` is parsed again as the entry array). `SignFileVersions` = `V1, V2, V3, V4, V5` (current = `V5`, written
-by `RegionShardedSignEntryWriter` unconditionally) — sharding changed how many files exist and where, not the
-schema of an individual file. `V4` is the line-markers addition: `SignEntry` gained `long createdAtMillis`, set
+then `data` is parsed again as the entry array). `SignFileVersions` = `V1, V2, V3, V4, V5, V6` (current = `V6`,
+written by `RegionShardedSignEntryWriter` unconditionally) — sharding changed how many files exist and where, not
+the schema of an individual file. `V4` is the line-markers addition: `SignEntry` gained `long createdAtMillis`, set
 once when a sign is first observed by `SignManager` and never recomputed afterward, needed to order a line/shape
 marker's points in placement order (`LineGroupResolver`/`ShapeGroupResolver`, `core-pipeline.md` §3).
 
@@ -118,13 +123,25 @@ marker's points in placement order (`LineGroupResolver`/`ShapeGroupResolver`, `c
 `backRawLines` — the raw, unparsed sign message lines for each side, captured by `SignHelper.createSignEntry`
 alongside the already-parsed `frontText`/`backText`. These fields are `null` (not empty arrays) rather than
 populated for any entry that came through migration from pre-`V5` data — `Version5Converter.convertToV5`
-(`SignEntryV4` → current `SignEntry`) sets both explicitly to `null`, since there's no raw text on disk to backfill
-from. `SignManager.reloadConfig()` (`core-pipeline.md` §3) uses these fields to re-run `SignLinesParser` against
-every cached sign's *original* text on every `/bluemap reload`, rather than only re-resolving each sign's
-already-parsed prefix against the new config — this is what lets an edited `REGEX` prefix correctly reclassify a
-sign (or drop it, or move it to a different group) without a manual in-game re-edit or a server restart. An entry
-with `null` raw lines (still-unmigrated pre-`V5` data) keeps the old, more limited reload behavior, since there's
-nothing to re-parse. See `README.md`'s "Troubleshooting" section for how this is described to end users.
+(`SignEntryV4` → `SignEntryV5`, the frozen pre-dye shape) sets both explicitly to `null`, since there's no raw text
+on disk to backfill from. `SignManager.reloadConfig()` (`core-pipeline.md` §3) uses these fields to re-run
+`SignLinesParser` against every cached sign's *original* text on every `/bluemap reload`, rather than only
+re-resolving each sign's already-parsed prefix against the new config — this is what lets an edited `REGEX` prefix
+correctly reclassify a sign (or drop it, or move it to a different group) without a manual in-game re-edit or a
+server restart. An entry with `null` raw lines (still-unmigrated pre-`V5` data) keeps the old, more limited reload
+behavior, since there's nothing to re-parse. See `README.md`'s "Troubleshooting" section for how this is described
+to end users.
+
+`V6` is the player-marker-colors addition (GitHub issue #198,
+`../plans/player-marker-colors/spec.md`): `SignEntry` gained `String frontDye`/`backDye` — the sign side's raw
+`DyeColor` enum name (e.g. `"RED"`), captured by `SignHelper.createSignEntry` off
+`SignBlockEntity.getFrontText()`/`getBackText()`'s `SignText.getColor()` at the same point raw lines are read. Both
+fields are **never** `null` (unlike `frontRawLines`/`backRawLines`): `"BLACK"` (`SignEntryHelper.UNDYED_DYE`) means
+"no player colour chosen," doubling as both an actually-undyed vanilla sign's real default and the
+`Version6Converter` migration backfill value for pre-`V6` entries — this lets `ColorResolver` (`core-pipeline.md`
+§3) treat "undyed" as a plain string-equality check with no null-handling. `SignEntryHelper.getDye(SignEntry)`
+follows the same side-selection rule as `getPrefix`/`getLabel`: whichever side produced the sign's matching
+representation.
 
 `SignRegionKey(dimension, regionX, regionZ)`: `forPosition(dimension, x, z)` computes region coordinates via
 `Math.floorDiv(x, 512)`/`Math.floorDiv(z, 512)` (512 = 32 chunks x 16 blocks, matching Minecraft's own Anvil
@@ -153,10 +170,11 @@ each entry's `key().parentMap()`/`x()`/`z()` — the shared grouping logic behin
      (ticket 05), rather than relying on Gson's nulls to coincidentally route there. A `V2` file is converted
      `SignEntryV2` → `SignEntryV3` (`Version3Converter.convertToV3`, per entry, `convertV2EntrySafely` isolating a
      bad entry) → `SignEntryV3` → `SignEntryV4` (`Version4Converter.convertToV4`, see below) → `SignEntryV4` →
-     current `SignEntry` (`Version5Converter.convertToV5`) in the same pass — a V2 file is always exactly three
-     migrations behind current, so all three converters run back-to-back rather than requiring a server restart
-     between each version bump. A `V3` file skips straight to `Version4Converter` then `Version5Converter`; a `V4`
-     file goes straight to `Version5Converter`. All loaders isolate per-entry conversion failures
+     `SignEntryV5` (`Version5Converter.convertToV5`) → current `SignEntry` (`Version6Converter.convertToV6`) in the
+     same pass — a V2 file is always exactly four migrations behind current, so all four converters run
+     back-to-back rather than requiring a server restart between each version bump. A `V3` file skips straight to
+     `Version4Converter` then `Version5Converter` then `Version6Converter`; a `V4` file starts at `Version5Converter`;
+     a `V5` file goes straight to `Version6Converter`. All loaders isolate per-entry conversion failures
      (`convertV2EntrySafely`/`loadEntry`, ticket 05) so one malformed V1/V2 entry logs and is skipped instead of
      losing the whole file — the same pattern `SignProvider.loadSigns` already applies per entry at step 3 below.
      `Version1SignEntryLoader`'s dimension
@@ -164,12 +182,13 @@ each entry's `key().parentMap()`/`x()`/`z()` — the shared grouping logic behin
      and the canonical-but-unnamespaced resource paths (`"the_nether"`/`"the_end"`), with or without a `minecraft:`
      namespace already attached (ticket 05) — previously only the three exact lowercase shorthand strings
      normalized, so anything else fell through unchanged and permanently mismatched the live dimension key
-     post-migration, duplicating markers as "new" signs. `Version1SignEntryLoader` and the `V2`/`V3`/`V4` branches
-     of `VersionedFileSignEntryLoader` each back up the file before migrating (`.v1.bak`/`.v2.bak`/`.v3.bak`/
-     `.v4.bak` respectively) so the original isn't overwritten with no recoverable copy (ticket 02) — but they don't
-     react the same way to a failed backup: `Version1SignEntryLoader` throws `IllegalStateException`, aborting that
-     migration (uncaught here, isolated instead by `LegacySignFileMigrator`'s own try/catch around the whole
-     chain), while `VersionedFileSignEntryLoader`'s `V2`/`V3`/`V4` branches log an error and **continue anyway**,
+     post-migration, duplicating markers as "new" signs. `Version1SignEntryLoader` and the `V2`/`V3`/`V4`/`V5`
+     branches of `VersionedFileSignEntryLoader` each back up the file before migrating (`.v1.bak`/`.v2.bak`/
+     `.v3.bak`/`.v4.bak`/`.v5.bak` respectively) so the original isn't overwritten with no recoverable copy (ticket
+     02) — but they don't react the same way to a failed backup: `Version1SignEntryLoader` throws
+     `IllegalStateException`, aborting that migration (uncaught here, isolated instead by
+     `LegacySignFileMigrator`'s own try/catch around the whole
+     chain), while `VersionedFileSignEntryLoader`'s `V2`/`V3`/`V4`/`V5` branches log an error and **continue anyway**,
      still returning the converted current-version entries in-memory without a pre-migration backup on disk.
    - Writes the resulting entries via `RegionShardedSignEntryWriter.write(...)` (see below). Backs up the legacy
      file via `FileUtils.moveToBackup(legacyPath, ".migrated", ...)` — **renamed, not deleted** — only after
@@ -222,7 +241,7 @@ depending on input/iteration order. See `Version4ConverterTest` (`testing.md`) f
 
 `SignProvider.saveSigns(storageRoot)`: gets all cached entries from `SignManager.getAll()`, delegates to
 `RegionShardedSignEntryWriter.write(storageRoot, entries, gson)`, which partitions via `SignRegionPartitioner` and
-writes each region's `VersionedSignFile(V4, ...)` (creating parent dirs as needed). Any region file already on disk
+writes each region's `VersionedSignFile(V6, ...)` (creating parent dirs as needed). Any region file already on disk
 that isn't in this save's partition set is **quarantined, not deleted**: renamed in place with a `.stale` suffix,
 since an empty region on this save could mean the signs were genuinely removed, or that the region failed to load
 at startup (in which case deleting it would be data loss) — there's no way to tell which from here. Quarantining is
@@ -236,5 +255,5 @@ in place. Old region files (or a not-yet-migrated legacy `signs.json`) on live s
 the version they were written with.
 
 ---
-*Last updated: 2026-09-02 | Verified against: feature/tpwalke2/196-extrude-markers (5b38852)*
+*Last updated: 2026-09-06 | Verified against: feature/tpwalke2/198-dye-colors (535bb13)*
 

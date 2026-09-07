@@ -513,7 +513,8 @@ class ConfigProviderTest {
                         0,
                         true,
                         true,
-                        List.of()));
+                        List.of(),
+                        false));
 
         ConfigProvider.saveConfig(original, path);
         var reloaded = ConfigProvider.loadConfig(path);
@@ -698,6 +699,58 @@ class ConfigProviderTest {
         assertEquals(1, config.getMarkerGroups().length);
         assertTrue(config.getMarkerGroups()[0].depthTest());
         assertTrue(warnings.stream().anyMatch(m -> m.contains("depthTest")));
+    }
+
+    @Test
+    void loadConfigDefaultsAllowPlayerColorsToFalseWhenOmitted(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[trail]", "name": "Trail Group", "type": "LINE" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertFalse(config.getMarkerGroups()[0].allowPlayerColors());
+    }
+
+    @Test
+    void loadConfigPreservesExplicitAllowPlayerColorsOnALineGroup(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[trail]", "name": "Trail Group", "type": "LINE", "allowPlayerColors": true }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertTrue(config.getMarkerGroups()[0].allowPlayerColors());
+    }
+
+    @Test
+    void loadConfigWarnsWhenAllowPlayerColorsIsSetOnAPOIGroup(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group", "type": "POI", "allowPlayerColors": true }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(1, config.getMarkerGroups().length);
+        assertFalse(config.getMarkerGroups()[0].allowPlayerColors());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("allowPlayerColors")));
     }
 
     @Test

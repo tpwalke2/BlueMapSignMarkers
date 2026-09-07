@@ -16,7 +16,9 @@ class LineGroupResolverTest {
                 new SignLinesParseResult(null, "", ""),
                 createdAtMillis,
                 null,
-                null);
+                null,
+                "BLACK",
+                "BLACK");
     }
 
     @Test

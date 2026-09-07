@@ -34,13 +34,14 @@ class SignTransitionResolverTest {
 
     private static MarkerGroup poiGroup(String prefix) {
         return new MarkerGroup(prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI,
-                "name", null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
+                "name", null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of(), false);
     }
 
     private static MarkerGroup lineGroup(String prefix) {
         return new MarkerGroup(prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.LINE,
-                "name", null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
+                "name", null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of(), false);
     }
+
 
     private static MarkerGroup shapeGroup(String prefix) {
         return shapeGroup(prefix, "name");
@@ -48,7 +49,7 @@ class SignTransitionResolverTest {
 
     private static MarkerGroup shapeGroup(String prefix, String name) {
         return new MarkerGroup(prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.SHAPE,
-                name, null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
+                name, null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of(), false);
     }
 
     private static MarkerGroup extrudeGroup(String prefix) {
@@ -57,7 +58,7 @@ class SignTransitionResolverTest {
 
     private static MarkerGroup extrudeGroup(String prefix, String name) {
         return new MarkerGroup(prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.EXTRUDE,
-                name, null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
+                name, null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of(), false);
     }
 
     private static SignEntry signEntry(int x, int y, int z, String prefix, String label, String detail, long createdAtMillis) {
@@ -68,7 +69,9 @@ class SignTransitionResolverTest {
                 new SignLinesParseResult(null, "", ""),
                 createdAtMillis,
                 null,
-                null);
+                null,
+                "BLACK",
+                "BLACK");
     }
 
     private static ActionFactory actionFactory() {
@@ -91,7 +94,7 @@ class SignTransitionResolverTest {
     @Test
     void computeRepresentationOnMalformedEntryWithNullFrontTextReturnsNullInsteadOfThrowing() {
         var group = poiGroup("[poi]");
-        var malformed = new SignEntry(new SignEntryKey(0, 64, 0, MAP), "unknown", null, null, 1000L, null, null);
+        var malformed = new SignEntry(new SignEntryKey(0, 64, 0, MAP), "unknown", null, null, 1000L, null, null, "BLACK", "BLACK");
 
         var rep = SignTransitionResolver.computeRepresentation(malformed, Map.of(group.prefix(), group));
 
@@ -1187,5 +1190,114 @@ class SignTransitionResolverTest {
         var join = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(1));
         assertEquals(newGroup, join.getMarkerIdentifier().parentSet().markerGroup());
         assertEquals(3, join.getPoints().size());
+    }
+
+    // --- Player-controlled colors (agent-context/plans/player-marker-colors/spec.md): dye joins
+    // Representation, so a dye-only edit (detail unchanged) defeats the same-group-and-label no-op guard
+    // and falls through to a recompute, same as a detail change already does. ---
+
+    private static MarkerGroup lineGroupWithPlayerColors(String prefix) {
+        return new MarkerGroup(prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.LINE,
+                "name", null, 0, 0, false, 0.0, 10000000.0, 2, "#00A2FFFF", "#FFA50040", 0, true, true, List.of(), true);
+    }
+
+    private static SignEntry signEntryWithDye(int x, int y, int z, String prefix, String label, String detail, long createdAtMillis, String dye) {
+        return new SignEntry(
+                new SignEntryKey(x, y, z, MAP),
+                "unknown",
+                new SignLinesParseResult(prefix, label, detail),
+                new SignLinesParseResult(null, "", ""),
+                createdAtMillis,
+                null,
+                null,
+                dye,
+                "BLACK");
+    }
+
+    @Test
+    void lineToLineSameGroupAndLabelDyeOnlyChangeDispatchesSetInsteadOfNoOp() {
+        var group = lineGroupWithPlayerColors("[trail]");
+        var oldEntry = signEntryWithDye(0, 64, 0, "[trail]", "Ridge", "detail", 1000L, "BLACK");
+        var newEntry = signEntryWithDye(0, 64, 0, "[trail]", "Ridge", "detail", 1000L, "RED");
+        var other = signEntryWithDye(1, 64, 0, "[trail]", "Ridge", "d2", 2000L, "BLACK");
+        var oldRep = rep(oldEntry, group);
+        var newRep = rep(newEntry, group);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(newEntry, other), newEntry.key(), oldRep, newRep, actionFactory(), false, Map.of(group.prefix(), group));
+
+        var set = assertInstanceOf(SetLineMarkerAction.class, action);
+        assertEquals("#B02E26FF", set.getLineColor());
+    }
+
+    @Test
+    void lineToLineSameGroupAndLabelSameDyeIsStillNoOp() {
+        var group = lineGroupWithPlayerColors("[trail]");
+        var self = signEntryWithDye(0, 64, 0, "[trail]", "Ridge", "detail", 1000L, "RED");
+        var other = signEntryWithDye(1, 64, 0, "[trail]", "Ridge", "d2", 2000L, "BLACK");
+        var oldRep = rep(self, group);
+        var newRep = rep(self, group);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(self, other), self.key(), oldRep, newRep, actionFactory(), false, Map.of(group.prefix(), group));
+
+        assertNull(action);
+    }
+
+    @Test
+    void lineToLineSameGroupAndLabelDyeOnlyChangeIsNoOpWhenAllowPlayerColorsIsOff() {
+        var group = new MarkerGroup("[trail]", MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.LINE,
+                "name", null, 0, 0, false, 0.0, 10000000.0, 2, "#00A2FFFF", "#FFA50040", 0, true, true, List.of(), false);
+        var oldEntry = signEntryWithDye(0, 64, 0, "[trail]", "Ridge", "detail", 1000L, "BLACK");
+        var newEntry = signEntryWithDye(0, 64, 0, "[trail]", "Ridge", "detail", 1000L, "RED");
+        var other = signEntryWithDye(1, 64, 0, "[trail]", "Ridge", "d2", 2000L, "BLACK");
+        var oldRep = rep(oldEntry, group);
+        var newRep = rep(newEntry, group);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(newEntry, other), newEntry.key(), oldRep, newRep, actionFactory(), false, Map.of(group.prefix(), group));
+
+        assertNull(action);
+    }
+
+    @Test
+    void lineJoinResolvesColorFromTheEarliestPlacedDyedMember() {
+        var group = lineGroupWithPlayerColors("[trail]");
+        var first = signEntryWithDye(0, 64, 0, "[trail]", "Ridge", "d1", 1000L, "RED");
+        var second = signEntryWithDye(1, 64, 0, "[trail]", "Ridge", "d2", 2000L, "BLUE");
+        var newRep = rep(second, group);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(first, second), second.key(), null, newRep, actionFactory(), false, Map.of(group.prefix(), group));
+
+        var set = assertInstanceOf(SetLineMarkerAction.class, action);
+        assertEquals("#B02E26FF", set.getLineColor());
+    }
+
+    // Regression for a Copilot review finding on agent-context/reviews/copilot-review-2026-09-07.md:
+    // oldRep.dye().equals(newRep.dye()) threw NPE when a representation's dye was null (e.g. corrupted/
+    // hand-edited persisted data, since SignEntry's own javadoc says frontDye/backDye are never null in
+    // practice). The comparison must be null-safe.
+    @Test
+    void lineToLineDyeChangedFromNullDispatchesRecomputeInsteadOfThrowing() {
+        var group = lineGroupWithPlayerColors("[trail]");
+        var self = signEntryWithDye(0, 64, 0, "[trail]", "Ridge", "detail", 1000L, null);
+        var dyed = signEntryWithDye(0, 64, 0, "[trail]", "Ridge", "detail", 1000L, "RED");
+        var other = signEntryWithDye(1, 64, 0, "[trail]", "Ridge", "d2", 2000L, "BLACK");
+        var oldRep = rep(self, group);
+        var newRep = rep(dyed, group);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(dyed, other), self.key(), oldRep, newRep, actionFactory(), false, Map.of(group.prefix(), group));
+
+        assertInstanceOf(SetLineMarkerAction.class, action);
+    }
+
+    @Test
+    void lineToLineBothDyesNullIsNoOpInsteadOfThrowing() {
+        var group = lineGroupWithPlayerColors("[trail]");
+        var self = signEntryWithDye(0, 64, 0, "[trail]", "Ridge", "detail", 1000L, null);
+        var other = signEntryWithDye(1, 64, 0, "[trail]", "Ridge", "d2", 2000L, "BLACK");
+        var oldRep = rep(self, group);
+        var newRep = rep(self, group);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(self, other), self.key(), oldRep, newRep, actionFactory(), false, Map.of(group.prefix(), group));
+
+        assertNull(action);
     }
 }

@@ -22,7 +22,7 @@ class SignManagerTest {
 
     private static MarkerGroup regexGroup(String prefix) {
         return new MarkerGroup(prefix, MarkerGroupMatchType.REGEX, MarkerGroupType.POI,
-                "name", null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of());
+                "name", null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of(), false);
     }
 
     @Test
@@ -36,7 +36,7 @@ class SignManagerTest {
         var backRawLines = new String[]{"", "", "", ""};
         var staleEntry = new SignEntry(
                 KEY, "unknown", oldParser.parse(frontRawLines), oldParser.parse(backRawLines), 1000L,
-                frontRawLines, backRawLines);
+                frontRawLines, backRawLines, "BLACK", "BLACK");
 
         var reparsed = SignManager.reparseFromRawLines(staleEntry, newParser);
 
@@ -53,7 +53,7 @@ class SignManagerTest {
         var parser = new SignLinesParser(List.of(regexGroup("\\[poi\\]")));
         var preMigrationEntry = new SignEntry(
                 KEY, "unknown", new SignLinesParseResult("[poi]", "Shop", "detail"),
-                new SignLinesParseResult(null, "", ""), 1000L, null, null);
+                new SignLinesParseResult(null, "", ""), 1000L, null, null, "BLACK", "BLACK");
 
         var result = SignManager.reparseFromRawLines(preMigrationEntry, parser);
 
@@ -65,7 +65,7 @@ class SignManagerTest {
         var parser = new SignLinesParser(List.of(regexGroup("\\[poi\\]")));
         var partialEntry = new SignEntry(
                 KEY, "unknown", new SignLinesParseResult("[poi]", "Shop", "detail"),
-                new SignLinesParseResult(null, "", ""), 1000L, new String[]{"[poi]", "Shop"}, null);
+                new SignLinesParseResult(null, "", ""), 1000L, new String[]{"[poi]", "Shop"}, null, "BLACK", "BLACK");
 
         var result = SignManager.reparseFromRawLines(partialEntry, parser);
 
@@ -80,7 +80,7 @@ class SignManagerTest {
         var backRawLines = new String[]{};
         var entry = new SignEntry(
                 KEY, "unknown", oldParser.parse(frontRawLines), oldParser.parse(backRawLines), 1000L,
-                frontRawLines, backRawLines);
+                frontRawLines, backRawLines, "BLACK", "BLACK");
 
         var reparsed = SignManager.reparseFromRawLines(entry, newParser);
 
@@ -100,7 +100,7 @@ class SignManagerTest {
         var backRawLines = new String[]{};
         var entry = new SignEntry(
                 KEY, "unknown", parser.parse(new String[]{"[poi]", "Shop"}), parser.parse(backRawLines), 1000L,
-                frontRawLines, backRawLines);
+                frontRawLines, backRawLines, "BLACK", "BLACK");
 
         assertThrows(NullPointerException.class, () -> SignManager.reparseFromRawLines(entry, parser));
     }

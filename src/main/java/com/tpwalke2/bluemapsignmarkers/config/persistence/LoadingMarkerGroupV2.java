@@ -26,5 +26,6 @@ public record LoadingMarkerGroupV2(
         JsonElement sorting,
         Boolean toggleable,
         Boolean depthTest,
-        List<String> cssClasses) {
+        List<String> cssClasses,
+        Boolean allowPlayerColors) {
 }

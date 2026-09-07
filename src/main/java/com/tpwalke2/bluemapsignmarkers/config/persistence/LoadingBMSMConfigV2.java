@@ -36,7 +36,8 @@ public final class LoadingBMSMConfigV2 {
                 new JsonPrimitive(defaultGroup.sorting()),
                 defaultGroup.toggleable(),
                 defaultGroup.depthTest(),
-                defaultGroup.cssClasses());
+                defaultGroup.cssClasses(),
+                defaultGroup.allowPlayerColors());
     }
 
     public LoadingMarkerGroupV2[] getMarkerGroups() {
