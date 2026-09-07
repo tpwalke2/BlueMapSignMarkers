@@ -14,6 +14,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ActionFactoryTest {
@@ -188,7 +189,8 @@ class ActionFactoryTest {
         var factory = new ActionFactory(new MarkerSetIdentifierCollection());
         var group = shapeMarkerGroup("[shape]");
 
-        var set = factory.createSetShapeAction("world", group, "label", "detail", List.of(), group.lineColor(), group.fillColor(), true);
+        var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6), new LinePoint(7, 8, 9));
+        var set = factory.createSetShapeAction("world", group, "label", "detail", points, group.lineColor(), group.fillColor(), true);
         var removed = factory.createRemoveShapeAction("world", group, "other label");
 
         assertSame(set.getMarkerIdentifier().parentSet(), removed.getMarkerIdentifier().parentSet());
@@ -199,7 +201,8 @@ class ActionFactoryTest {
         var factory = new ActionFactory(new MarkerSetIdentifierCollection());
         var group = lineMarkerGroup("[line]");
 
-        var set = factory.createSetLineAction("world", group, "label", "detail", List.of(), group.lineColor(), true);
+        var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6));
+        var set = factory.createSetLineAction("world", group, "label", "detail", points, group.lineColor(), true);
         var removed = factory.createRemoveLineAction("world", group, "other label");
 
         assertSame(set.getMarkerIdentifier().parentSet(), removed.getMarkerIdentifier().parentSet());
@@ -244,10 +247,41 @@ class ActionFactoryTest {
         var factory = new ActionFactory(new MarkerSetIdentifierCollection());
         var group = extrudeMarkerGroup("[extrude]");
 
-        var set = factory.createSetExtrudeAction("world", group, "label", "detail", List.of(), group.lineColor(), group.fillColor(), true);
+        var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6), new LinePoint(7, 8, 9));
+        var set = factory.createSetExtrudeAction("world", group, "label", "detail", points, group.lineColor(), group.fillColor(), true);
         var removed = factory.createRemoveExtrudeAction("world", group, "other label");
 
         assertSame(set.getMarkerIdentifier().parentSet(), removed.getMarkerIdentifier().parentSet());
+    }
+
+    @Test
+    void createSetLineActionRejectsANonLineMarkerGroup() {
+        var factory = new ActionFactory(new MarkerSetIdentifierCollection());
+        var group = markerGroup("[poi]");
+        var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> factory.createSetLineAction("world", group, "label", "detail", points, group.lineColor(), true));
+    }
+
+    @Test
+    void createSetShapeActionRejectsANonShapeMarkerGroup() {
+        var factory = new ActionFactory(new MarkerSetIdentifierCollection());
+        var group = markerGroup("[poi]");
+        var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6), new LinePoint(7, 8, 9));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> factory.createSetShapeAction("world", group, "label", "detail", points, group.lineColor(), group.fillColor(), true));
+    }
+
+    @Test
+    void createSetExtrudeActionRejectsANonExtrudeMarkerGroup() {
+        var factory = new ActionFactory(new MarkerSetIdentifierCollection());
+        var group = markerGroup("[poi]");
+        var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6), new LinePoint(7, 8, 9));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> factory.createSetExtrudeAction("world", group, "label", "detail", points, group.lineColor(), group.fillColor(), true));
     }
 
     private static MarkerGroup markerGroup(String prefix) {

@@ -4,6 +4,7 @@ import com.tpwalke2.bluemapsignmarkers.core.markers.ExtrudeMarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.LineMarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.LinePoint;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifierCollection;
 import com.tpwalke2.bluemapsignmarkers.core.markers.ShapeMarkerIdentifier;
@@ -82,6 +83,7 @@ public class ActionFactory {
             List<LinePoint> points,
             String lineColor,
             boolean isFirstAppearance) {
+        requireGroupType(markerGroup, MarkerGroupType.LINE, "createSetLineAction");
         return new SetLineMarkerAction(
                 new LineMarkerIdentifier(label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
                 label,
@@ -106,6 +108,7 @@ public class ActionFactory {
             String lineColor,
             String fillColor,
             boolean isFirstAppearance) {
+        requireGroupType(markerGroup, MarkerGroupType.SHAPE, "createSetShapeAction");
         return new SetShapeMarkerAction(
                 new ShapeMarkerIdentifier(label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
                 label,
@@ -131,6 +134,7 @@ public class ActionFactory {
             String lineColor,
             String fillColor,
             boolean isFirstAppearance) {
+        requireGroupType(markerGroup, MarkerGroupType.EXTRUDE, "createSetExtrudeAction");
         return new SetExtrudeMarkerAction(
                 new ExtrudeMarkerIdentifier(label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
                 label,
@@ -163,5 +167,12 @@ public class ActionFactory {
                         markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
                 newLabel,
                 newDetail);
+    }
+
+    private static void requireGroupType(MarkerGroup markerGroup, MarkerGroupType expected, String methodName) {
+        if (markerGroup.type() != expected) {
+            throw new IllegalArgumentException(
+                    methodName + " requires a " + expected + " marker group, got " + markerGroup.type());
+        }
     }
 }
