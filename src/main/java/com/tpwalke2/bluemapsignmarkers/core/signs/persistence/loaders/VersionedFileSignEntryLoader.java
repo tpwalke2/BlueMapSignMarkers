@@ -99,7 +99,9 @@ public class VersionedFileSignEntryLoader {
                 return convertV5EntriesToV6(signEntriesV5);
             } else {
                 LOGGER.info("Loading version 6+ markers file...");
-                return gson.fromJson(versionedSignFile.data(), SignEntry[].class);
+                return Arrays.stream(gson.fromJson(versionedSignFile.data(), SignEntry[].class))
+                        .filter(Objects::nonNull)
+                        .toArray(SignEntry[]::new);
             }
         } catch (Exception e) {
             LOGGER.warn("Failed to load versioned sign file {}, falling back to version 1", path, e);

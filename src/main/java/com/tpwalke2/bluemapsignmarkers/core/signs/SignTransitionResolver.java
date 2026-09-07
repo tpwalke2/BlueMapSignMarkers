@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Supplier;
 
 public class SignTransitionResolver {
@@ -110,7 +111,7 @@ public class SignTransitionResolver {
             // A dye-only edit only changes anything when the group actually resolves colour from dye -
             // otherwise it's a no-op recompute that would still scan/sort the full membership and
             // dispatch an unchanged marker on every dye change to an opted-out group.
-            var dyeUnchanged = !newRep.group().allowPlayerColors() || oldRep.dye().equals(newRep.dye());
+            var dyeUnchanged = !newRep.group().allowPlayerColors() || Objects.equals(oldRep.dye(), newRep.dye());
             if (oldRep.detail().equals(newRep.detail()) && dyeUnchanged && !isReload) return null;
             return joinEffect(allSignsSupplier, key, newRep, actionFactory, true);
         }

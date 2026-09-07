@@ -42,6 +42,7 @@ class SignTransitionResolverTest {
                 "name", null, 0, 0, false, 0.0, 10000000.0, 2, "#FF0000FF", "#FF000033", 0, true, true, List.of(), false);
     }
 
+
     private static MarkerGroup shapeGroup(String prefix) {
         return shapeGroup(prefix, "name");
     }
@@ -1267,5 +1268,36 @@ class SignTransitionResolverTest {
 
         var set = assertInstanceOf(SetLineMarkerAction.class, action);
         assertEquals("#B02E26FF", set.getLineColor());
+    }
+
+    // Regression for a Copilot review finding on agent-context/reviews/copilot-review-2026-09-07.md:
+    // oldRep.dye().equals(newRep.dye()) threw NPE when a representation's dye was null (e.g. corrupted/
+    // hand-edited persisted data, since SignEntry's own javadoc says frontDye/backDye are never null in
+    // practice). The comparison must be null-safe.
+    @Test
+    void lineToLineDyeChangedFromNullDispatchesRecomputeInsteadOfThrowing() {
+        var group = lineGroupWithPlayerColors("[trail]");
+        var self = signEntryWithDye(0, 64, 0, "[trail]", "Ridge", "detail", 1000L, null);
+        var dyed = signEntryWithDye(0, 64, 0, "[trail]", "Ridge", "detail", 1000L, "RED");
+        var other = signEntryWithDye(1, 64, 0, "[trail]", "Ridge", "d2", 2000L, "BLACK");
+        var oldRep = rep(self, group);
+        var newRep = rep(dyed, group);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(dyed, other), self.key(), oldRep, newRep, actionFactory(), false, Map.of(group.prefix(), group));
+
+        assertInstanceOf(SetLineMarkerAction.class, action);
+    }
+
+    @Test
+    void lineToLineBothDyesNullIsNoOpInsteadOfThrowing() {
+        var group = lineGroupWithPlayerColors("[trail]");
+        var self = signEntryWithDye(0, 64, 0, "[trail]", "Ridge", "detail", 1000L, null);
+        var other = signEntryWithDye(1, 64, 0, "[trail]", "Ridge", "d2", 2000L, "BLACK");
+        var oldRep = rep(self, group);
+        var newRep = rep(self, group);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(self, other), self.key(), oldRep, newRep, actionFactory(), false, Map.of(group.prefix(), group));
+
+        assertNull(action);
     }
 }

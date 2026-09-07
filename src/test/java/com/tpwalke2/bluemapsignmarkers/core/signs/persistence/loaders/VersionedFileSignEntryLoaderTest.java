@@ -56,6 +56,23 @@ class VersionedFileSignEntryLoaderTest {
         assertFalse(Files.exists(Path.of(path + ".v5.bak")), "a V6 file should not be backed up as a V5 file");
     }
 
+    // Regression for a Copilot review finding on agent-context/reviews/copilot-review-2026-09-07.md: the V6+
+    // path deserialized the array as-is, so a null element in the JSON array (e.g. corrupted/hand-edited
+    // persisted data) reached downstream consumers instead of being filtered like every other version's path.
+    @Test
+    void v6ContentWithANullEntryIsSkippedRatherThanLosingTheWholeFile(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("signs.json").toString();
+        var entry = new SignEntry(KEY, "player-1", new SignLinesParseResult("[poi]", "label", "detail"),
+                new SignLinesParseResult(null, "", ""), 1000L, new String[]{"[poi]", "label"}, new String[]{}, "RED", "BLACK");
+        var content = GSON.toJson(new VersionedSignFile(SignFileVersions.V6, "[" + GSON.toJson(entry) + ",null]"));
+        Files.writeString(Path.of(path), content, StandardCharsets.UTF_8);
+
+        var result = VersionedFileSignEntryLoader.loadSignEntries(path, content, NO_GROUPS, GSON);
+
+        assertEquals(1, result.length);
+        assertEquals(KEY, result[0].key());
+    }
+
     @Test
     void v5ContentIsConvertedThroughVersion6ConverterAndBackedUp(@TempDir Path tempDir) throws IOException {
         var path = tempDir.resolve("signs.json").toString();
