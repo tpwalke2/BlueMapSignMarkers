@@ -34,8 +34,11 @@ public class RenderMaskEvaluator {
     // subtract: "true") as equivalent to the bare form, and this mod's fields are all
     // numeric/boolean, so there's no case where treating the quoted and bare spellings the same way
     // is wrong.
+    // The numeric alternative includes an optional exponent (1.5e3, -2E-4) so scientific notation
+    // parses to its full value instead of the mantissa alone matching and the exponent being left
+    // as unmatched trailing text (silently wrong shape math, not a parse failure).
     private static final Pattern FIELD_PATTERN =
-            Pattern.compile("([A-Za-z][\\w-]*)\\s*[:=]\\s*\"?(-?\\d+(?:\\.\\d+)?|true|false)\"?");
+            Pattern.compile("([A-Za-z][\\w-]*)\\s*[:=]\\s*\"?(-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?|true|false)\"?");
 
     private RenderMaskEvaluator() {}
 
@@ -281,7 +284,7 @@ public class RenderMaskEvaluator {
         return new RenderMaskCircle(
                 requiredDoubleField(fields, "center-x"),
                 requiredDoubleField(fields, "center-z"),
-                requiredDoubleField(fields, "radius"),
+                requiredPositiveDoubleField(fields, "radius"),
                 intField(fields, "min-y", Integer.MIN_VALUE),
                 intField(fields, "max-y", Integer.MAX_VALUE),
                 subtract);
