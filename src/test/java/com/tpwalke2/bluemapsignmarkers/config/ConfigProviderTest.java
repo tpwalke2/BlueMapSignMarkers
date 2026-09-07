@@ -523,6 +523,23 @@ class ConfigProviderTest {
     }
 
     @Test
+    void aFailedSaveLeavesNoPartialFileAtTheFinalPathAndCleansUpItsTempFile(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, "{ \"markerGroups\": [] }");
+        // Occupies the final path with a directory, so the save's ATOMIC_MOVE onto it must fail - standing
+        // in for a crash/interrupt partway through the write without actually killing the JVM mid-test.
+        Files.delete(path);
+        Files.createDirectory(path);
+
+        ConfigProvider.saveConfig(new BMSMConfigV2(), path);
+
+        assertTrue(Files.isDirectory(path), "a failed save must never leave a partial file at the final path");
+        assertFalse(
+                Files.exists(path.resolveSibling(path.getFileName() + ".tmp")),
+                "a failed save must clean up its temp file rather than leaving it behind");
+    }
+
+    @Test
     void loadConfigDefaultsSortingToggleableDepthTestAndCssClassesWhenOmitted(@TempDir Path tempDir) throws IOException {
         var path = tempDir.resolve("BMSM-Core.json");
         Files.writeString(path, """

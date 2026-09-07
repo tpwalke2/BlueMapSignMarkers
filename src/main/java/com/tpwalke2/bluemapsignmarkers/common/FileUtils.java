@@ -63,7 +63,9 @@ public class FileUtils {
         }
     }
 
-    private static void deleteQuietly(Path path) {
+    // Public so other writers doing their own temp-file + ATOMIC_MOVE (RegionShardedSignEntryWriter,
+    // ConfigProvider) can clean up a leftover temp file the same way copyFile does here.
+    public static void deleteQuietly(Path path) {
         try {
             Files.deleteIfExists(path);
         } catch (IOException e) {

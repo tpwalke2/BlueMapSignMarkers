@@ -82,6 +82,20 @@ class LegacySignFileMigratorTest {
         assertTrue(Files.exists(Path.of(legacyPath + ".migrated")));
     }
 
+    @Test
+    void regionFilesRoundTripCleanlyDetectsARegionFileThatFailsToParse(@TempDir Path storageRoot) throws IOException {
+        var entry = signEntry(0, 0, "minecraft:overworld", "Town Hall");
+        RegionShardedSignEntryWriter.write(storageRoot, List.of(entry), GSON);
+
+        // Corrupted after being written cleanly - standing in for a file left truncated by a crash between
+        // the write pass and this verification, which migrate() itself has no seam to reproduce since it
+        // writes and verifies in the same call.
+        var regionFile = storageRoot.resolve("minecraft").resolve("overworld").resolve("r.0.0.json");
+        Files.writeString(regionFile, "{ this is not valid json", StandardCharsets.UTF_8);
+
+        assertFalse(LegacySignFileMigrator.regionFilesRoundTripCleanly(storageRoot, List.of(entry), NO_GROUPS, GSON));
+    }
+
     private static void writeLegacyV4File(String path, SignEntry... entries) throws IOException {
         var data = GSON.toJson(entries);
         var content = GSON.toJson(new VersionedSignFile(SignFileVersions.V4, data));

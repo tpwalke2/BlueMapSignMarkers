@@ -24,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -64,10 +65,23 @@ public class ConfigProvider {
             }
         }
 
-        try (var writer = new OutputStreamWriter(Files.newOutputStream(file.toPath()), StandardCharsets.UTF_8)) {
+        // Writes via a temp file in the same directory, then an atomic move into place (same pattern as
+        // FileUtils.copyFile / RegionShardedSignEntryWriter), so a crash or disk-full mid-write never
+        // leaves a truncated config file sitting at path.
+        var tempFile = path.resolveSibling(path.getFileName() + ".tmp");
+        try (var writer = new OutputStreamWriter(Files.newOutputStream(tempFile), StandardCharsets.UTF_8)) {
             GSON.toJson(config, writer);
         } catch (Exception e) {
             LOGGER.error("Failed to save config", e);
+            FileUtils.deleteQuietly(tempFile);
+            return;
+        }
+
+        try {
+            Files.move(tempFile, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            LOGGER.error("Failed to move temp config file into place at {}", path, e);
+            FileUtils.deleteQuietly(tempFile);
         }
     }
 

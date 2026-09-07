@@ -148,15 +148,21 @@ sign text after the prefix) — that shared (group, label) is a line's membershi
 
 Sign state is stored per-world, region-sharded (one file per dimension + 32x32-chunk region — see "Entry point"
 above), with each region file wrapped in a `VersionedSignFile` envelope (`{version, data}`) so the format can evolve
-without breaking old saves. `SignProvider.loadSigns` checks whether the storage root already has region files
-(`RegionShardedSignEntryLoader.hasSignData`); if so, it loads every region file the same version-aware way as
-before sharding — the versioned-file loader (`VersionedFileSignEntryLoader`, handling V2→V3 migration via
-`Version3Converter`, V3→V4 migration via `Version4Converter` (adds `createdAtMillis`, needed to order points within
-a line marker; backfilled for pre-V4 entries), and current V4 files directly), falling back to
-`Version1SignEntryLoader` for pre-versioning files. If no region files exist yet, `LegacySignFileMigrator` reads a
-pre-sharding single `signs.json` (if present) through that same version chain, writes it out region-sharded, and
-backs up the legacy file (renamed, not deleted)
-only once every expected region file is confirmed on disk. When adding a new persisted field, bump
+without breaking old saves. `SignProvider.loadSigns` decides between the two loading paths by whether the
+pre-sharding legacy `signs.json` is still present at its legacy path, not merely by whether region files exist yet
+(`RegionShardedSignEntryLoader.hasSignData`) — a crash partway through a first migration can leave some region
+files written and others missing, and the legacy file is the actual source of truth until it's renamed to its
+`.migrated` backup, so its continued presence (regardless of what's already on disk region-sharded) means
+`LegacySignFileMigrator` must re-run and re-derive every region file from it. Once the legacy file is gone (already
+backed up), `loadSigns` loads every region file the same version-aware way as before sharding — the versioned-file
+loader (`VersionedFileSignEntryLoader`, handling V2→V3 migration via `Version3Converter`, V3→V4 migration via
+`Version4Converter` (adds `createdAtMillis`, needed to order points within a line marker; backfilled for pre-V4
+entries), and current V4 files directly), falling back to `Version1SignEntryLoader` for pre-versioning files. When
+`LegacySignFileMigrator` runs, it writes the entries out region-sharded (`RegionShardedSignEntryWriter`, via
+temp-file + atomic move so a crash mid-write never leaves a truncated region file) and backs up the legacy file
+(renamed, not deleted) only once every expected region file round-trip parses back to valid data — not just exists
+on disk, since a truncated file existing but failing to parse must still block finalizing the migration (see
+`docs/adr/0004-atomic-write-content-verify-persistence.md`). When adding a new persisted field, bump
 `SignFileVersions` and add a loader/converter rather than changing an existing version's shape in place — old
 region files (or a not-yet-migrated legacy `signs.json`) on live servers must keep loading.
 
