@@ -94,4 +94,17 @@ class ColorResolverTest {
 
         assertEquals("#3C44AAFF", resolved.lineColor());
     }
+
+    @Test
+    void removingTheEarliestPlacedWinnerHandsOffToTheNextEarliestDyedMember() {
+        var group = lineGroup(true);
+        var membersBeforeRemoval = List.of(member(0, "RED", 1000L), member(1, "BLUE", 2000L));
+        var resolvedBeforeRemoval = ColorResolver.resolve(membersBeforeRemoval, group);
+        assertEquals("#B02E26FF", resolvedBeforeRemoval.lineColor());
+
+        var membersAfterRemoval = List.of(member(1, "BLUE", 2000L));
+        var resolvedAfterRemoval = ColorResolver.resolve(membersAfterRemoval, group);
+
+        assertEquals("#3C44AAFF", resolvedAfterRemoval.lineColor());
+    }
 }

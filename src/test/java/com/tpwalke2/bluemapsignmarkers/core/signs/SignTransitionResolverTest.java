@@ -1242,6 +1242,21 @@ class SignTransitionResolverTest {
     }
 
     @Test
+    void lineToLineSameGroupAndLabelDyeOnlyChangeIsNoOpWhenAllowPlayerColorsIsOff() {
+        var group = new MarkerGroup("[trail]", MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.LINE,
+                "name", null, 0, 0, false, 0.0, 10000000.0, 2, "#00A2FFFF", "#FFA50040", 0, true, true, List.of(), false);
+        var oldEntry = signEntryWithDye(0, 64, 0, "[trail]", "Ridge", "detail", 1000L, "BLACK");
+        var newEntry = signEntryWithDye(0, 64, 0, "[trail]", "Ridge", "detail", 1000L, "RED");
+        var other = signEntryWithDye(1, 64, 0, "[trail]", "Ridge", "d2", 2000L, "BLACK");
+        var oldRep = rep(oldEntry, group);
+        var newRep = rep(newEntry, group);
+
+        var action = SignTransitionResolver.computeTransitionAction(() -> List.of(newEntry, other), newEntry.key(), oldRep, newRep, actionFactory(), false, Map.of(group.prefix(), group));
+
+        assertNull(action);
+    }
+
+    @Test
     void lineJoinResolvesColorFromTheEarliestPlacedDyedMember() {
         var group = lineGroupWithPlayerColors("[trail]");
         var first = signEntryWithDye(0, 64, 0, "[trail]", "Ridge", "d1", 1000L, "RED");

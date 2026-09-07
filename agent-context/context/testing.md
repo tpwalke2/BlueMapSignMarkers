@@ -145,14 +145,16 @@ As of `feature/tpwalke2/198-dye-colors` (`535bb13`), `src/test/java/com/tpwalke2
   `lineToLineSameGroupAndLabelDyeOnlyChangeDispatchesSetInsteadOfNoOp` confirms a dye-only edit (detail unchanged)
   on an `allowPlayerColors`-enabled `LINE` group defeats the same-group-and-label no-op guard and dispatches a
   `Set` with the dye-derived `lineColor`; `lineToLineSameGroupAndLabelSameDyeIsStillNoOp` confirms an unchanged dye
-  (and unchanged detail) still no-ops; `lineJoinResolvesColorFromTheEarliestPlacedDyedMember` confirms a fresh join
-  recomputes colour via `ColorResolver` across the full current membership.
+  (and unchanged detail) still no-ops; `lineToLineSameGroupAndLabelDyeOnlyChangeIsNoOpWhenAllowPlayerColorsIsOff`
+  confirms a dye-only edit on an `allowPlayerColors`-disabled group stays a no-op instead of paying the full
+  recompute cost; `lineJoinResolvesColorFromTheEarliestPlacedDyedMember` confirms a fresh join recomputes colour
+  via `ColorResolver` across the full current membership.
 - `core/signs/ColorResolverTest.java` — `resolve` (GitHub issue #198): `allowPlayerColors` off returns the group's
   configured `lineColor`/`fillColor` unchanged even when a member is dyed; on with no dyed members (all `"BLACK"`)
   also returns them unchanged; on with a dyed member replaces the hue but keeps the configured alpha byte for both
   `lineColor` and `fillColor`; the earliest-placed dyed member wins over a later-dyed one regardless of the order
   members are passed in (not just placement order); an earlier *undyed* member doesn't block a later dyed member
-  from winning.
+  from winning; removing the earliest-placed winner hands off to the next-earliest remaining dyed member.
 - `core/signs/LineGroupResolverTest.java` — `members` filters to signs sharing `(parentMap, prefix, label)` exactly
   (a different map, prefix, or label is excluded), orders results by `createdAtMillis` ascending, breaks ties on a
   duplicate `createdAtMillis` deterministically by position (`x`, then `y`, then `z` — the cross-region-file
@@ -271,9 +273,11 @@ As of `feature/tpwalke2/198-dye-colors` (`535bb13`), `src/test/java/com/tpwalke2
   file (ticket 05); the catch-all fallback returning `null` rather than throwing, for both malformed JSON and empty
   content (which parses to `null` and NPEs on `.version()`, caught by the same generic `catch`); a
   structurally-valid document missing `version`/`data` (e.g. `"{}"`) explicitly falling back to V1 rather than
-  relying on Gson's nulls to coincidentally route there (ticket 05); and the `V2`/`V3`/`V4`/`V5` branches returning
-  `null` (falls through to the V1 loader) rather than proceeding, if backing up to
-  `.v2.bak`/`.v3.bak`/`.v4.bak`/`.v5.bak` fails (ticket 02).
+  relying on Gson's nulls to coincidentally route there (ticket 05); the `V2`/`V3`/`V4`/`V5` branches logging
+  the backup failure and still proceeding with the in-memory migration (rather than aborting) if backing up to
+  `.v2.bak`/`.v3.bak`/`.v4.bak`/`.v5.bak` fails, per `v2ContentStillMigratesWhenTheBackupFails` (ticket 02); and
+  `v5ContentWithANullEntryIsSkippedRatherThanLosingTheWholeFile` confirming a JSON `null` entry in a V5 array is
+  skipped rather than throwing out of `Version6Converter.convertToV6` and discarding every other entry in the file.
 - `core/signs/persistence/loaders/Version1SignEntryLoaderTest.java` — the three recognized legacy shorthand
   strings (`"nether"`/`"end"`/`"overworld"`) *and* the canonical-but-unnamespaced resource paths
   (`"the_nether"`/`"the_end"`, ticket 05) normalizing to their canonical namespaced identifiers, case-insensitively,

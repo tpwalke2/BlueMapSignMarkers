@@ -28,11 +28,13 @@ README: add `allowPlayerColors` to the field list alongside `lineColor`/`fillCol
 
 ## Player input: sign dye
 
-A player dyes a member sign (right-clicking it with a dye, ink sac, or glow ink sac item — vanilla mechanic,
-no new UI). The sign's dye is read from `SignText.getColor()` (a `DyeColor`, default `BLACK` for an undyed
-sign) off whichever side (`getFrontText()`/`getBackText()`) produced the sign's matching representation.
+A player dyes a member sign (right-clicking it with a dye item — vanilla mechanic, no new UI). The sign's dye
+is read from `SignText.getColor()` (a `DyeColor`, default `BLACK` for an undyed sign) off whichever side
+(`getFrontText()`/`getBackText()`) produced the sign's matching representation.
 
-Glowing ink (`SignText.hasGlowingText()`) is **not** consumed by this feature — out of scope (map's Out of
+Ink sacs and glow ink sacs only toggle a sign's glowing text (`SignText.hasGlowingText()`); they don't alter
+`getColor()`, so they have no effect on the resolved marker colour. Glowing text itself is **not** consumed by
+this feature — out of scope (map's Out of
 scope section); it's read nowhere in this design.
 
 Dye→hex mapping: `DyeColor.getTextureDiffuseColor()`, a server-safe opaque ARGB `int`, fixed in code — no

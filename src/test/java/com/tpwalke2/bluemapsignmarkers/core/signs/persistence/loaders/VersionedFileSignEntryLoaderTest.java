@@ -80,6 +80,20 @@ class VersionedFileSignEntryLoaderTest {
     }
 
     @Test
+    void v5ContentWithANullEntryIsSkippedRatherThanLosingTheWholeFile(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("signs.json").toString();
+        var v5Entry = new SignEntryV5(KEY, "player-1", new SignLinesParseResult("[poi]", "label", "detail"),
+                new SignLinesParseResult(null, "", ""), 1000L, new String[]{"[poi]", "label"}, new String[]{});
+        var content = GSON.toJson(new VersionedSignFile(SignFileVersions.V5, "[" + GSON.toJson(v5Entry) + ",null]"));
+        Files.writeString(Path.of(path), content, StandardCharsets.UTF_8);
+
+        var result = VersionedFileSignEntryLoader.loadSignEntries(path, content, NO_GROUPS, GSON);
+
+        assertEquals(1, result.length);
+        assertEquals(KEY, result[0].key());
+    }
+
+    @Test
     void v4ContentIsConvertedThroughVersion5And6ConvertersAndBackedUp(@TempDir Path tempDir) throws IOException {
         var path = tempDir.resolve("signs.json").toString();
         var v4Entry = new SignEntryV4(KEY, "player-1", new SignLinesParseResult("[poi]", "label", "detail"),

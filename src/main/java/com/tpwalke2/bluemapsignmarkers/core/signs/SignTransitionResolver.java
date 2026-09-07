@@ -107,7 +107,11 @@ public class SignTransitionResolver {
         // rename - moves the marker to a different BlueMap marker set (see groupIdentityObsolete) and must go
         // through the general leave+join bundling below instead, or the old marker set would never get cleared.
         if (oldType == newType && oldType != MarkerGroupType.POI && sameGroupAndLabel(oldRep, newRep)) {
-            if (oldRep.detail().equals(newRep.detail()) && oldRep.dye().equals(newRep.dye()) && !isReload) return null;
+            // A dye-only edit only changes anything when the group actually resolves colour from dye -
+            // otherwise it's a no-op recompute that would still scan/sort the full membership and
+            // dispatch an unchanged marker on every dye change to an opted-out group.
+            var dyeUnchanged = !newRep.group().allowPlayerColors() || oldRep.dye().equals(newRep.dye());
+            if (oldRep.detail().equals(newRep.detail()) && dyeUnchanged && !isReload) return null;
             return joinEffect(allSignsSupplier, key, newRep, actionFactory, true);
         }
 

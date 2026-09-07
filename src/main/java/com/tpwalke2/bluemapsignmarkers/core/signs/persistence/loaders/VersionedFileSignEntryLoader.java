@@ -60,7 +60,9 @@ public class VersionedFileSignEntryLoader {
                 return convertV3EntriesToV6(signEntriesV3, path);
             } else if (versionedSignFile.version() == SignFileVersions.V3) {
                 LOGGER.info("Loading version 3 markers file...");
-                var signEntriesV3 = Arrays.asList(gson.fromJson(versionedSignFile.data(), SignEntryV3[].class));
+                var signEntriesV3 = Arrays.stream(gson.fromJson(versionedSignFile.data(), SignEntryV3[].class))
+                        .filter(Objects::nonNull)
+                        .toList();
 
                 if (!FileUtils.createBackup(path, ".v3.bak", "markers file")) {
                     LOGGER.error(
@@ -71,7 +73,9 @@ public class VersionedFileSignEntryLoader {
                 return convertV3EntriesToV6(signEntriesV3, path);
             } else if (versionedSignFile.version() == SignFileVersions.V4) {
                 LOGGER.info("Loading version 4 markers file...");
-                var signEntriesV4 = Arrays.asList(gson.fromJson(versionedSignFile.data(), SignEntryV4[].class));
+                var signEntriesV4 = Arrays.stream(gson.fromJson(versionedSignFile.data(), SignEntryV4[].class))
+                        .filter(Objects::nonNull)
+                        .toList();
 
                 if (!FileUtils.createBackup(path, ".v4.bak", "markers file")) {
                     LOGGER.error(
@@ -82,7 +86,9 @@ public class VersionedFileSignEntryLoader {
                 return convertV4EntriesToV6(signEntriesV4);
             } else if (versionedSignFile.version() == SignFileVersions.V5) {
                 LOGGER.info("Loading version 5 markers file...");
-                var signEntriesV5 = Arrays.asList(gson.fromJson(versionedSignFile.data(), SignEntryV5[].class));
+                var signEntriesV5 = Arrays.stream(gson.fromJson(versionedSignFile.data(), SignEntryV5[].class))
+                        .filter(Objects::nonNull)
+                        .toList();
 
                 if (!FileUtils.createBackup(path, ".v5.bak", "markers file")) {
                     LOGGER.error(
