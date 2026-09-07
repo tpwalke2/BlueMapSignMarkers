@@ -47,7 +47,7 @@ updates), watching the BlueMap web UI update.
 
 ## Current coverage
 
-As of `feature/tpwalke2/198-dye-colors` (`535bb13`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
+As of `main` (`d201c9e`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
 - `core/signs/SignLinesParserTest.java` — 12 `@Test` methods covering `SignLinesParser`: label-on-prefix-line vs.
   label-on-following-line, multi-line detail joining/trimming, leading/interstitial blank-line handling, no-match
   and all-blank sign results, `REGEX` match type's whole-line-match requirement (contrasted with `STARTS_WITH`),
@@ -148,7 +148,11 @@ As of `feature/tpwalke2/198-dye-colors` (`535bb13`), `src/test/java/com/tpwalke2
   (and unchanged detail) still no-ops; `lineToLineSameGroupAndLabelDyeOnlyChangeIsNoOpWhenAllowPlayerColorsIsOff`
   confirms a dye-only edit on an `allowPlayerColors`-disabled group stays a no-op instead of paying the full
   recompute cost; `lineJoinResolvesColorFromTheEarliestPlacedDyedMember` confirms a fresh join recomputes colour
-  via `ColorResolver` across the full current membership.
+  via `ColorResolver` across the full current membership. Two regression tests
+  (`../reviews/copilot-review-2026-09-07.md`) cover a `null` `Representation.dye()` (corrupted/hand-edited persisted
+  data): `lineToLineDyeChangedFromNullDispatchesRecomputeInsteadOfThrowing` and
+  `lineToLineBothDyesNullIsNoOpInsteadOfThrowing` confirm the no-op guard's dye comparison is null-safe
+  (`Objects.equals`, not a direct `.equals()` call) instead of throwing an NPE.
 - `core/signs/ColorResolverTest.java` — `resolve` (GitHub issue #198): `allowPlayerColors` off returns the group's
   configured `lineColor`/`fillColor` unchanged even when a member is dyed; on with no dyed members (all `"BLACK"`)
   also returns them unchanged; on with a dyed member replaces the hue but keeps the configured alpha byte for both
@@ -277,7 +281,9 @@ As of `feature/tpwalke2/198-dye-colors` (`535bb13`), `src/test/java/com/tpwalke2
   the backup failure and still proceeding with the in-memory migration (rather than aborting) if backing up to
   `.v2.bak`/`.v3.bak`/`.v4.bak`/`.v5.bak` fails, per `v2ContentStillMigratesWhenTheBackupFails` (ticket 02); and
   `v5ContentWithANullEntryIsSkippedRatherThanLosingTheWholeFile` confirming a JSON `null` entry in a V5 array is
-  skipped rather than throwing out of `Version6Converter.convertToV6` and discarding every other entry in the file.
+  skipped rather than throwing out of `Version6Converter.convertToV6` and discarding every other entry in the file;
+  `v6ContentWithANullEntryIsSkippedRatherThanLosingTheWholeFile` confirms the same for the current-version branch,
+  which previously deserialized the array as-is with no null-filtering at all (`../reviews/copilot-review-2026-09-07.md`).
 - `core/signs/persistence/loaders/Version1SignEntryLoaderTest.java` — the three recognized legacy shorthand
   strings (`"nether"`/`"end"`/`"overworld"`) *and* the canonical-but-unnamespaced resource paths
   (`"the_nether"`/`"the_end"`, ticket 05) normalizing to their canonical namespaced identifiers, case-insensitively,
@@ -319,5 +325,5 @@ JUnit reporter action** — those actions don't get `checks: write` permission o
 public repo, so the summary step was written to need no extra permissions.
 
 ---
-*Last updated: 2026-09-06 | Verified against: feature/tpwalke2/198-dye-colors (535bb13)*
+*Last updated: 2026-09-07 | Verified against: main (d201c9e)*
 

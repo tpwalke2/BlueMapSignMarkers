@@ -160,11 +160,17 @@ EXTRUDE/EXTRUDE cells all use `sameGroupAndLabel(a, b)` (compares `group().prefi
 same-group-recompute shortcut condition is `oldType == newType && oldType != MarkerGroupType.POI &&
 sameGroupAndLabel(...)`, generalized to cover any non-`POI` type rather than naming `LINE` explicitly, since a
 `LINE`/`SHAPE`/`EXTRUDE` group's identity (and marker id, §5) is keyed on group+label either way. The recompute
-shortcut's no-op guard is `oldRep.detail().equals(newRep.detail()) && oldRep.dye().equals(newRep.dye()) &&
-!isReload` — `dye` was added to that guard (GitHub issue #198) alongside `detail` precisely so a dye-only edit
-(detail unchanged) doesn't get silently swallowed: it makes `oldRep != newRep`, defeats the no-op check, and falls
-through to the normal recompute path (`joinEffect`), which re-derives the marker's colour from the *current full
-membership* via `ColorResolver` regardless of which member's dye actually changed. When a transition
+shortcut's no-op guard is `oldRep.detail().equals(newRep.detail()) && dyeUnchanged && !isReload`, where
+`dyeUnchanged = !newRep.group().allowPlayerColors() || Objects.equals(oldRep.dye(), newRep.dye())` — `dye` was added
+to that guard (GitHub issue #198) alongside `detail` precisely so a dye-only edit (detail unchanged) doesn't get
+silently swallowed: it makes `oldRep != newRep`, defeats the no-op check, and falls through to the normal recompute
+path (`joinEffect`), which re-derives the marker's colour from the *current full membership* via `ColorResolver`
+regardless of which member's dye actually changed. `Objects.equals` (not `oldRep.dye().equals(newRep.dye())`) is a
+post-review fix (`../reviews/copilot-review-2026-09-07.md`): a `Representation`'s dye can be `null` in practice
+(corrupted/hand-edited persisted data), and the direct `.equals()` call threw an NPE on that path. The
+`allowPlayerColors()` short-circuit was added in the same fix so a group that hasn't opted into dye-derived colour
+doesn't pay the full membership scan/sort/dispatch cost on every dye change to one of its signs — dye is compared
+only when it could actually change the rendered colour. When a transition
 needs both a leave-effect and a join-effect (a group/label/type change, for any pair of the four types), each
 effect is computed independently (`null` if that half is a no-op, e.g. leaving a `LINE` group that still has ≥2
 members after removal dispatches a `Set`, not a leave at all) and both are collected into a `List<MarkerAction>`:
@@ -614,5 +620,5 @@ gating" section. This section covers the code-level mechanics.
   themselves are otherwise unchanged — the fix is localized to `prepareGated`.
 
 ---
-*Last updated: 2026-09-06 | Verified against: feature/tpwalke2/198-dye-colors (535bb13)*
+*Last updated: 2026-09-07 | Verified against: main (d201c9e)*
 

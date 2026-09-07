@@ -177,7 +177,10 @@ each entry's `key().parentMap()`/`x()`/`z()` — the shared grouping logic behin
      a `V5` file goes straight to `Version6Converter`. All loaders isolate per-entry conversion failures
      (`convertV2EntrySafely`/`loadEntry`, ticket 05) so one malformed V1/V2 entry logs and is skipped instead of
      losing the whole file — the same pattern `SignProvider.loadSigns` already applies per entry at step 3 below.
-     `Version1SignEntryLoader`'s dimension
+     Every `V3`/`V4`/`V5`/current-version branch also filters out `null` elements from the deserialized array
+     (`Arrays.stream(...).filter(Objects::nonNull)`, GitHub issue #198 review finding) before converting/returning
+     it — a JSON array with a stray `null` entry (hand-edited or corrupted file) would otherwise NPE partway through
+     conversion instead of just dropping that one slot. `Version1SignEntryLoader`'s dimension
      normalization (`getNormalizedMapId`) recognizes both the short legacy names (`"nether"`/`"end"`/`"overworld"`)
      and the canonical-but-unnamespaced resource paths (`"the_nether"`/`"the_end"`), with or without a `minecraft:`
      namespace already attached (ticket 05) — previously only the three exact lowercase shorthand strings
@@ -255,5 +258,5 @@ in place. Old region files (or a not-yet-migrated legacy `signs.json`) on live s
 the version they were written with.
 
 ---
-*Last updated: 2026-09-06 | Verified against: feature/tpwalke2/198-dye-colors (535bb13)*
+*Last updated: 2026-09-07 | Verified against: main (d201c9e)*
 
