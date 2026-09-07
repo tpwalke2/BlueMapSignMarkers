@@ -1,5 +1,6 @@
 package com.tpwalke2.bluemapsignmarkers;
 
+import com.tpwalke2.bluemapsignmarkers.common.SafeCall;
 import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignHelper;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignManager;
@@ -33,13 +34,14 @@ public class BlueMapSignMarkersMod implements DedicatedServerModInitializer, Ser
 	}
 
 	private void onServerStarting(MinecraftServer server) {
-		SignProvider.loadSigns(getMarkerStorageRoot(server), getLegacyMarkerFilePath(server));
+		SafeCall.run("onServerStarting",
+				() -> SignProvider.loadSigns(getMarkerStorageRoot(server), getLegacyMarkerFilePath(server)));
 	}
 
 	private void onServerStopping(MinecraftServer server) {
-		SignProvider.saveSigns(getMarkerStorageRoot(server));
+		SafeCall.run("onServerStopping.saveSigns", () -> SignProvider.saveSigns(getMarkerStorageRoot(server)));
 
-		SignManager.stop();
+		SafeCall.run("onServerStopping.stop", SignManager::stop);
 	}
 
 	@Override
@@ -65,7 +67,8 @@ public class BlueMapSignMarkersMod implements DedicatedServerModInitializer, Ser
 	private void onBlockEntityLoad(BlockEntity blockEntity, ServerLevel world) {
 		if (!(blockEntity instanceof SignBlockEntity castBlockEntity)) return;
 
-		SignManager.addOrUpdate(SignHelper.createSignEntry(castBlockEntity, WorldMap.UNKNOWN));
+		SafeCall.run("onBlockEntityLoad",
+				() -> SignManager.addOrUpdate(SignHelper.createSignEntry(castBlockEntity, WorldMap.UNKNOWN)));
 	}
 
 	// No special case for a newly-generated chunk (generated == true): that flag also fires when a chunk's saved
@@ -73,15 +76,17 @@ public class BlueMapSignMarkersMod implements DedicatedServerModInitializer, Ser
 	// reconciliation targets. Skipping it there would defeat the main use case, and there's no perf reason to:
 	// getKeysInChunk is a single hashmap lookup, so the cost is the same either way.
 	private void onChunkLoad(ServerLevel level, LevelChunk chunk, boolean generated) {
-		var parentMap = SignHelper.getSignParentMap(level);
-		var chunkPos = chunk.getPos();
+		SafeCall.run("onChunkLoad", () -> {
+			var parentMap = SignHelper.getSignParentMap(level);
+			var chunkPos = chunk.getPos();
 
-		for (var key : SignManager.getKeysInChunk(parentMap, chunkPos.x(), chunkPos.z())) {
-			if (!(chunk.getBlockEntity(new BlockPos(key.x(), key.y(), key.z())) instanceof SignBlockEntity)) {
-				LOGGER.info("Removing stale sign marker at {} - no sign block found on chunk load "
-						+ "(external deletion/regen?)", key);
-				SignManager.remove(key);
+			for (var key : SignManager.getKeysInChunk(parentMap, chunkPos.x(), chunkPos.z())) {
+				if (!(chunk.getBlockEntity(new BlockPos(key.x(), key.y(), key.z())) instanceof SignBlockEntity)) {
+					LOGGER.info("Removing stale sign marker at {} - no sign block found on chunk load "
+							+ "(external deletion/regen?)", key);
+					SignManager.remove(key);
+				}
 			}
-		}
+		});
 	}
 }

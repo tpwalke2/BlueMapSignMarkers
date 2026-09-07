@@ -1,6 +1,7 @@
 package com.tpwalke2.bluemapsignmarkers.core.signs;
 
 import com.tpwalke2.bluemapsignmarkers.Constants;
+import com.tpwalke2.bluemapsignmarkers.common.SafeCall;
 import com.tpwalke2.bluemapsignmarkers.config.ConfigManager;
 import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.BlueMapAPIConnector;
@@ -41,11 +42,11 @@ public class SignManager implements IResetHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
 
     public static void addOrUpdate(SignEntry signEntry) {
-        getInstance().addOrUpdateSign(signEntry);
+        SafeCall.run("SignManager.addOrUpdate", () -> getInstance().addOrUpdateSign(signEntry));
     }
 
     public static void remove(SignEntryKey key) {
-        getInstance().removeByKey(key);
+        SafeCall.run("SignManager.remove", () -> getInstance().removeByKey(key));
     }
 
     public static List<SignEntry> getAll() {
