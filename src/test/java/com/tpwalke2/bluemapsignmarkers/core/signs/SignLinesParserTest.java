@@ -4,6 +4,7 @@ import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupMatchType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.util.List;
 
@@ -194,5 +195,35 @@ class SignLinesParserTest {
         assertEquals("\\[poi\\].*", result.prefix());
         assertEquals("", result.label());
         assertEquals("", result.detail());
+    }
+
+    @Test
+    @Timeout(5)
+    void pathologicalRegexAgainstOversizedLineDoesNotHang() {
+        // A single nested quantifier ((a+)+) is the textbook catastrophic-backtracking example, but
+        // the JVM's own regex engine already special-cases that shape. Several sequential unbounded
+        // capturing groups over the same character class ((a*)(a*)(a*)(a*)) still exhibits genuine
+        // combinatorial blowup that grows sharply with input length - without a cap, matching this
+        // against tens of thousands of characters would not finish in any practical time. The
+        // line-length cap truncates the line to a fixed size before it ever reaches line.matches(...),
+        // so the match cost stays bounded regardless of how long the attacking sign text is.
+        var parser = new SignLinesParser(List.of(regexGroup("(a*)(a*)(a*)(a*)b", "Pathological")));
+
+        var adversarialLine = "a".repeat(50_000);
+        var result = parser.parse(new String[]{adversarialLine});
+
+        assertNull(result.prefix());
+    }
+
+    @Test
+    void oversizedLineIsTruncatedBeforeMatching() {
+        var parser = new SignLinesParser(List.of(startsWithGroup("[poi]", "Points of Interest")));
+
+        var prefix = "[poi] ";
+        var longLabel = "x".repeat(200);
+        var result = parser.parse(new String[]{prefix + longLabel});
+
+        assertEquals("[poi]", result.prefix());
+        assertEquals(100 - prefix.length(), result.label().length());
     }
 }
