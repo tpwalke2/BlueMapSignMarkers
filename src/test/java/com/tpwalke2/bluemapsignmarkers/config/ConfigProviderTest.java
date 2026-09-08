@@ -1023,4 +1023,72 @@ class ConfigProviderTest {
         assertTrue(config.getMarkerGroups()[0].cssClasses().isEmpty());
         assertTrue(warnings.stream().anyMatch(m -> m.contains("cssClasses")));
     }
+
+    // finding 14: a group with a missing 'name' must degrade to a fallback name (with a warning) rather than
+    // throwing MarkerGroup's requireNonNull and wiping every group in the config back to one default [poi] group.
+    @Test
+    void loadConfigFallsBackToThePrefixWhenNameIsMissingRatherThanWipingTheWholeConfig(
+            @TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[good]", "name": "Good Group" },
+                    { "prefix": "[bad]" }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(2, config.getMarkerGroups().length);
+        assertEquals("[good]", config.getMarkerGroups()[0].prefix());
+        assertEquals("[bad]", config.getMarkerGroups()[1].prefix());
+        assertEquals("[bad]", config.getMarkerGroups()[1].name());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("name")));
+    }
+
+    // Same as above, but the name is present and blank rather than entirely absent.
+    @Test
+    void loadConfigFallsBackToThePrefixWhenNameIsBlank(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[bad]", "name": "   " }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(1, config.getMarkerGroups().length);
+        assertEquals("[bad]", config.getMarkerGroups()[0].name());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("name")));
+    }
+
+    // A missing name and an empty prefix together must not make resolveName itself throw (it falls back to
+    // DEFAULT_NAME_PLACEHOLDER rather than assuming prefix is present) - validateMarkerGroups still rejects
+    // the empty prefix afterwards, so the placeholder value is never observable here, only that construction
+    // doesn't NPE before validation gets a chance to run.
+    @Test
+    void loadConfigStillRejectsAnEmptyPrefixEvenWhenNameAlsoFallsBackToAPlaceholder(
+            @TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertNull(config, "an empty prefix is still rejected by validateMarkerGroups after name resolution");
+    }
 }
