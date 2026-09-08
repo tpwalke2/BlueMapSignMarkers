@@ -619,6 +619,79 @@ class ConfigProviderTest {
     }
 
     @Test
+    void loadConfigDefaultsShutdownAwaitSecondsWhenOmitted(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(BMSMConfigV2.DEFAULT_SHUTDOWN_AWAIT_SECONDS, config.getShutdownAwaitSeconds());
+    }
+
+    @Test
+    void loadConfigPreservesExplicitShutdownAwaitSeconds(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "shutdownAwaitSeconds": 30,
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(30, config.getShutdownAwaitSeconds());
+    }
+
+    @Test
+    void loadConfigFallsBackToDefaultShutdownAwaitSecondsWhenMalformed(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "shutdownAwaitSeconds": "notanumber",
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group" }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(BMSMConfigV2.DEFAULT_SHUTDOWN_AWAIT_SECONDS, config.getShutdownAwaitSeconds());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("shutdownAwaitSeconds")));
+    }
+
+    @Test
+    void loadConfigFallsBackToDefaultShutdownAwaitSecondsWhenNonPositive(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "shutdownAwaitSeconds": 0,
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group" }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(BMSMConfigV2.DEFAULT_SHUTDOWN_AWAIT_SECONDS, config.getShutdownAwaitSeconds());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("shutdownAwaitSeconds")));
+    }
+
+    @Test
     void loadConfigFallsBackToDefaultSortingWhenMalformed(@TempDir Path tempDir) throws IOException {
         var path = tempDir.resolve("BMSM-Core.json");
         Files.writeString(path, """

@@ -5,6 +5,7 @@ import com.tpwalke2.bluemapsignmarkers.Constants;
 import com.tpwalke2.bluemapsignmarkers.common.ColorUtils;
 import com.tpwalke2.bluemapsignmarkers.common.HtmlUtils;
 import com.tpwalke2.bluemapsignmarkers.common.LogUtils;
+import com.tpwalke2.bluemapsignmarkers.config.ConfigManager;
 import com.tpwalke2.bluemapsignmarkers.core.bounds.RenderMaskEvaluator;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.AddMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.GroupTransitionMarkerAction;
@@ -78,6 +79,12 @@ public class BlueMapAPIConnector {
     // saw isShutdown()==true and mistook startup for a reload, replacing markerActionQueue with an empty one
     // and discarding every action enqueued during sign load before a single one was ever processed.
     private volatile boolean disabledSinceLastEnable;
+    // Set by onDisable() from markerActionQueue.shutdown()'s return value; read by the next onEnable() to
+    // decide whether to warn that a non-interruptible straggler task may still race the reset replay below
+    // (findings 26/27, agent-context/reviews/full-codebase-review_2026-09-07_0900.md). There's no better
+    // recovery available - a task that ignores interruption can't be forced to stop - so this only makes
+    // the violation observable rather than blocking onEnable() indefinitely.
+    private volatile boolean lastShutdownConfirmedClean = true;
     private final List<IResetHandler> resetHandlers = new ArrayList<>();
     // BlueMapAPI.unregisterListener(Consumer) removes by equals/hashCode, and a method reference has no
     // custom equals - two `this::onEnable` expressions are distinct objects under default identity equality.
@@ -132,7 +139,8 @@ public class BlueMapAPIConnector {
         markerActionQueue = new ReactiveQueue<>(
                 () -> BlueMapAPI.getInstance().isPresent(),
                 this::processMarkerAction,
-                this::onError
+                this::onError,
+                ConfigManager.get().getShutdownAwaitSeconds()
         );
 
         markerSetsCache = new ConcurrentHashMap<>();
@@ -510,6 +518,11 @@ public class BlueMapAPIConnector {
 
         if (disabledSinceLastEnable) {
             disabledSinceLastEnable = false;
+            if (!lastShutdownConfirmedClean) {
+                LOGGER.warn("Resuming after a BlueMap disable whose shutdown() could not confirm every "
+                        + "in-flight marker action had stopped; a straggler task may still race this reset's "
+                        + "replay of marker state");
+            }
             resetQueue();
 
             fireReset();
@@ -520,7 +533,7 @@ public class BlueMapAPIConnector {
 
     private void onDisable(BlueMapAPI api) {
         disabledSinceLastEnable = true;
-        markerActionQueue.shutdown();
+        lastShutdownConfirmedClean = markerActionQueue.shutdown();
     }
 
     private synchronized Optional<List<MappedMarkerSet>> getMarkerSets(MarkerSetIdentifier markerSetIdentifier) {

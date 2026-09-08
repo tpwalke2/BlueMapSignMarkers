@@ -101,6 +101,7 @@ class ReactiveQueueTest {
         var taskStarted = new CountDownLatch(1);
         var releaseTask = new CountDownLatch(1);
         var taskFinished = new AtomicBoolean(false);
+        var shutdownConfirmedClean = new AtomicBoolean(false);
         var delegate = Executors.newFixedThreadPool(2);
         var queue = new ReactiveQueue<String>(
                 () -> true,
@@ -115,7 +116,7 @@ class ReactiveQueueTest {
             queue.enqueue("hello");
             assertTrue(taskStarted.await(5, TimeUnit.SECONDS), "processor task never started");
 
-            var shutdownThread = new Thread(queue::shutdown);
+            var shutdownThread = new Thread(() -> shutdownConfirmedClean.set(queue.shutdown()));
             shutdownThread.start();
             // Wait for shutdown() to have actually called executor.shutdown() (rather than guessing with
             // a fixed sleep) before asserting the task hasn't finished yet, so a slow/contended runner
@@ -128,6 +129,93 @@ class ReactiveQueueTest {
 
             assertFalse(shutdownThread.isAlive(), "shutdown() should have returned by now");
             assertTrue(taskFinished.get(), "shutdown() should not return until the in-flight task finished");
+            assertTrue(shutdownConfirmedClean.get(),
+                    "shutdown() should report a clean stop once the in-flight task actually finished");
+        } finally {
+            delegate.shutdownNow();
+        }
+    }
+
+    @Test
+    void shutdownReturnsTrueWhenNoExecutorWasEverCreated() {
+        var queue = new ReactiveQueue<String>(() -> true, message -> { }, error -> { });
+
+        assertTrue(queue.shutdown(),
+                "shutdown() should report a clean stop when there was never any work to await");
+    }
+
+    // Regression test for the configurable-timeout half of findings 26/27
+    // (.scratch/concurrency-pass-2026-09/issues/02-reactivequeue-shutdown-guarantee-and-timeout.md): the
+    // await window used to be a hardcoded 5s constant. shutdown() now honors an explicitly configured
+    // (short) timeout instead of always waiting the 5s default.
+    @Test
+    void shutdownHonorsAConfiguredTimeoutShorterThanTheDefault() throws Exception {
+        var shutdownAwaitSeconds = 1L;
+        var taskStarted = new CountDownLatch(1);
+        var releaseTask = new CountDownLatch(1);
+        var delegate = Executors.newFixedThreadPool(1);
+        var queue = new ReactiveQueue<String>(
+                () -> true,
+                message -> {
+                    taskStarted.countDown();
+                    awaitUninterruptibly(releaseTask);
+                },
+                error -> { },
+                shutdownAwaitSeconds,
+                delegate);
+        try {
+            queue.enqueue("hello");
+            assertTrue(taskStarted.await(5, TimeUnit.SECONDS), "processor task never started");
+
+            var start = System.nanoTime();
+            releaseTask.countDown();
+            assertTrue(queue.shutdown(), "shutdown() should report a clean stop once the task released");
+            var elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+
+            assertTrue(elapsedMillis < TimeUnit.SECONDS.toMillis(4),
+                    "shutdown() took " + elapsedMillis + "ms; a 1s configured timeout should return well "
+                            + "under the 5s default, once the task is free to finish");
+        } finally {
+            delegate.shutdownNow();
+        }
+    }
+
+    // Finding 64's "non-interruptible straggler" scenario: a task that ignores Thread.interrupt() entirely
+    // (blocked on non-interruptible I/O, or CPU-bound with no poll point) can still be running after both
+    // awaitTermination calls time out. shutdown() can't force it to stop, but must report that it couldn't
+    // confirm a clean stop rather than returning as if the guarantee held.
+    @Test
+    void shutdownReturnsFalseWhenATaskIgnoresInterruptionThroughBothAwaitWindows() throws Exception {
+        var shutdownAwaitSeconds = 1L;
+        var taskStarted = new CountDownLatch(1);
+        var delegate = Executors.newFixedThreadPool(1);
+        var queue = new ReactiveQueue<String>(
+                () -> true,
+                message -> {
+                    taskStarted.countDown();
+                    var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+                    // Deliberately never checks Thread.interrupted() - simulates a straggler that
+                    // shutdownNow()'s interrupt can't actually stop.
+                    while (System.nanoTime() < deadline) {
+                        Thread.onSpinWait();
+                    }
+                },
+                error -> { },
+                shutdownAwaitSeconds,
+                delegate);
+        try {
+            queue.enqueue("hello");
+            assertTrue(taskStarted.await(5, TimeUnit.SECONDS), "processor task never started");
+
+            var start = System.nanoTime();
+            var confirmedClean = queue.shutdown();
+            var elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+
+            assertFalse(confirmedClean,
+                    "shutdown() should report it could not confirm a clean stop against a non-interruptible straggler");
+            assertTrue(elapsedMillis >= TimeUnit.SECONDS.toMillis(2 * shutdownAwaitSeconds),
+                    "shutdown() should have waited out both await windows (2x the configured timeout) before "
+                            + "giving up, took " + elapsedMillis + "ms");
         } finally {
             delegate.shutdownNow();
         }
