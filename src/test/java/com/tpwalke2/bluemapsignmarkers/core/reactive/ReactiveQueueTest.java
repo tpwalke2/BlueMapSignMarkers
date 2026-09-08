@@ -265,14 +265,14 @@ class ReactiveQueueTest {
         assertEquals(List.of("second"), received, "the failure on the first message should not stop later messages");
     }
 
-    // Documents current behavior: messageProcessorCallback is invoked inside a task handed to
-    // ExecutorService.submit(), so an exception it throws is captured on that task's Future and never
-    // surfaces to the try/catch in processMessages() (nothing ever calls Future.get()). The error callback
-    // is only reachable via a submission-time failure (see the test above), not a processing exception.
-    // Known gap for the concurrency-hardening pass.
+    // Fixed for finding 8 (High) / ticket 01 (.scratch/concurrency-pass-2026-09/issues/01-reactivequeue-swallowed-exceptions.md):
+    // messageProcessorCallback is invoked inside a task handed to ExecutorService.submit(); that task now
+    // wraps the callback invocation in its own try/catch and routes any exception to
+    // messageProcessorErrorCallback, rather than letting it vanish on the task's unobserved Future.
     @Test
-    void exceptionThrownByProcessorCallbackIsNotSurfacedToTheErrorCallback() throws Exception {
-        var errors = new ArrayList<Throwable>();
+    void exceptionThrownByProcessorCallbackIsSurfacedToTheErrorCallback() throws Exception {
+        var errors = new ConcurrentLinkedQueue<Throwable>();
+        var errorDelivered = new CountDownLatch(1);
         var secondMessageDelivered = new CountDownLatch(1);
         var queue = new ReactiveQueue<String>(
                 () -> true,
@@ -282,13 +282,43 @@ class ReactiveQueueTest {
                     }
                     secondMessageDelivered.countDown();
                 },
-                errors::add);
+                error -> {
+                    errors.add(error);
+                    errorDelivered.countDown();
+                });
 
         queue.enqueue("first");
         queue.enqueue("second");
 
         assertTrue(secondMessageDelivered.await(5, TimeUnit.SECONDS), "later message should still be processed");
-        assertTrue(errors.isEmpty(), "current implementation swallows processor exceptions rather than reporting them");
+        assertTrue(errorDelivered.await(5, TimeUnit.SECONDS), "processor exception was never reported to the error callback");
+        assertEquals(1, errors.size());
+        assertEquals("boom", errors.peek().getMessage());
+    }
+
+    // Finding 64's "error-callback-throws" scenario: once a processor exception reaches
+    // messageProcessorErrorCallback, an exception thrown by the error callback itself must not kill the
+    // worker thread mid-drain (leaving later messages unprocessed) or propagate back to enqueue()'s caller.
+    @Test
+    void exceptionThrownByTheErrorCallbackItselfDoesNotStopLaterMessagesFromBeingProcessed() throws Exception {
+        var secondMessageDelivered = new CountDownLatch(1);
+        var queue = new ReactiveQueue<String>(
+                () -> true,
+                message -> {
+                    if (message.equals("first")) {
+                        throw new RuntimeException("boom");
+                    }
+                    secondMessageDelivered.countDown();
+                },
+                error -> {
+                    throw new RuntimeException("error callback also broken");
+                });
+
+        queue.enqueue("first");
+        queue.enqueue("second");
+
+        assertTrue(secondMessageDelivered.await(5, TimeUnit.SECONDS),
+                "a broken error callback should not stop later messages from being processed");
     }
 
     // Characterizes the current "before" behavior ahead of the concurrency-hardening pass: enqueue()
