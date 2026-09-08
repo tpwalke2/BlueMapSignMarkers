@@ -73,7 +73,18 @@ public class ReactiveQueue<T> {
             if (currentExecutor == null) return;
 
             try {
-                currentExecutor.submit(() -> messageProcessorCallback.processMessage(message));
+                currentExecutor.submit(() -> {
+                    try {
+                        messageProcessorCallback.processMessage(message);
+                    } catch (Exception e) {
+                        try {
+                            messageProcessorErrorCallback.onError(e);
+                        } catch (Exception errorCallbackException) {
+                            // A broken error callback must not kill this worker thread mid-drain (leaving
+                            // later messages unprocessed) or propagate back to enqueue()'s caller.
+                        }
+                    }
+                });
             } catch (RejectedExecutionException e) {
                 // Shut down concurrently between poll() and this submission; expected during a normal
                 // shutdown race, not a processing failure worth reporting to the error callback.
