@@ -221,7 +221,9 @@ public class BlueMapAPIConnector {
         };
     }
 
-    private static List<LinePoint> pointOf(MarkerIdentifier identifier) {
+    // Package-private (not private) specifically so it's directly testable - see the
+    // resolveExtrudeHeightRange comment below and BlueMapAPIConnectorTest.
+    static List<LinePoint> pointOf(MarkerIdentifier identifier) {
         return List.of(new LinePoint(identifier.x(), identifier.y(), identifier.z()));
     }
 
@@ -275,7 +277,13 @@ public class BlueMapAPIConnector {
     }
 
     private boolean isInsideRenderBounds(String mapId, List<LinePoint> points) {
-        var mask = getRenderMask(mapId);
+        return isInsideRenderBounds(getRenderMask(mapId), points);
+    }
+
+    // Pure point-vs-mask test split out of the mapId/cache-lookup overload above so it's directly
+    // testable without a live BlueMapAPIConnector instance (bluemap-api is compileOnly, not on the
+    // test classpath - see BlueMapAPIConnectorTest).
+    static boolean isInsideRenderBounds(RenderMaskEvaluator.RenderMask mask, List<LinePoint> points) {
         return points.stream().anyMatch(p -> mask.contains(p.x(), p.y(), p.z()));
     }
 
