@@ -15,7 +15,7 @@ in `build.gradle`.
 Only plain-Java classes with **no Minecraft/Fabric/BlueMap API types in their method signatures** are unit tested.
 Qualifying today: `SignLinesParser`/`ParsingContext`/`SignLinesParseResult`, `SignEntry`, `SignEntryHelper`,
 `SignChunkKey`/`SignChunkIndex`, `MarkerGroup`/`MarkerGroupMatchType`/`MarkerGroupType`, `ConfigManager`/`ConfigProvider`,
-`ReactiveQueue`, `HtmlUtils`, `FileUtils`, `ColorUtils`, `ColorResolver`,
+`ReactiveQueue`, `HtmlUtils`, `FileUtils`, `ColorUtils`, `ColorResolver`, `SafeCall`, `ServerPathResolver`,
 `LineGroupResolver`/`ShapeGroupResolver`/`ExtrudeGroupResolver`,
 `SignTransitionResolver`, `RenderMaskEvaluator` (`core.bounds` — see `core-pipeline.md` §8), the
 sign-persistence loaders/converters/writer (`VersionedFileSignEntryLoader`, `Version1SignEntryLoader`,
@@ -24,10 +24,12 @@ sign-persistence loaders/converters/writer (`VersionedFileSignEntryLoader`, `Ver
 `ActionFactory`/`MarkerSetIdentifierCollection`. `SignManager` itself stays game-coupled (its constructor builds a
 `BlueMapAPIConnector`), but its `reparseFromRawLines`/`safeReparseFromRawLines` reparse-on-reload logic (§3 of
 `core-pipeline.md`) is extracted as a package-visible static specifically so it's directly testable.
-`BlueMapAPIConnector` itself stays game-coupled overall, but its `resolveExtrudeHeightRange` helper (§6 of
-`core-pipeline.md`) is a package-private static returning a plain `ExtrudeHeightRange` record with no
-`bluemap-api` types, specifically so it's directly testable (`BlueMapAPIConnectorTest`) without pulling
-`bluemap-api` (`compileOnly`) onto the test classpath.
+`BlueMapAPIConnector` itself stays game-coupled overall, but three helpers (§6 of `core-pipeline.md`) are
+package-private specifically so they're directly testable (`BlueMapAPIConnectorTest`) without pulling `bluemap-api`
+(`compileOnly`) onto the test classpath or constructing a live connector (which calls `BlueMapAPI.getInstance()`):
+`resolveExtrudeHeightRange` (a plain `ExtrudeHeightRange` record, no `bluemap-api` types), `pointOf` (wraps a
+`MarkerIdentifier`'s coordinates into a single-point `List<LinePoint>`), and `isInsideRenderBounds(RenderMask, ...)`
+(the pure mask-vs-points predicate behind the render-bounds gate, §8).
 
 `Version1SignEntryLoader` used to be a partial exception — its legacy-shorthand (`"nether"`/`"end"`/`"overworld"`)
 dimension normalization branch read `net.minecraft.world.level.Level`'s static constants, requiring a running
@@ -47,7 +49,7 @@ updates), watching the BlueMap web UI update.
 
 ## Current coverage
 
-As of `main` (`d201c9e`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
+As of `main` (`6c090c0`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
 - `core/signs/SignLinesParserTest.java` — 12 `@Test` methods covering `SignLinesParser`: label-on-prefix-line vs.
   label-on-following-line, multi-line detail joining/trimming, leading/interstitial blank-line handling, no-match
   and all-blank sign results, `REGEX` match type's whole-line-match requirement (contrasted with `STARTS_WITH`),
@@ -69,6 +71,9 @@ As of `main` (`d201c9e`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
 - `core/signs/persistence/SignRegionKeyTest.java` — region assignment via `floorDiv` (including negative
   coordinates and the exact region-boundary blocks 511/512), and `relativeFilePath` namespace/path splitting
   (including the no-colon `unknown` dimension and a nested-path dimension).
+  `relativeFilePathRejectsADriveRelativeDimensionPath` (`@EnabledOnOs(OS.WINDOWS)`, since `\` is just an ordinary
+  filename character elsewhere) confirms a dimension string containing a Windows drive-relative path segment
+  (`isAbsolute() == false` but still carries a root component) is rejected too, not just a plain absolute path.
 - `core/signs/persistence/SignRegionPartitionerTest.java` — grouping entries by region and dimension, multiple
   entries landing in the same region, empty input.
 - `core/signs/persistence/RegionShardedSignEntryWriterTest.java` — one file per region; stale region files (signs
@@ -87,7 +92,9 @@ As of `main` (`d201c9e`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   `getLabel`/`getDetail` front/back precedence and combining, plus `getDetail`'s ticket-07 fix
   (`getDetailUsesOnlyFrontWhenSidesMatchDifferentGroups`): when front and back match *different* marker groups,
   only the front's detail is used rather than merging both — see `core-pipeline.md`'s `SignEntryHelper` paragraph.
-  `getDye` (GitHub issue #198) has front-preferred/back-fallback tests mirroring `getPrefix`'s precedence rule.
+  `getLabel` has the matching fix covered too: a blank front label on a group-mismatched sign returns `""` instead
+  of borrowing the back side's label. `getDye` (GitHub issue #198) has front-preferred/back-fallback tests
+  mirroring `getPrefix`'s precedence rule.
 - `core/signs/SignEntryTest.java` — standard `equals`/`hashCode` contract on the hand-written implementation
   (reflexive, symmetric, per-field inequality including the added `createdAtMillis` field, not equal to
   `null`/another type), `withKey` returning a new instance with only the key changed (`createdAtMillis` carried
@@ -103,6 +110,11 @@ As of `main` (`d201c9e`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   `buildResult()` using the set group's `prefix()` plus the current label, multiple `appendDetail` calls joining
   with `\n`, and that the final `trim()` only strips the outermost whitespace of the joined detail, not per-line
   padding.
+- `common/SafeCallTest.java` — `run` executes the action when it succeeds; swallows a thrown `RuntimeException` or
+  `Error` (via `assertDoesNotThrow`) instead of letting it propagate.
+- `common/ServerPathResolverTest.java` — `resolveMarkerStorageRoot` normalizes the trailing `"."` segment
+  `LevelResource.ROOT`'s raw path carries; `resolveLegacyMarkerFilePath` reproduces the pre-existing unnormalized
+  formula unchanged (see `config-and-persistence.md`).
 - `common/FileUtilsTest.java` — `createBackup` copies the original when no backup exists yet and leaves an existing
   backup untouched; `moveToBackup` moves the original into place, no-ops when the source is missing, and no-ops when
   a backup already exists; `createBackupReturnsFalseWhenTheCopyFails` and
@@ -204,7 +216,13 @@ As of `main` (`d201c9e`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   (GitHub issue #198) has `loadConfigDefaultsAllowPlayerColorsToFalseWhenOmitted` and
   `loadConfigPreservesExplicitAllowPlayerColorsOnALineGroup` for a `LINE` group, plus
   `loadConfigWarnsWhenAllowPlayerColorsIsSetOnAPOIGroup` (warning-only, not a load failure, per
-  `warnOnTypeFieldMismatches`).
+  `warnOnTypeFieldMismatches`). `name`'s missing/blank fallback (finding 14) has three tests:
+  `loadConfigFallsBackToThePrefixWhenNameIsMissingRatherThanWipingTheWholeConfig` and
+  `loadConfigFallsBackToThePrefixWhenNameIsBlank` confirm a missing or blank `name` falls back to that group's
+  `prefix` with a warning rather than throwing and reverting the *entire* config to defaults;
+  `loadConfigStillRejectsAnEmptyPrefixEvenWhenNameAlsoFallsBackToAPlaceholder` confirms `resolveName` itself
+  doesn't throw when both `name` and `prefix` are absent (falls back to the `"(unnamed)"` placeholder), and that
+  `validateMarkerGroups`'s empty-prefix rejection still fires afterward.
 - `config/ConfigManagerTest.java` — `get()` returns the config from the most recent `reload`; falls back to
   `new BMSMConfigV2()` defaults when the configured path fails to load; a second `reload()` replaces (not merges
   with) what an earlier `reload` cached.
@@ -307,9 +325,14 @@ As of `main` (`d201c9e`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   casting); and `quotedBooleanAndNumericFieldsAreEquivalentToBareLiterals` confirming a quoted literal
   (`subtract: "true"`) parses identically to the bare form (the fix in commit `217c17f`).
 - `core/bluemap/BlueMapAPIConnectorTest.java` — the sole test class for otherwise-game-coupled `BlueMapAPIConnector`,
-  exercising only its package-private `resolveExtrudeHeightRange` static (ticket 196, see `core-pipeline.md` §6):
-  members all at the same Y get a minimum 1-block height instead of collapsing to zero; members at different Ys
-  span their actual lowest-to-tallest height.
+  exercising only its package-private statics (see `core-pipeline.md` §6, since even constructing a live connector
+  calls `BlueMapAPI.getInstance()`): `resolveExtrudeHeightRange` (ticket 196) — members all at the same Y get a
+  minimum 1-block height instead of collapsing to zero, members at different Ys span their actual
+  lowest-to-tallest height; `pointOfWrapsAMarkerIdentifiersCoordinatesIntoASinglePointList` confirms `pointOf`
+  builds the single-point list a POI marker's render-bounds check uses; `isInsideRenderBounds(RenderMask, ...)` has
+  a dedicated block using a real `RenderMaskEvaluator.load` fixture — a POI point inside/outside the mask, a
+  multi-point line with at least one member inside (in bounds) vs. every member outside (out of bounds), and an
+  unbounded mask (no `render-mask` configured) allowing any point.
 
 ## CI integration
 
@@ -318,12 +341,16 @@ dispatch) both run `./gradlew test` before anything else — a test failure in `
 publish step entirely.
 
 Both workflows have a `summarize test results` step (`if: always()`, so it runs even when tests fail)
-immediately after the test step: it sums the `tests`/`failures`/`errors`/`skipped` XML attributes out of
-`build/test-results/test/*.xml` using plain shell (`sed`, looping the glob, `shopt -s nullglob`) and writes a
-markdown pass/fail table to `$GITHUB_STEP_SUMMARY`. This was a **deliberate choice over a `checks: write`-based
-JUnit reporter action** — those actions don't get `checks: write` permission on PRs from forks by default in a
-public repo, so the summary step was written to need no extra permissions.
+immediately after the test step, delegating to the shared composite action `.github/actions/summarize-test-results/
+action.yml`: it sums the `tests`/`failures`/`errors`/`skipped` XML attributes out of `build/test-results/test/*.xml`
+using plain shell (`sed`, looping the glob, `shopt -s nullglob`) and writes a markdown pass/fail table to
+`$GITHUB_STEP_SUMMARY` — a report file whose attributes can't be parsed is excluded from the totals and called out
+in the summary (`::warning`) rather than silently skewing the counts or failing the step. This was a **deliberate
+choice over a `checks: write`-based JUnit reporter action** — those actions don't get `checks: write` permission on
+PRs from forks by default in a public repo, so the summary step was written to need no extra permissions. Both
+workflow jobs also now declare an explicit `permissions: contents: read` (least-privilege, rather than relying on
+the repo's default token permissions), and `publish.yml`'s job runs under a `modrinth-publish` GitHub Environment.
 
 ---
-*Last updated: 2026-09-07 | Verified against: main (d201c9e)*
+*Last updated: 2026-09-07 | Verified against: main (6c090c0)*
 

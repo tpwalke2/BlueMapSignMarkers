@@ -75,7 +75,12 @@ File: `config/bluemapsignmarkers/BMSM-Core.json`. Path is fixed (not per-world) 
      `lineWidth`/`lineColor`, which both also use for their border) — those fields are silently ignored for the
      group's actual type, so this just flags a likely config mistake rather than rejecting it. `sorting`/`toggleable`
      apply to every group type (thin `MarkerSet` passthroughs — see `core-pipeline.md` §6) so neither has a
-     type-mismatch warning. `allowPlayerColors` (GitHub issue #198) is `LINE`/`SHAPE`/`EXTRUDE`-only, resolved by
+     type-mismatch warning. `name` has no default-safe fallback like the fields above (it's not derivable from a
+     Java default, only from the group's own prefix): `resolveName` returns the configured name if non-blank,
+     otherwise falls back to the group's `prefix` if that's non-blank, otherwise the literal `"(unnamed)"`, logging
+     a warning either way — this replaced passing `markerGroup.name()` straight to `MarkerGroup`'s constructor,
+     which `requireNonNull`s the field and previously threw on a missing/blank name, wiping the *entire* config
+     back to defaults rather than degrading just that one group. `allowPlayerColors` (GitHub issue #198) is `LINE`/`SHAPE`/`EXTRUDE`-only, resolved by
      `resolveAllowPlayerColors`: unset or set on a `POI` group both resolve to `false` (`warnOnTypeFieldMismatches`
      warns on the `POI` case, alongside `lineWidth`/`lineColor`/`fillColor`/`depthTest`). It lets a player set a
      multi-point marker's rendered colour by dyeing one of its member signs instead of an admin editing
@@ -87,6 +92,8 @@ File: `config/bluemapsignmarkers/BMSM-Core.json`. Path is fixed (not per-world) 
   `OutputStreamWriter`, ticket 01) rather than the JVM's platform-default charset, so a non-ASCII marker-group
   name survives a restart regardless of the host's default encoding.
 - `saveConfig(config)` creates parent dirs if needed and writes pretty-printed Gson JSON.
+- `BMSMConfigV2.getMarkerGroups()` returns `markerGroups.clone()`, a defensive shallow copy — a caller mutating the
+  returned array (e.g. reordering it) can no longer corrupt the singleton config's own backing array.
 
 ## Sign persistence (`core/signs/persistence/`)
 
@@ -99,15 +106,18 @@ Storage root is **per-world, region-sharded**: `{server_root}/bluemapsignmarkers
 externally deleted/regenerated — GitHub issue #109) can query "signs known in this region" cheaply instead of
 scanning every cached sign; that reconciliation logic itself is not yet implemented.
 
-`ServerPathProvider.getMarkerStorageRoot(server)` (implemented on `BlueMapSignMarkersMod`) resolves the root:
-`levelDir = server.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize()`, server root =
-`levelDir.getParent()`, level name = `levelDir.getFileName()`. The `.normalize()` is required because
+`ServerPathProvider.getMarkerStorageRoot(server)` (implemented on `BlueMapSignMarkersMod`) delegates to
+`ServerPathResolver.resolveMarkerStorageRoot(rawLevelPath)` (`common`, plain Java — extracted so this path math is
+directly unit-testable, see `architecture.md`): `levelDir = rawLevelPath.normalize()`, server root =
+`levelDir.getParent()`, level name = `levelDir.getFileName()`, where `rawLevelPath` is
+`server.getWorldPath(LevelResource.ROOT).toAbsolutePath()`. The `.normalize()` is required because
 `LevelResource.ROOT`'s relative path is literally `"."`, which `Path.resolve()` doesn't collapse on its own —
 skipping it shifts `getParent()`/`getFileName()` by one level and lands the storage root inside the world save
 folder instead of beside it. This also fixed a pre-existing bug where the old path formula's extra `.getParent()`
 resolved to the *run directory's* name, not the level name (`../plans/codebase-review-2026-07-11.md` finding #1).
-`BlueMapSignMarkersMod.getLegacyMarkerFilePath` intentionally keeps the old (buggy) formula unchanged — migration
-must locate files at the path they were actually written to, not the corrected one.
+`BlueMapSignMarkersMod.getLegacyMarkerFilePath` delegates to `ServerPathResolver.resolveLegacyMarkerFilePath`, which
+intentionally keeps the old (buggy) formula unchanged — migration must locate files at the path they were actually
+written to, not the corrected one.
 
 Loaded on `SERVER_STARTING`, saved on `SERVER_STOPPING` (then `SignManager.stop()`).
 
@@ -149,8 +159,11 @@ representation.
 `relativeFilePath()` splits `dimension` (a string like `minecraft:overworld`, or the `WorldMap.UNKNOWN` sentinel
 `"unknown"` with no colon) on the first `:` into namespace/path segments, appending `r.{regionX}.{regionZ}.json`.
 It rejects (throws `IllegalArgumentException`) a blank/`.`/`..` namespace, or a resolved relative path that's
-absolute, starts with `..`, or otherwise escapes the namespace directory after `.normalize()` — a defense against a
-maliciously/accidentally crafted dimension id writing outside the storage root.
+absolute, starts with `..`, has a non-`null` root component (catches a Windows "drive-relative" path — e.g. a raw
+path segment starting with a single `\` — that reports `isAbsolute() == false` but still carries a root component
+`resolve()` takes on in place of the namespace directory, so `isAbsolute()` alone wouldn't catch it), or otherwise
+escapes the namespace directory after `.normalize()` — a defense against a maliciously/accidentally crafted
+dimension id writing outside the storage root.
 `SignRegionPartitioner.partition(List<SignEntry>)` groups entries into `Map<SignRegionKey, List<SignEntry>>` using
 each entry's `key().parentMap()`/`x()`/`z()` — the shared grouping logic behind both save and migration.
 
@@ -258,5 +271,5 @@ in place. Old region files (or a not-yet-migrated legacy `signs.json`) on live s
 the version they were written with.
 
 ---
-*Last updated: 2026-09-07 | Verified against: main (d201c9e)*
+*Last updated: 2026-09-07 | Verified against: main (6c090c0)*
 

@@ -12,10 +12,12 @@ builds/adds) an entry:
    found) and calls `SignManager.addOrUpdate(...)` for every stored entry (see `config-and-persistence.md`).
 2. **Block entity load** — `BlueMapSignMarkersMod.onBlockEntityLoad` (registered on
    `ServerBlockEntityEvents.BLOCK_ENTITY_LOAD`) fires for every loaded `SignBlockEntity` and calls
-   `SignHelper.createSignEntry(entity, WorldMap.UNKNOWN)` → `SignManager.addOrUpdate(...)`. Player id is the
-   `WorldMap.UNKNOWN` (`"unknown"`) sentinel here because chunk load isn't attributable to a player — this
-   constant is the single canonical source for that sentinel (ticket 08 consolidated a second, independent
-   `"unknown"` literal duplicated in `SignManager`; both now reference `WorldMap.UNKNOWN`).
+   `SignHelper.createSignEntry(entity, PlayerIds.UNKNOWN)` → `SignManager.addOrUpdate(...)`. Player id is the
+   `PlayerIds.UNKNOWN` (`"unknown"`) sentinel here because chunk load isn't attributable to a player. `PlayerIds`
+   (`core.signs`) is the single canonical source for that sentinel — deliberately a separate constant from
+   `WorldMap.UNKNOWN` (the no-dimension-known sentinel), even though both currently hold `"unknown"`, since
+   `PlayerIds.UNKNOWN` is compared/persisted as a real `playerId` and must keep that exact value regardless of
+   what `WorldMap.UNKNOWN` does.
 3. **Mixins** (`src/main/resources/bluemapsignmarkers.mixins.json`, server-only, `JAVA_21` compat level):
    - `SignBlockEntityInject` injects `SignBlockEntity.updateSignText` at `HEAD` (sets a `@Unique` guard flag,
      `bluemapsignmarkers$inUpdateSignText`) and at `TAIL` (clears the flag) → a player edited a sign →
@@ -25,7 +27,7 @@ builds/adds) an entry:
      guard a plain text edit would dispatch twice (harmless but wasteful). This second hook is what makes
      dyeing/glowing/un-glowing an already-placed sign (right-clicking it with a dye, ink sac, or glow ink sac —
      none of which call `updateSignText`) visible to the mod at all: `SignManager.addOrUpdate(SignHelper.createSignEntry(this,
-     WorldMap.UNKNOWN))`, `WorldMap.UNKNOWN` because no `Player` is available at this injection point. See
+     PlayerIds.UNKNOWN))`, `PlayerIds.UNKNOWN` because no `Player` is available at this injection point. See
      `../plans/player-marker-colors/spec.md` "Detecting a dye change: mixin" for why a mixin (not a Fabric API
      event) is the only clean hook for this.
    - `AbstractBlockInject` injects `BlockBehaviour.affectNeighborsAfterRemoval` at `HEAD`, but only proceeds
@@ -79,7 +81,11 @@ the same label/detail.
 
 `SignEntryHelper` (plain Java, `core.signs`) derives the values `SignManager` dispatches from a `SignEntry`'s
 front/back `SignLinesParseResult`s: `getPrefix` prefers the front side's prefix, falling back to the back side's
-(`null` if neither matched); `getLabel` likewise prefers front, falling back to back. `getDetail` merges both
+(`null` if neither matched); `getLabel` likewise prefers front, falling back to back — but only falls back when
+front and back either match the *same* group or the front side didn't match at all; if front and back matched two
+*different* groups, a blank front label returns `""` rather than the back's label, since the marker belongs to the
+front's group (mirrors `getDetail`'s same-group rule below, and closes the same class of bug: previously a blank
+front label on a group-mismatched sign silently borrowed the other group's label text). `getDetail` merges both
 sides' detail text (`"FRONT: ...%nBACK: ..."`) only when front and back **matched the same marker group** (ticket
 07, `.scratch/codebase-review-followups/issues/07-fix-dual-sided-sign-semantics.md`); when they matched two
 *different* groups, only the front side's detail is used — matching `getPrefix`'s front-preferred rule for which
@@ -232,7 +238,7 @@ through this method, so a sign whose prefix was renamed while the server was off
 correctly rather than dispatched under a stale cached parse. Then looks up `existing` from `signCache`, computes
 `oldRep`/`newRep` from `existing`/the reparsed `signEntry` respectively, updates `signCache`/`chunkIndex` (removing the key if
 `newRep == null` and something was cached, else caching the merged entry — the merge preserves the *existing*
-cached `playerId` when the incoming entry's is the `WorldMap.UNKNOWN` chunk-load sentinel, and preserves the
+cached `playerId` when the incoming entry's is the `PlayerIds.UNKNOWN` chunk-load sentinel, and preserves the
 existing entry's `createdAtMillis` rather than ever recomputing it), then dispatches whatever
 `computeTransitionAction` returns (if non-`null`), passing a fresh `getAllSigns()` snapshot as `allSigns`.
 
@@ -493,6 +499,12 @@ Two id schemes now exist side by side (position-keyed and content-keyed), unifie
   `setShapeMarker` does, then `put`s an `ExtrudeMarker.builder().label(...).detail(...).shape(shape, minY,
   maxY).lineWidth(...).lineColor(...).fillColor(...).depthTestEnabled(markerGroup.depthTest()).build()` into each
   marker set's map, keyed by `action.getMarkerIdentifier().getId()` (the content-keyed `"extrude:" + label` id, §5).
+- Two more small helpers are package-private (not `private`) specifically for direct unit testing, alongside
+  `resolveExtrudeHeightRange` above: `pointOf(MarkerIdentifier)` (builds the single-point `List<LinePoint>` used by
+  the render-bounds gate, §8, for a position-keyed POI marker) and `isInsideRenderBounds(RenderMaskEvaluator.RenderMask,
+  List<LinePoint>)` (the pure mask-vs-points predicate, split out of the `mapId`-taking overload that does the cache
+  lookup) — both covered in `BlueMapAPIConnectorTest` without needing a live connector instance or `bluemap-api`
+  (`compileOnly`) on the test classpath.
 - `addMarker` only actually builds a marker `if (markerGroup.type() == MarkerGroupType.POI)` — this is a real,
   live branch now that `MarkerGroupType.LINE`/`SHAPE`/`EXTRUDE` exist (no longer future-proofing for values that
   didn't exist): a `LINE`-, `SHAPE`-, or `EXTRUDE`-typed group's signs never reach `addMarker` at all, since
@@ -620,5 +632,5 @@ gating" section. This section covers the code-level mechanics.
   themselves are otherwise unchanged — the fix is localized to `prepareGated`.
 
 ---
-*Last updated: 2026-09-07 | Verified against: main (d201c9e)*
+*Last updated: 2026-09-07 | Verified against: main (6c090c0)*
 
