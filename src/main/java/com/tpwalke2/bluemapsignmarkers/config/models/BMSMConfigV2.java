@@ -16,6 +16,6 @@ public final class BMSMConfigV2 {
     private MarkerGroup[] markerGroups = new MarkerGroup[]{MarkerGroup.DEFAULT_POI_GROUP};
 
     public MarkerGroup[] getMarkerGroups() {
-        return markerGroups;
+        return markerGroups.clone();
     }
 }
