@@ -127,11 +127,14 @@ restart alone does not trigger the upgrade sweep (only a genuine BlueMap disable
 
 `MarkerGroup` (record: prefix, matchType, type, name, icon, offsetX/Y, defaultHidden, minDistance/maxDistance,
 lineWidth, lineColor, fillColor, sorting, toggleable, depthTest, cssClasses) is the unit of configuration described
-in `README.md`. `type` (`MarkerGroupType`: `POI`, `LINE`, or `SHAPE`) picks which kind of marker the group's signs produce;
-`lineWidth`/`lineColor` apply to `LINE`/`SHAPE` groups (setting them on a `POI` group is a warning, not an error).
+in `README.md`. `type` (`MarkerGroupType`: `POI`, `LINE`, `SHAPE`, or `EXTRUDE`) picks which kind of marker the
+group's signs produce; `lineWidth`/`lineColor` apply to `LINE`/`SHAPE`/`EXTRUDE` groups (setting them on a `POI`
+group is a warning, not an error), and `fillColor` additionally applies to `SHAPE`/`EXTRUDE` (a volume gets a
+floor/ceiling anchored to its members' Y range, per `BlueMapAPIConnector.resolveExtrudeHeightRange`).
 `sorting`/`toggleable` are thin BlueMap `MarkerSet` passthroughs (menu order, hideability) that apply to every group
-type; `depthTest` (terrain occlusion) is `LINE`/`SHAPE`-only and `cssClasses` (custom.css hooks) is `POI`-only, each
-resolved in `ConfigProvider` and wired into the corresponding BlueMap builder call in `BlueMapAPIConnector`.
+type; `depthTest` (terrain occlusion) is `LINE`/`SHAPE`/`EXTRUDE`-only and `cssClasses` (custom.css hooks) is
+`POI`-only, each resolved in `ConfigProvider` and wired into the corresponding BlueMap builder call in
+`BlueMapAPIConnector`.
 `ConfigManager` lazily loads a singleton `BMSMConfigV2`
 via `ConfigProvider` from `config/bluemapsignmarkers/BMSM-Core.json`, creating sane defaults (a single `[poi]` group)
 if the file is missing or fails to load. `SignLinesParser` matches sign text against groups using either

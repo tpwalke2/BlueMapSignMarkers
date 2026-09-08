@@ -45,9 +45,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 public class BlueMapAPIConnector {
-    public static final String MAP_NOT_FOUND = "Map not found: {}";
-    public static final String WORLD_NOT_FOUND = "World not found: {}";
-    public static final String WORLD_MAPS_EMPTY = "World maps empty: {}";
+    private static final String MAP_NOT_FOUND = "Map not found: {}";
+    private static final String WORLD_NOT_FOUND = "World not found: {}";
+    private static final String WORLD_MAPS_EMPTY = "World maps empty: {}";
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
     // Fixed on Fabric - BlueMap's own per-map config directory, read for each real map's render-mask
     // (see RenderMaskEvaluator). No BlueMap API accessor exposes this path or a bounds check directly.
@@ -365,7 +365,12 @@ public class BlueMapAPIConnector {
 
     private static void setLineMarker(SetLineMarkerAction action, Map<String, Marker> markers) {
         LOGGER.debug("Setting line marker...");
-        if (action.getPoints().size() < 2) return; // defensive - SignManager should never dispatch below 2
+        if (action.getPoints().size() < 2) {
+            // defensive - SignManager should never dispatch below 2; warn so a regression is visible.
+            LOGGER.warn("Refusing to set line marker '{}' with fewer than 2 points ({})",
+                    LogUtils.sanitizeForLog(action.getLabel()), action.getPoints().size());
+            return;
+        }
 
         var line = new Line(action.getPoints().stream().map(p -> new Vector3d(p.x(), p.y(), p.z())).toList());
         var color = ColorUtils.parseHex(action.getLineColor());
@@ -386,7 +391,12 @@ public class BlueMapAPIConnector {
 
     private static void setShapeMarker(SetShapeMarkerAction action, Map<String, Marker> markers) {
         LOGGER.debug("Setting shape marker...");
-        if (action.getPoints().size() < 3) return; // defensive - SignManager should never dispatch below 3
+        if (action.getPoints().size() < 3) {
+            // defensive - SignManager should never dispatch below 3; warn so a regression is visible.
+            LOGGER.warn("Refusing to set shape marker '{}' with fewer than 3 points ({})",
+                    LogUtils.sanitizeForLog(action.getLabel()), action.getPoints().size());
+            return;
+        }
 
         var points = action.getPoints();
         var shape = new Shape(points.stream().map(p -> new Vector2d(p.x(), p.z())).toList());
@@ -433,7 +443,12 @@ public class BlueMapAPIConnector {
 
     private static void setExtrudeMarker(SetExtrudeMarkerAction action, Map<String, Marker> markers) {
         LOGGER.debug("Setting extrude marker...");
-        if (action.getPoints().size() < 3) return; // defensive - SignManager should never dispatch below 3
+        if (action.getPoints().size() < 3) {
+            // defensive - SignManager should never dispatch below 3; warn so a regression is visible.
+            LOGGER.warn("Refusing to set extrude marker '{}' with fewer than 3 points ({})",
+                    LogUtils.sanitizeForLog(action.getLabel()), action.getPoints().size());
+            return;
+        }
 
         var points = action.getPoints();
         var shape = new Shape(points.stream().map(p -> new Vector2d(p.x(), p.z())).toList());
@@ -457,30 +472,33 @@ public class BlueMapAPIConnector {
     }
 
     private static void addMarker(AddMarkerAction addAction, Map<String, Marker> markers) {
-        LOGGER.debug("Adding marker...");
         var identifier = addAction.getMarkerIdentifier();
         var markerGroup = identifier.parentSet().markerGroup();
-        if (markerGroup.type() == MarkerGroupType.POI) {
-            LOGGER.debug("Adding POI marker...");
-            var markerBuilder = POIMarker.builder()
-                    .position((double) identifier.x(), (double) identifier.y(), (double) identifier.z())
-                    .label(addAction.getLabel())
-                    .detail(HtmlUtils.toHtmlDetail(addAction.getDetail()));
-
-            if (markerGroup.icon() != null && !markerGroup.icon().isEmpty()) {
-                markerBuilder.icon(markerGroup.icon(), markerGroup.offsetX(), markerGroup.offsetY());
-            }
-
-            if (!markerGroup.cssClasses().isEmpty()) {
-                markerBuilder.styleClasses(markerGroup.cssClasses().toArray(new String[0]));
-            }
-
-            LOGGER.debug("Adding marker (id {}) to marker set", identifier.getId());
-            var marker = markerBuilder.build();
-            marker.setMinDistance(markerGroup.minDistance());
-            marker.setMaxDistance(markerGroup.maxDistance());
-            markers.put(identifier.getId(), marker);
+        if (markerGroup.type() != MarkerGroupType.POI) {
+            LOGGER.warn("Refusing to add a POI marker for non-POI marker group '{}' (type {})",
+                    markerGroup.name(), markerGroup.type());
+            return;
         }
+
+        LOGGER.debug("Adding POI marker...");
+        var markerBuilder = POIMarker.builder()
+                .position((double) identifier.x(), (double) identifier.y(), (double) identifier.z())
+                .label(addAction.getLabel())
+                .detail(HtmlUtils.toHtmlDetail(addAction.getDetail()));
+
+        if (markerGroup.icon() != null && !markerGroup.icon().isEmpty()) {
+            markerBuilder.icon(markerGroup.icon(), markerGroup.offsetX(), markerGroup.offsetY());
+        }
+
+        if (!markerGroup.cssClasses().isEmpty()) {
+            markerBuilder.styleClasses(markerGroup.cssClasses().toArray(new String[0]));
+        }
+
+        LOGGER.debug("Adding marker (id {}) to marker set", identifier.getId());
+        var marker = markerBuilder.build();
+        marker.setMinDistance(markerGroup.minDistance());
+        marker.setMaxDistance(markerGroup.maxDistance());
+        markers.put(identifier.getId(), marker);
     }
 
     private void onError(Throwable throwable) {
@@ -533,6 +551,7 @@ public class BlueMapAPIConnector {
                         .build();
                 blueMapMap.getMarkerSets().putIfAbsent(markerSetIdentifier.markerGroup().name(), markerSet);
             } else {
+                markerSet.setLabel(markerSetIdentifier.markerGroup().name());
                 markerSet.setDefaultHidden(markerSetIdentifier.markerGroup().defaultHidden());
                 markerSet.setSorting(markerSetIdentifier.markerGroup().sorting());
                 markerSet.setToggleable(markerSetIdentifier.markerGroup().toggleable());

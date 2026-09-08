@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.UUID;
 
 public class FileUtils {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
@@ -51,7 +52,9 @@ public class FileUtils {
     // later createBackup() call would otherwise mistake for a valid completed backup.
     private static boolean copyFile(String sourcePath, String destinationPath) {
         var destination = Paths.get(destinationPath);
-        var tempFile = destination.resolveSibling(destination.getFileName() + ".tmp");
+        // UUID suffix: currently unreachable given single-threaded call sites, purely defensive against a
+        // future concurrent caller writing the same destinationPath colliding on this temp file's name.
+        var tempFile = destination.resolveSibling(destination.getFileName() + "." + UUID.randomUUID() + ".tmp");
         try {
             Files.copy(Paths.get(sourcePath), tempFile, StandardCopyOption.REPLACE_EXISTING);
             Files.move(tempFile, destination, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);

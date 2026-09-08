@@ -3,7 +3,6 @@ package com.tpwalke2.bluemapsignmarkers.core.signs;
 import com.tpwalke2.bluemapsignmarkers.Constants;
 import com.tpwalke2.bluemapsignmarkers.common.SafeCall;
 import com.tpwalke2.bluemapsignmarkers.config.ConfigManager;
-import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.BlueMapAPIConnector;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.IResetHandler;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.ActionFactory;
@@ -129,7 +128,7 @@ public class SignManager implements IResetHandler {
                 ? signEntry
                 : new SignEntry(
                         key,
-                        WorldMap.UNKNOWN.equals(signEntry.playerId()) ? existing.playerId() : signEntry.playerId(),
+                        PlayerIds.UNKNOWN.equals(signEntry.playerId()) ? existing.playerId() : signEntry.playerId(),
                         signEntry.frontText(),
                         signEntry.backText(),
                         existing.createdAtMillis(),

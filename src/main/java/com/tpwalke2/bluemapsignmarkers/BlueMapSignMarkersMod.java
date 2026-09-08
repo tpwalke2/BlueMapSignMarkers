@@ -1,7 +1,8 @@
 package com.tpwalke2.bluemapsignmarkers;
 
 import com.tpwalke2.bluemapsignmarkers.common.SafeCall;
-import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
+import com.tpwalke2.bluemapsignmarkers.common.ServerPathResolver;
+import com.tpwalke2.bluemapsignmarkers.core.signs.PlayerIds;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignHelper;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignManager;
 import com.tpwalke2.bluemapsignmarkers.core.signs.persistence.SignProvider;
@@ -46,29 +47,18 @@ public class BlueMapSignMarkersMod implements DedicatedServerModInitializer, Ser
 
 	@Override
 	public Path getMarkerStorageRoot(MinecraftServer server) {
-		// normalize() is required: LevelResource.ROOT's relative path is ".", so without it levelDir keeps an
-		// unresolved trailing "." segment, shifting getParent()/getFileName() by one level (serverRoot would
-		// resolve to the level dir itself, and levelName to "." instead of the level name).
-		var levelDir = server.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize();
-		var serverRoot = levelDir.getParent();
-		var levelName = levelDir.getFileName();
-
-		return serverRoot.resolve(Constants.MOD_ID).resolve(levelName);
+		return ServerPathResolver.resolveMarkerStorageRoot(server.getWorldPath(LevelResource.ROOT).toAbsolutePath());
 	}
 
-	// Pre-existing (buggy) formula kept as-is: it resolves to the run directory's name, not the level name,
-	// which is exactly what's on disk for every install predating region-sharded storage. Migration needs to
-	// find files at the path they were actually written to, not the corrected one getMarkerStorageRoot uses.
 	private String getLegacyMarkerFilePath(MinecraftServer server) {
-		var worldSaveName = server.getWorldPath(LevelResource.ROOT).toAbsolutePath().getParent().getFileName();
-		return String.format("config/%s/%s/signs.json", Constants.MOD_ID, worldSaveName);
+		return ServerPathResolver.resolveLegacyMarkerFilePath(server.getWorldPath(LevelResource.ROOT).toAbsolutePath());
 	}
 
 	private void onBlockEntityLoad(BlockEntity blockEntity, ServerLevel world) {
 		if (!(blockEntity instanceof SignBlockEntity castBlockEntity)) return;
 
 		SafeCall.run("onBlockEntityLoad",
-				() -> SignManager.addOrUpdate(SignHelper.createSignEntry(castBlockEntity, WorldMap.UNKNOWN)));
+				() -> SignManager.addOrUpdate(SignHelper.createSignEntry(castBlockEntity, PlayerIds.UNKNOWN)));
 	}
 
 	// No special case for a newly-generated chunk (generated == true): that flag also fires when a chunk's saved

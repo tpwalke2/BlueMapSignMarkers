@@ -113,6 +113,9 @@ public class RenderMaskEvaluator {
 
     // Mirrors BlueMapConfigManager.sanitiseMapId (\W -> _) so an oddly-named config file still
     // resolves to the same id BlueMap itself computed, rather than assuming literal identity.
+    // findFirst() means that if two *.conf files sanitize to the same mapId (very unlikely given
+    // BlueMap assigns ids), which one wins is filesystem-listing-order-dependent, i.e. non-deterministic
+    // across platforms/runs - Files.list() makes no ordering guarantee.
     private static Path findConfigFile(String mapId, Path mapsConfigDir) {
         if (!Files.isDirectory(mapsConfigDir)) {
             return null;
