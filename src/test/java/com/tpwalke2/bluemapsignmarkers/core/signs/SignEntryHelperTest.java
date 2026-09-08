@@ -96,6 +96,15 @@ class SignEntryHelperTest {
     }
 
     @Test
+    void getLabelReturnsEmptyWhenSidesMatchDifferentGroups() {
+        // Front and back match different marker groups - the marker belongs to the front's group
+        // (getPrefix prefers front), so a blank front label must not fall back to the back's label.
+        var entry = signEntry(parsed("[poi]", "", ""), parsed("[event]", "Fair", "Fair"));
+
+        assertEquals("", SignEntryHelper.getLabel(entry));
+    }
+
+    @Test
     void getLabelReturnsEmptyWhenBothBlank() {
         var entry = signEntry(empty(), empty());
 
