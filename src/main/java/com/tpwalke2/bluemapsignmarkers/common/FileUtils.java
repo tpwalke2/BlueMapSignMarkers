@@ -39,12 +39,24 @@ public class FileUtils {
         var originalFile = new File(originalPath);
         if (!originalFile.exists()) return;
 
-        var backupPath = originalPath + suffix;
-        var backupFile = new File(backupPath);
-        if (backupFile.exists()) return;
+        var backupPath = uniqueBackupPath(originalPath, suffix);
 
         LOGGER.info("Backing up {}...", fileDescription);
         moveFile(originalPath, backupPath);
+    }
+
+    // Never leaves the original sitting at originalPath just because an earlier backup already occupies the
+    // default backup path - a caller relying on "the original is gone once backed up" (e.g. LegacySignFileMigrator,
+    // which re-runs a full migration on every boot for as long as the legacy file still exists) would otherwise
+    // re-trigger forever, silently overwriting newer state with whatever that stale legacy file still holds.
+    private static String uniqueBackupPath(String originalPath, String suffix) {
+        var candidate = originalPath + suffix;
+        var attempt = 2;
+        while (new File(candidate).exists()) {
+            candidate = originalPath + suffix + "." + attempt;
+            attempt++;
+        }
+        return candidate;
     }
 
     // Copies via a temp file in the same directory, then an atomic move into place, so a failure partway through

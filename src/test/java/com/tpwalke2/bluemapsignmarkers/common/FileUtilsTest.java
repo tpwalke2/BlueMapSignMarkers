@@ -64,8 +64,11 @@ class FileUtilsTest {
         assertFalse(Files.exists(tempDir.resolve("missing.txt.bak")));
     }
 
+    // A caller relying on "the original is gone once moveToBackup returns" (LegacySignFileMigrator re-runs a
+    // full migration on every boot for as long as the legacy file still exists) would otherwise be stuck
+    // re-migrating forever if the original were left in place just because ".bak" was already taken.
     @Test
-    void moveToBackupDoesNothingWhenABackupAlreadyExists(@TempDir Path tempDir) throws IOException {
+    void moveToBackupFallsBackToANumberedNameWhenTheDefaultBackupAlreadyExists(@TempDir Path tempDir) throws IOException {
         var original = tempDir.resolve("original.txt");
         Files.writeString(original, "original content");
         var backup = tempDir.resolve("original.txt.bak");
@@ -73,8 +76,26 @@ class FileUtilsTest {
 
         FileUtils.moveToBackup(original.toString(), ".bak", "test file");
 
-        assertTrue(Files.exists(original), "the original should not be moved when a backup already exists");
-        assertEquals("pre-existing backup content", Files.readString(backup));
+        var secondBackup = tempDir.resolve("original.txt.bak.2");
+        assertFalse(Files.exists(original), "the original must always be retired, even if the default backup path is taken");
+        assertEquals("pre-existing backup content", Files.readString(backup), "an existing backup should not be overwritten");
+        assertTrue(Files.exists(secondBackup));
+        assertEquals("original content", Files.readString(secondBackup));
+    }
+
+    @Test
+    void moveToBackupKeepsNumberingWhenMultipleBackupsAlreadyExist(@TempDir Path tempDir) throws IOException {
+        var original = tempDir.resolve("original.txt");
+        Files.writeString(original, "original content");
+        Files.writeString(tempDir.resolve("original.txt.bak"), "first backup");
+        Files.writeString(tempDir.resolve("original.txt.bak.2"), "second backup");
+
+        FileUtils.moveToBackup(original.toString(), ".bak", "test file");
+
+        var thirdBackup = tempDir.resolve("original.txt.bak.3");
+        assertFalse(Files.exists(original));
+        assertTrue(Files.exists(thirdBackup));
+        assertEquals("original content", Files.readString(thirdBackup));
     }
 
     // The backup destination is routed through the original file itself as a fake parent directory (a regular
