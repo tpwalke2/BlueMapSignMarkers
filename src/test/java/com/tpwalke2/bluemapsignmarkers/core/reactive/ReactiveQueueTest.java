@@ -409,12 +409,14 @@ class ReactiveQueueTest {
                 "a broken error callback should not stop later messages from being processed");
     }
 
-    // Characterizes the current "before" behavior ahead of the concurrency-hardening pass: enqueue()
-    // unconditionally submits a fresh drain loop on every call rather than checking whether one is already
-    // running, so a burst of concurrent enqueues spawns more drain-loop submissions than there are messages.
-    // Despite that redundancy, every message is still delivered exactly once.
+    // Regression test for finding 62 (.scratch/concurrency-pass-2026-09/issues/03-reactivequeue-backpressure-and-redundant-drain.md):
+    // process() used to unconditionally submit a fresh drain loop on every enqueue() rather than checking
+    // whether one was already active, so a burst of concurrent enqueues could spawn as many redundant
+    // drain-loop tasks as messages (on top of the one submission per message actually needed). The
+    // in-flight-drain-loop guard now caps drain-loop submissions regardless of burst size, while still
+    // delivering every message exactly once.
     @Test
-    void concurrentEnqueueBurstDeliversEveryMessageExactlyOnceDespiteRedundantDrainLoopFanOut() throws Exception {
+    void concurrentEnqueueBurstDeliversEveryMessageExactlyOnceWithBoundedDrainLoopSubmissions() throws Exception {
         final int messageCount = 20;
         var submissionCount = new AtomicInteger();
         var delegate = Executors.newFixedThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors()));
@@ -449,12 +451,57 @@ class ReactiveQueueTest {
             assertEquals(
                     IntStream.range(0, messageCount).boxed().collect(Collectors.toSet()),
                     Set.copyOf(received));
+            // One submission per message (the inner per-message task) plus a small, bounded number of
+            // drain-loop submissions (never one per enqueue() call) - nowhere near 2x messageCount, which
+            // is what unconditional per-enqueue drain-loop submission would produce.
             assertTrue(
-                    submissionCount.get() > messageCount,
-                    "expected more executor submissions than messages (redundant drain-loop fan-out), got "
-                            + submissionCount.get());
+                    submissionCount.get() < messageCount * 2,
+                    "expected drain-loop submissions to be bounded rather than scaling with the burst size, got "
+                            + submissionCount.get() + " submissions for " + messageCount + " messages");
         } finally {
             starters.shutdownNow();
+            delegate.shutdownNow();
+        }
+    }
+
+    // Regression test for finding 61 (.scratch/concurrency-pass-2026-09/issues/03-reactivequeue-backpressure-and-redundant-drain.md):
+    // enqueue() now rejects (logs + drops) rather than growing the backing queue without bound once the
+    // configured capacity is reached.
+    @Test
+    void enqueueRejectsMessagesOnceCapacityIsReached() throws Exception {
+        var releaseProcessing = new CountDownLatch(1);
+        var firstMessageStarted = new CountDownLatch(1);
+        var received = new ConcurrentLinkedQueue<Integer>();
+        var delegate = Executors.newFixedThreadPool(1);
+        var capacity = 2;
+        var queue = new ReactiveQueue<Integer>(
+                () -> true,
+                message -> {
+                    firstMessageStarted.countDown();
+                    awaitUninterruptibly(releaseProcessing);
+                    received.add(message);
+                },
+                error -> { },
+                delegate,
+                capacity);
+        try {
+            // Consumed by the single worker thread immediately, blocking on releaseProcessing - so it
+            // never occupies a capacity slot on `queue` itself, only the two enqueues below do.
+            queue.enqueue(0);
+            assertTrue(firstMessageStarted.await(5, TimeUnit.SECONDS), "first message never started processing");
+
+            queue.enqueue(1);
+            queue.enqueue(2);
+            // Capacity (2) is now exhausted by messages 1 and 2 sitting on the queue behind the blocked worker.
+            queue.enqueue(3);
+
+            releaseProcessing.countDown();
+
+            assertTrue(awaitTrue(() -> received.size() >= 3, 5000),
+                    "the messages that fit within capacity should still all be processed");
+            assertEquals(List.of(0, 1, 2), List.copyOf(received),
+                    "message 3 should have been rejected once capacity was reached, never processed");
+        } finally {
             delegate.shutdownNow();
         }
     }
