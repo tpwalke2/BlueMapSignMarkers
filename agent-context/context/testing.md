@@ -49,7 +49,7 @@ updates), watching the BlueMap web UI update.
 
 ## Current coverage
 
-As of `main` (`6c090c0`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
+As of `main` (`b2c5fa0`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
 - `core/signs/SignLinesParserTest.java` — 12 `@Test` methods covering `SignLinesParser`: label-on-prefix-line vs.
   label-on-following-line, multi-line detail joining/trimming, leading/interstitial blank-line handling, no-match
   and all-blank sign results, `REGEX` match type's whole-line-match requirement (contrasted with `STARTS_WITH`),
@@ -223,9 +223,20 @@ As of `main` (`6c090c0`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   `loadConfigStillRejectsAnEmptyPrefixEvenWhenNameAlsoFallsBackToAPlaceholder` confirms `resolveName` itself
   doesn't throw when both `name` and `prefix` are absent (falls back to the `"(unnamed)"` placeholder), and that
   `validateMarkerGroups`'s empty-prefix rejection still fires afterward.
+  `loadConfigRejectsTheSamePrefixTextAcrossDifferentMatchTypes` confirms `validateMarkerGroups`'s duplicate-prefix
+  check compares prefix text alone, catching a collision even when one group is `STARTS_WITH` and the other
+  `REGEX`. `shutdownAwaitSeconds` (`config-and-persistence.md`) has the same shape of coverage as `sorting`:
+  `loadConfigDefaultsShutdownAwaitSecondsWhenOmitted`, `loadConfigPreservesExplicitShutdownAwaitSeconds`, and
+  malformed-value fallback tests `loadConfigFallsBackToDefaultShutdownAwaitSecondsWhenMalformed`/
+  `...WhenNonPositive`.
 - `config/ConfigManagerTest.java` — `get()` returns the config from the most recent `reload`; falls back to
   `new BMSMConfigV2()` defaults when the configured path fails to load; a second `reload()` replaces (not merges
-  with) what an earlier `reload` cached.
+  with) what an earlier `reload` cached. `concurrentFirstTimeCallersConvergeOnOneConfigInstance` (finding #72,
+  `agent-context/reviews/full-codebase-review_2026-09-07_0900.md`) is an active regression test for `get()`'s
+  double-checked-locking fix: many threads racing the very first (unsynchronized) `get()` call all converge on the
+  same loaded `BMSMConfigV2` instance instead of each redundantly loading and racing over which instance wins
+  (`resetForTesting()`, package-private, lets the test exercise the first-load path repeatedly per test method
+  instead of only once per JVM).
 - `core/bluemap/actions/ActionFactoryTest.java` — each of `createAddPOIAction`/`createRemovePOIAction`/
   `createUpdatePOIAction` builds the right `MarkerIdentifier` and action-specific fields;
   `createChangeGroupPOIActionBuildsARemoveAndAddEffectPair` (ticket 09, updated for the line-markers rewrite) now
@@ -251,18 +262,29 @@ As of `main` (`6c090c0`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   `getIdentifier` became `synchronized` (see `core-pipeline.md` §5).
 - `core/reactive/ReactiveQueueTest.java` — enqueue → processor callback delivery (single and multiple messages,
   each exactly once); `shouldRun` gating (queued while false, resumes once true, a mid-drain false leaves the rest
-  queued); a submission failure for one message reaching the error callback without affecting later messages.
+  queued); a submission failure for one message reaching the error callback without affecting later messages;
+  `exceptionThrownByProcessorCallbackIsSurfacedToTheErrorCallback` and
+  `exceptionThrownByTheErrorCallbackItselfDoesNotStopLaterMessagesFromBeingProcessed` cover the fixed gap where a
+  processor-callback exception used to be swallowed (`core-pipeline.md` §7).
   Concurrency-hardening regression coverage (`../plans/codebase-review-2026-07-11.md`, resolved 2026-07-22):
   `shutdownBlocksUntilAnInFlightTaskFinishesBeforeReturning` (finding #10 — `shutdown()` now blocks on
   `awaitTermination` rather than returning while a task is still mid-flight), `shutdownPermanentlyStopsTheQueueFromProcessingLaterEnqueues`
   and `shutdownRacingMidDrainStopsTheLoopWithoutSpawningAReplacementExecutor` (finding #2 — a shut-down queue never
   self-heals a replacement executor, including when `shutdown()` races a still-draining `processMessages()` loop),
-  and `concurrentEnqueueBurstDeliversEveryMessageExactlyOnceDespiteRedundantDrainLoopFanOut` (documents current
-  "before" behavior: a burst of concurrent enqueues spawns more drain-loop submissions than messages, but every
-  message still lands exactly once — not itself a bug, just characterizing the fan-out). A documented remaining
-  gap: an exception thrown by the processor callback itself never reaches `messageProcessorErrorCallback` (it's
-  captured on an unawaited `Future` and dropped) versus a submission-time failure, which does reach it via a fake
-  executor. `reactiveQueueGivesNoOrderingGuaranteeBetweenIndependentlySubmittedMessages` (ticket 09) confirms and
+  and `concurrentEnqueueBurstDeliversEveryMessageExactlyOnceWithBoundedDrainLoopSubmissions` (renamed from
+  `...DespiteRedundantDrainLoopFanOut` once the `draining` CAS guard bounded the fan-out it used to just
+  characterize — now confirms a burst of concurrent enqueues submits a bounded number of drain-loop tasks while
+  still delivering every message exactly once). `shutdownReturnsTrueWhenNoExecutorWasEverCreated`,
+  `shutdownHonorsAConfiguredTimeoutShorterThanTheDefault`, and
+  `shutdownReturnsFalseWhenATaskIgnoresInterruptionThroughBothAwaitWindows` cover `shutdown()`'s configurable
+  `shutdownAwaitSeconds` and boolean return value (`core-pipeline.md` §7). `isShutdownIsFalseAndHasNotStartedIsFalseBeforeAnyWorkHasBeenScheduled`,
+  `isShutdownIsFalseAndHasNotStartedIsFalseWhenShouldRunIsFalse`, and
+  `isShutdownIsFalseAndHasStartedIsTrueOnceWorkHasBeenScheduled` cover the `isShutdown()`/`hasStarted()` split
+  (finding 63, `.scratch/concurrency-pass-2026-09/issues/04-reactivequeue-isshutdown-semantics.md`) — `isShutdown()`
+  no longer conflates "never started" with "genuinely shut down". `enqueueRejectsMessagesOnceCapacityIsReached` and
+  `consumeOverflowSinceLastCheckReportsAndClearsCapacityRejection` cover the capacity bound and overflow-tracking
+  added for finding 61 (`agent-context/reviews/full-codebase-review_2026-09-07_0900.md`, `core-pipeline.md` §7).
+  `reactiveQueueGivesNoOrderingGuaranteeBetweenIndependentlySubmittedMessages` (ticket 09) confirms and
   reproduces that two independently-`enqueue()`d messages have no relative execution-order guarantee once the
   executor has more than one worker thread (blocks the first message's processing on a real 2-thread pool and
   shows the second can finish first) — see `core-pipeline.md` §7 for why this is left as-is rather than fixed in
@@ -352,5 +374,5 @@ workflow jobs also now declare an explicit `permissions: contents: read` (least-
 the repo's default token permissions), and `publish.yml`'s job runs under a `modrinth-publish` GitHub Environment.
 
 ---
-*Last updated: 2026-09-07 | Verified against: main (6c090c0)*
+*Last updated: 2026-09-09 | Verified against: main (b2c5fa0)*
 

@@ -10,10 +10,15 @@ loading/migration mechanics, not the format itself.
 File: `config/bluemapsignmarkers/BMSM-Core.json`. Path is fixed (not per-world) —
 `ConfigProvider.getConfigPath()` = `Path.of("config", Constants.MOD_ID, "BMSM-Core.json")`.
 
-- `ConfigManager.get()` returns a `volatile` singleton reference, lazily populated by calling `reload()` on first
-  access if still `null` (not an eager static-field initializer — that would run the instant anything references
-  the class, including a test merely loading `ConfigManagerTest`, and write a real config file as a side effect).
-  **Config is hot-reloadable**: `ConfigManager.reload()` (`synchronized`, public) loads via `ConfigProvider.loadConfig()`
+- `ConfigManager.get()` returns a singleton reference, lazily populated by calling `reload()` on first access if
+  still `null` (not an eager static-field initializer — that would run the instant anything references the class,
+  including a test merely loading `ConfigManagerTest`, and write a real config file as a side effect). The
+  null-check-then-load is itself double-checked-locking (finding #72,
+  `agent-context/reviews/full-codebase-review_2026-09-07_0900.md`): the unsynchronized first check avoids paying a
+  lock on every `get()` call once loaded, but a second check *inside* a `synchronized (ConfigManager.class)` block
+  guards the actual `reload()` call, so racing first-time callers converge on a single load/parse pass and the same
+  config instance instead of each redundantly loading and racing over which instance wins. **Config is
+  hot-reloadable**: `ConfigManager.reload()` (`synchronized`, public) loads via `ConfigProvider.loadConfig()`
   and swaps the reference; `volatile` alone is enough for safe publication to other threads since the new
   `BMSMConfigV2` is fully built before the swap. Reload is wired to BlueMap's `/bluemap reload` via
   `SignManager.reloadConfig()` — see `core-pipeline.md` §3. A package-private `reload(Path)` overload (and matching
@@ -88,6 +93,16 @@ File: `config/bluemapsignmarkers/BMSM-Core.json`. Path is fixed (not per-world) 
   4. Any exception during load (`Gson.fromJson` failure, I/O error, or a `validateMarkerGroups` failure) logs and
      returns `null`, and `ConfigManager.loadCoreConfig` falls back to `new BMSMConfigV2()` defaults — a broken
      config file never prevents server startup, it just silently reverts to a single default `[poi]` group.
+- `BMSMConfigV2` also carries `shutdownAwaitSeconds` (default `DEFAULT_SHUTDOWN_AWAIT_SECONDS = 5`) — how long
+  `ReactiveQueue.shutdown()` (the BlueMap marker-action queue, `core-pipeline.md` §7) waits for in-flight tasks to
+  finish before forcing a `shutdownNow()`. Loaded the same validating-with-fallback way as `sorting`
+  (`LoadingBMSMConfigV2.shutdownAwaitSeconds` is a raw `JsonElement`, not a boxed `Integer`, so a malformed value —
+  wrong type or non-positive — degrades to the default with a warning via `resolveShutdownAwaitSeconds` instead of
+  failing `Gson.fromJson` for the whole config). `BlueMapAPIConnector.resetQueue()` reads
+  `ConfigManager.get().getShutdownAwaitSeconds()` when building each new `ReactiveQueue` instance, so an edited value
+  takes effect on the next BlueMap disable/enable or `/bluemap reload` (the connector's `onEnable` reloads config
+  *before* calling `resetQueue()` specifically so this value is current at construction time, not one reload behind
+  — see `core-pipeline.md` §6).
 - Config file reads/writes both go through `StandardCharsets.UTF_8` explicitly (`Files.readString`/
   `OutputStreamWriter`, ticket 01) rather than the JVM's platform-default charset, so a non-ASCII marker-group
   name survives a restart regardless of the host's default encoding.
@@ -208,11 +223,16 @@ each entry's `key().parentMap()`/`x()`/`z()` — the shared grouping logic behin
      still returning the converted current-version entries in-memory without a pre-migration backup on disk.
    - Writes the resulting entries via `RegionShardedSignEntryWriter.write(...)` (see below). Backs up the legacy
      file via `FileUtils.moveToBackup(legacyPath, ".migrated", ...)` — **renamed, not deleted** — only after
-     confirming every region file expected from `SignRegionPartitioner.partition(entryList)` actually exists on
-     disk (or the entry list was empty to begin with); if any expected region file is missing, the legacy file is
-     left in place and an error is logged, so a partial/failed migration doesn't lose the only remaining copy of
-     the data. A successful migration isn't re-attempted on future boots since step 1 will find the new storage
-     root non-empty from then on.
+     `regionFilesRoundTripCleanly` confirms every region file expected from
+     `SignRegionPartitioner.partition(entryList)` round-trip parses back to the *exact same entry content* it was
+     written from (or the entry list was empty to begin with); if any expected region file is missing, fails to
+     parse, or parses to a different entry set than expected (matching count with different/altered content — e.g.
+     valid-but-corrupted JSON — used to slip past a size-only check), the legacy file is left in place and an error
+     is logged, so a partial/failed migration doesn't lose the only remaining copy of the data. The comparison is a
+     `Set<SignEntry>` equality check (`SignEntry` is a record, so this is structural content comparison), not a
+     positional list compare, since the writer's on-disk ordering isn't guaranteed to match `partition()`'s
+     insertion order. A successful migration isn't re-attempted on future boots since step 1 will find the new
+     storage root non-empty from then on.
 3. Every resulting `SignEntry` (from either path) is fed through `SignManager.addOrUpdate(...)` — same as before
    sharding, loading signs at startup goes through the exact same decision logic as any other sign event (see
    `core-pipeline.md` §3). Each entry is wrapped in its own try/catch, so one malformed entry logs an error and is
@@ -271,5 +291,5 @@ in place. Old region files (or a not-yet-migrated legacy `signs.json`) on live s
 the version they were written with.
 
 ---
-*Last updated: 2026-09-07 | Verified against: main (6c090c0)*
+*Last updated: 2026-09-09 | Verified against: main (b2c5fa0)*
 
