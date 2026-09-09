@@ -31,8 +31,8 @@ public class ReactiveQueue<T> {
     private static final long CAPACITY_WARNING_THROTTLE_MILLIS = 1_000;
 
     private final ConcurrentLinkedQueue<T> queue;
-    // volatile so isShutdown() (called with no lock held, from any thread) sees getExecutor()'s
-    // synchronized write without needing its own synchronization (finding #12,
+    // volatile so isShutdown()/hasStarted() (called with no lock held, from any thread) see getExecutor()'s
+    // synchronized write without needing their own synchronization (finding #12,
     // plans/codebase-review-2026-07-11.md).
     private volatile ExecutorService executor;
     private volatile boolean shutdownRequested;
@@ -230,8 +230,32 @@ public class ReactiveQueue<T> {
         }
     }
 
+    // Previously also returned true whenever executor == null, conflating "genuinely shut down" with
+    // "never started" (a queue whose process() calls have all returned early via the shouldRun()/
+    // shutdownRequested checks before ever lazily creating an executor - e.g. SERVER_STARTING dispatching
+    // sign-load actions before BlueMap is available). BlueMapAPIConnector.onEnable() hit that conflation for
+    // real: it used to need a dedicated disabledSinceLastEnable flag to detect a genuine BlueMap
+    // disable/re-enable cycle, precisely because isShutdown() also reported true for the never-started case
+    // and mistook first startup for a reload - discarding every action enqueued during sign load before a
+    // single one was processed. Fixed here, that flag is gone; onEnable() now asks
+    // markerActionQueue.isShutdown() directly (see its comment) - see also hasStarted() below for querying
+    // the other half of the old conflation directly (finding 63,
+    // agent-context/reviews/full-codebase-review_2026-09-07_0900.md).
+    //
+    // shutdownRequested alone is sufficient here: only shutdown() ever sets it, always synchronously with
+    // calling executor.shutdown() on whatever executor exists at that moment (null or not), and no code
+    // outside this class can shut the internal executor down through any other path - so there's no
+    // scenario where the executor is independently shut down while shutdownRequested is still false.
     public boolean isShutdown() {
-        return shutdownRequested || executor == null || executor.isShutdown();
+        return shutdownRequested;
+    }
+
+    // Distinguishes "never processed anything yet" from "genuinely shut down" - the other half of the
+    // conflation isShutdown() used to have (finding 63, see above). True once this instance has lazily
+    // created its executor, i.e. at least one process() call got past the shouldRun()/shutdownRequested
+    // checks - regardless of whether it has since been shut down.
+    public boolean hasStarted() {
+        return executor != null;
     }
 
     // Blocks (up to shutdownAwaitSeconds) until every task already submitted to this generation's

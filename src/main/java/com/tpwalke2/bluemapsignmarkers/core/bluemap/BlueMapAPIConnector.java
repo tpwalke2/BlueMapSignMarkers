@@ -69,16 +69,6 @@ public class BlueMapAPIConnector {
     // reload, genuine BlueMap disable/enable) rather than re-read/re-parsed on every dispatch.
     private volatile Map<String, RenderMaskEvaluator.RenderMask> renderMaskCache;
     private volatile BlueMapAPI blueMapAPI;
-    // Tracks whether onDisable() has actually run since the last onEnable(), so onEnable() can tell a
-    // genuine BlueMap disable/re-enable cycle (a real reload, which must resetQueue()/fireReset() to
-    // re-diff signCache against the reloaded config) apart from the very first onEnable() a server ever
-    // sees. markerActionQueue.isShutdown() used to be used for this instead, but it also reports true for
-    // a brand-new queue whose executor was never lazily created - which is exactly what happens when
-    // SERVER_STARTING dispatches actions for every migrated/loaded sign before BlueMap is available:
-    // process() returns early (shouldRun() false) without ever creating an executor, so the first onEnable()
-    // saw isShutdown()==true and mistook startup for a reload, replacing markerActionQueue with an empty one
-    // and discarding every action enqueued during sign load before a single one was ever processed.
-    private volatile boolean disabledSinceLastEnable;
     // Set by onDisable() from markerActionQueue.shutdown()'s return value; read by the next onEnable() to
     // decide whether to warn that a non-interruptible straggler task may still race the reset replay below
     // (findings 26/27, agent-context/reviews/full-codebase-review_2026-09-07_0900.md). There's no better
@@ -513,11 +503,21 @@ public class BlueMapAPIConnector {
         LOGGER.error("Error processing marker action", throwable);
     }
 
+    // Genuine BlueMap disable/re-enable cycle (a real reload, which must resetQueue()/fireReset() to
+    // re-diff signCache against the reloaded config) vs. the very first onEnable() a server ever sees: told
+    // apart by markerActionQueue.isShutdown(), read here before resetQueue() replaces the reference below.
+    // Correct now that isShutdown() reports true only for a genuine shutdown() call rather than also
+    // conflating "never started" (finding 63,
+    // .scratch/concurrency-pass-2026-09/issues/04-reactivequeue-isshutdown-semantics.md) - this used to need
+    // a dedicated disabledSinceLastEnable flag instead, precisely because the old isShutdown() would also
+    // report true for a brand-new queue whose executor was never lazily created (e.g. SERVER_STARTING
+    // dispatching actions for every migrated/loaded sign before BlueMap is available - process() returns
+    // early via shouldRun() without ever creating an executor), which mistook first startup for a reload and
+    // discarded every action enqueued during sign load before a single one was ever processed.
     private void onEnable(BlueMapAPI api) {
         this.blueMapAPI = api;
 
-        if (disabledSinceLastEnable) {
-            disabledSinceLastEnable = false;
+        if (markerActionQueue.isShutdown()) {
             if (!lastShutdownConfirmedClean) {
                 LOGGER.warn("Resuming after a BlueMap disable whose shutdown() could not confirm every "
                         + "in-flight marker action had stopped; a straggler task may still race this reset's "
@@ -532,7 +532,6 @@ public class BlueMapAPIConnector {
     }
 
     private void onDisable(BlueMapAPI api) {
-        disabledSinceLastEnable = true;
         lastShutdownConfirmedClean = markerActionQueue.shutdown();
     }
 

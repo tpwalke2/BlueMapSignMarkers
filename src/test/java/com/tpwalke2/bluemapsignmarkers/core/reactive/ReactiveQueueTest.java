@@ -61,15 +61,34 @@ class ReactiveQueueTest {
         assertEquals(expected, Set.copyOf(received));
     }
 
+    // Regression test for finding 63 (.scratch/concurrency-pass-2026-09/issues/04-reactivequeue-isshutdown-semantics.md):
+    // isShutdown() used to also return true for a queue that had simply never started (executor == null),
+    // conflating that state with a genuine shutdown - hasStarted() now answers "never started" directly, so
+    // isShutdown() no longer needs to (and doesn't) report true for it.
     @Test
-    void isShutdownIsTrueBeforeAnyWorkHasBeenScheduled() {
+    void isShutdownIsFalseAndHasNotStartedIsFalseBeforeAnyWorkHasBeenScheduled() {
         var queue = new ReactiveQueue<String>(() -> true, message -> { }, error -> { });
 
-        assertTrue(queue.isShutdown());
+        assertFalse(queue.isShutdown(), "a queue that never processed anything is not shut down");
+        assertFalse(queue.hasStarted(), "a queue that never processed anything has not started");
+    }
+
+    // The other conflated state from finding 63: shouldRun() being false stops process() from ever creating
+    // an executor, same as a queue that's simply never been enqueued to - neither is a genuine shutdown.
+    @Test
+    void isShutdownIsFalseAndHasNotStartedIsFalseWhenShouldRunIsFalse() {
+        var invocations = new AtomicInteger();
+        var queue = new ReactiveQueue<String>(() -> false, message -> invocations.incrementAndGet(), error -> { });
+
+        queue.enqueue("hello");
+
+        assertEquals(0, invocations.get());
+        assertFalse(queue.isShutdown(), "shouldRun() being false is not a shutdown");
+        assertFalse(queue.hasStarted(), "process() returning early via shouldRun() never created an executor");
     }
 
     @Test
-    void isShutdownIsFalseOnceWorkHasBeenScheduled() throws Exception {
+    void isShutdownIsFalseAndHasStartedIsTrueOnceWorkHasBeenScheduled() throws Exception {
         var delivered = new CountDownLatch(1);
         var queue = new ReactiveQueue<String>(() -> true, message -> delivered.countDown(), error -> { });
 
@@ -77,6 +96,7 @@ class ReactiveQueueTest {
         assertTrue(delivered.await(5, TimeUnit.SECONDS));
 
         assertFalse(queue.isShutdown());
+        assertTrue(queue.hasStarted(), "a queue that has processed a message has started");
     }
 
     @Test
@@ -278,7 +298,8 @@ class ReactiveQueueTest {
 
         // shouldRun() is checked before any executor is touched, so nothing was ever scheduled.
         assertEquals(0, invocations.get());
-        assertTrue(queue.isShutdown());
+        // Not a shutdown - just never started (finding 63, see isShutdownIsFalseAndHasNotStartedIsFalseWhenShouldRunIsFalse).
+        assertFalse(queue.isShutdown());
     }
 
     @Test
