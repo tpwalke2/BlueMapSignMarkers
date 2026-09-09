@@ -58,8 +58,8 @@ public class BlueMapAPIConnector {
     // that's what volatile guarantees. It says nothing about the referenced objects themselves, which are
     // freely mutated afterward through their own thread-safe methods (ReactiveQueue.enqueue()/process(),
     // ConcurrentHashMap.get()/putIfAbsent()). No reader — dispatch()/onDisable()/onEnable() for
-    // markerActionQueue, getMarkerSets() for markerSetsCache, getMaps() for blueMapAPI — needs a joint
-    // snapshot of more than one of these fields at once, so per-field visibility is enough; a shared lock
+    // markerActionQueue, getMarkerSets() for markerSetsCache — needs a joint snapshot of more than one
+    // of these fields at once, so per-field visibility is enough; a shared lock
     // would additionally serialize dispatch() (hot path, every sign event) behind processMarkerAction()'s
     // BlueMap API calls, an unrelated critical section (findings #11 and #12,
     // plans/codebase-review-2026-07-11.md).
@@ -68,7 +68,6 @@ public class BlueMapAPIConnector {
     // Parsed render-mask per real BlueMapMap id, invalidated alongside markerSetsCache (config
     // reload, genuine BlueMap disable/enable) rather than re-read/re-parsed on every dispatch.
     private volatile Map<String, RenderMaskEvaluator.RenderMask> renderMaskCache;
-    private volatile BlueMapAPI blueMapAPI;
     // Set by onDisable() from markerActionQueue.shutdown()'s return value; read by the next onEnable() to
     // decide whether to warn that a non-interruptible straggler task may still race the reset replay below
     // (findings 26/27, agent-context/reviews/full-codebase-review_2026-09-07_0900.md). There's no better
@@ -90,10 +89,6 @@ public class BlueMapAPIConnector {
 
     public BlueMapAPIConnector() {
         resetQueue();
-        // BlueMap may already be enabled by the time this connector is constructed (e.g. mod reload); don't
-        // rely solely on the onEnable callback below to set blueMapAPI, or a dispatch() landing before that
-        // callback runs would see BlueMapAPI.getInstance().isPresent() true but this.blueMapAPI still null.
-        blueMapAPI = BlueMapAPI.getInstance().orElse(null);
 
         BlueMapAPI.onEnable(onEnableListener);
         BlueMapAPI.onDisable(onDisableListener);
@@ -515,17 +510,23 @@ public class BlueMapAPIConnector {
     // early via shouldRun() without ever creating an executor), which mistook first startup for a reload and
     // discarded every action enqueued during sign load before a single one was ever processed.
     private void onEnable(BlueMapAPI api) {
-        this.blueMapAPI = api;
+        // synchronized: BlueMap's listener dispatch is presumed single-threaded today, but the
+        // isShutdown() check-then-act (resetQueue()/fireReset()) isn't atomic on its own - a
+        // hypothetical concurrent onEnable() call could otherwise also observe isShutdown()==true and
+        // double-fire both (finding 44, agent-context/reviews/full-codebase-review_2026-09-07_0900.md).
+        // Shares the same lock as processMarkerAction/applySingleAction's marker mutations, which is
+        // fine here - onEnable() only runs on a genuine BlueMap enable/reload, never on the hot path.
+        synchronized (this) {
+            if (markerActionQueue.isShutdown()) {
+                if (!lastShutdownConfirmedClean) {
+                    LOGGER.warn("Resuming after a BlueMap disable whose shutdown() could not confirm every "
+                            + "in-flight marker action had stopped; a straggler task may still race this reset's "
+                            + "replay of marker state");
+                }
+                resetQueue();
 
-        if (markerActionQueue.isShutdown()) {
-            if (!lastShutdownConfirmedClean) {
-                LOGGER.warn("Resuming after a BlueMap disable whose shutdown() could not confirm every "
-                        + "in-flight marker action had stopped; a straggler task may still race this reset's "
-                        + "replay of marker state");
+                fireReset();
             }
-            resetQueue();
-
-            fireReset();
         }
 
         markerActionQueue.process();
@@ -578,7 +579,16 @@ public class BlueMapAPIConnector {
     }
 
     private Optional<Collection<BlueMapMap>> getMaps(String mapId) {
-        var world = this.blueMapAPI.getWorld(mapId);
+        // Re-fetch rather than trust a cached BlueMapAPI reference: a disable/re-enable between
+        // processMarkerAction's guard check and this call could otherwise operate against a defunct
+        // instance (finding 43, agent-context/reviews/full-codebase-review_2026-09-07_0900.md).
+        var apiInstance = BlueMapAPI.getInstance();
+        if (apiInstance.isEmpty()) {
+            LOGGER.debug("BlueMap API not present; skipping map lookup for {}", mapId);
+            return Optional.empty();
+        }
+
+        var world = apiInstance.get().getWorld(mapId);
 
         if (world.isEmpty()) {
             LOGGER.warn(WORLD_NOT_FOUND, mapId);
