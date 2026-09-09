@@ -25,7 +25,12 @@ public record SignRegionKey(String dimension, int regionX, int regionZ) {
 
         var namespaceDir = Path.of(namespace);
         var relativeDir = namespaceDir.resolve(rawPath).normalize();
-        if (relativeDir.isAbsolute() || relativeDir.startsWith("..") || !relativeDir.startsWith(namespaceDir)) {
+        // getRoot() != null catches a Windows "drive-relative" path (e.g. a raw path segment starting
+        // with a single '\') on its own: such a path reports isAbsolute() == false, but resolve() still
+        // discards namespaceDir in favor of it, carrying a root component namespaceDir never had - so
+        // relying on isAbsolute() alone would let it slip past this guard.
+        if (relativeDir.getRoot() != null || relativeDir.isAbsolute() || relativeDir.startsWith("..")
+                || !relativeDir.startsWith(namespaceDir)) {
             throw new IllegalArgumentException("Unsafe dimension id for storage path: " + dimension);
         }
 

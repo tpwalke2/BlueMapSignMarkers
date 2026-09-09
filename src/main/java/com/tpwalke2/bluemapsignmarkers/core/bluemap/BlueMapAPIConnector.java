@@ -5,6 +5,7 @@ import com.tpwalke2.bluemapsignmarkers.Constants;
 import com.tpwalke2.bluemapsignmarkers.common.ColorUtils;
 import com.tpwalke2.bluemapsignmarkers.common.HtmlUtils;
 import com.tpwalke2.bluemapsignmarkers.common.LogUtils;
+import com.tpwalke2.bluemapsignmarkers.config.ConfigManager;
 import com.tpwalke2.bluemapsignmarkers.core.bounds.RenderMaskEvaluator;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.AddMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.GroupTransitionMarkerAction;
@@ -18,13 +19,11 @@ import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetLineMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetShapeMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.UpdateMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.markers.DispatchedMarkerIdentifier;
-import com.tpwalke2.bluemapsignmarkers.core.markers.ExtrudeMarkerIdentifier;
-import com.tpwalke2.bluemapsignmarkers.core.markers.LineMarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.LinePoint;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifier;
-import com.tpwalke2.bluemapsignmarkers.core.markers.ShapeMarkerIdentifier;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointMarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.reactive.ReactiveQueue;
 import com.flowpowered.math.vector.Vector2d;
 import de.bluecolored.bluemap.api.BlueMapAPI;
@@ -47,9 +46,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 public class BlueMapAPIConnector {
-    public static final String MAP_NOT_FOUND = "Map not found: {}";
-    public static final String WORLD_NOT_FOUND = "World not found: {}";
-    public static final String WORLD_MAPS_EMPTY = "World maps empty: {}";
+    private static final String MAP_NOT_FOUND = "Map not found: {}";
+    private static final String WORLD_NOT_FOUND = "World not found: {}";
+    private static final String WORLD_MAPS_EMPTY = "World maps empty: {}";
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
     // Fixed on Fabric - BlueMap's own per-map config directory, read for each real map's render-mask
     // (see RenderMaskEvaluator). No BlueMap API accessor exposes this path or a bounds check directly.
@@ -59,8 +58,8 @@ public class BlueMapAPIConnector {
     // that's what volatile guarantees. It says nothing about the referenced objects themselves, which are
     // freely mutated afterward through their own thread-safe methods (ReactiveQueue.enqueue()/process(),
     // ConcurrentHashMap.get()/putIfAbsent()). No reader — dispatch()/onDisable()/onEnable() for
-    // markerActionQueue, getMarkerSets() for markerSetsCache, getMaps() for blueMapAPI — needs a joint
-    // snapshot of more than one of these fields at once, so per-field visibility is enough; a shared lock
+    // markerActionQueue, getMarkerSets() for markerSetsCache — needs a joint snapshot of more than one
+    // of these fields at once, so per-field visibility is enough; a shared lock
     // would additionally serialize dispatch() (hot path, every sign event) behind processMarkerAction()'s
     // BlueMap API calls, an unrelated critical section (findings #11 and #12,
     // plans/codebase-review-2026-07-11.md).
@@ -69,17 +68,12 @@ public class BlueMapAPIConnector {
     // Parsed render-mask per real BlueMapMap id, invalidated alongside markerSetsCache (config
     // reload, genuine BlueMap disable/enable) rather than re-read/re-parsed on every dispatch.
     private volatile Map<String, RenderMaskEvaluator.RenderMask> renderMaskCache;
-    private volatile BlueMapAPI blueMapAPI;
-    // Tracks whether onDisable() has actually run since the last onEnable(), so onEnable() can tell a
-    // genuine BlueMap disable/re-enable cycle (a real reload, which must resetQueue()/fireReset() to
-    // re-diff signCache against the reloaded config) apart from the very first onEnable() a server ever
-    // sees. markerActionQueue.isShutdown() used to be used for this instead, but it also reports true for
-    // a brand-new queue whose executor was never lazily created - which is exactly what happens when
-    // SERVER_STARTING dispatches actions for every migrated/loaded sign before BlueMap is available:
-    // process() returns early (shouldRun() false) without ever creating an executor, so the first onEnable()
-    // saw isShutdown()==true and mistook startup for a reload, replacing markerActionQueue with an empty one
-    // and discarding every action enqueued during sign load before a single one was ever processed.
-    private volatile boolean disabledSinceLastEnable;
+    // Set by onDisable() from markerActionQueue.shutdown()'s return value; read by the next onEnable() to
+    // decide whether to warn that a non-interruptible straggler task may still race the reset replay below
+    // (findings 26/27, agent-context/reviews/full-codebase-review_2026-09-07_0900.md). There's no better
+    // recovery available - a task that ignores interruption can't be forced to stop - so this only makes
+    // the violation observable rather than blocking onEnable() indefinitely.
+    private volatile boolean lastShutdownConfirmedClean = true;
     private final List<IResetHandler> resetHandlers = new ArrayList<>();
     // BlueMapAPI.unregisterListener(Consumer) removes by equals/hashCode, and a method reference has no
     // custom equals - two `this::onEnable` expressions are distinct objects under default identity equality.
@@ -95,18 +89,24 @@ public class BlueMapAPIConnector {
 
     public BlueMapAPIConnector() {
         resetQueue();
-        // BlueMap may already be enabled by the time this connector is constructed (e.g. mod reload); don't
-        // rely solely on the onEnable callback below to set blueMapAPI, or a dispatch() landing before that
-        // callback runs would see BlueMapAPI.getInstance().isPresent() true but this.blueMapAPI still null.
-        blueMapAPI = BlueMapAPI.getInstance().orElse(null);
 
         BlueMapAPI.onEnable(onEnableListener);
         BlueMapAPI.onDisable(onDisableListener);
     }
 
+    // Also retires markerActionQueue (awaiting up to its configured shutdownAwaitSeconds) rather than just
+    // unregistering the BlueMap listeners - previously this left the queue's fixed thread pool alive and
+    // any in-flight marker action unawaited on server stop, so BlueMapSignMarkersMod.onServerStopping's
+    // configured shutdown timeout had no effect at all. Mirrors onDisable()'s own shutdown() call, but
+    // this path runs on server stop regardless of whether BlueMap ever fired onDisable first.
     public void shutdown() {
         BlueMapAPI.unregisterListener(onEnableListener);
         BlueMapAPI.unregisterListener(onDisableListener);
+
+        if (!markerActionQueue.shutdown()) {
+            LOGGER.warn("Marker action queue shutdown could not confirm all in-flight tasks stopped before "
+                    + "server stop completed");
+        }
     }
 
     public void dispatch(MarkerAction action) {
@@ -134,7 +134,8 @@ public class BlueMapAPIConnector {
         markerActionQueue = new ReactiveQueue<>(
                 () -> BlueMapAPI.getInstance().isPresent(),
                 this::processMarkerAction,
-                this::onError
+                this::onError,
+                ConfigManager.get().getShutdownAwaitSeconds()
         );
 
         markerSetsCache = new ConcurrentHashMap<>();
@@ -223,7 +224,9 @@ public class BlueMapAPIConnector {
         };
     }
 
-    private static List<LinePoint> pointOf(MarkerIdentifier identifier) {
+    // Package-private (not private) specifically so it's directly testable - see the
+    // resolveExtrudeHeightRange comment below and BlueMapAPIConnectorTest.
+    static List<LinePoint> pointOf(MarkerIdentifier identifier) {
         return List.of(new LinePoint(identifier.x(), identifier.y(), identifier.z()));
     }
 
@@ -277,7 +280,13 @@ public class BlueMapAPIConnector {
     }
 
     private boolean isInsideRenderBounds(String mapId, List<LinePoint> points) {
-        var mask = getRenderMask(mapId);
+        return isInsideRenderBounds(getRenderMask(mapId), points);
+    }
+
+    // Pure point-vs-mask test split out of the mapId/cache-lookup overload above so it's directly
+    // testable without a live BlueMapAPIConnector instance (bluemap-api is compileOnly, not on the
+    // test classpath - see BlueMapAPIConnectorTest).
+    static boolean isInsideRenderBounds(RenderMaskEvaluator.RenderMask mask, List<LinePoint> points) {
         return points.stream().anyMatch(p -> mask.contains(p.x(), p.y(), p.z()));
     }
 
@@ -310,18 +319,13 @@ public class BlueMapAPIConnector {
         var position = "";
         if (identifier instanceof MarkerIdentifier markerIdentifier) {
             position = String.format(" at x=%d y=%d z=%d", markerIdentifier.x(), markerIdentifier.y(), markerIdentifier.z());
-        } else if (identifier instanceof LineMarkerIdentifier && action instanceof SetLineMarkerAction setAction) {
-            position = String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
-        } else if (identifier instanceof LineMarkerIdentifier lineMarkerIdentifier) {
-            position = String.format(" label='%s'", LogUtils.sanitizeForLog(lineMarkerIdentifier.label()));
-        } else if (identifier instanceof ShapeMarkerIdentifier && action instanceof SetShapeMarkerAction setAction) {
-            position = String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
-        } else if (identifier instanceof ShapeMarkerIdentifier shapeMarkerIdentifier) {
-            position = String.format(" label='%s'", LogUtils.sanitizeForLog(shapeMarkerIdentifier.label()));
-        } else if (identifier instanceof ExtrudeMarkerIdentifier && action instanceof SetExtrudeMarkerAction setAction) {
-            position = String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
-        } else if (identifier instanceof ExtrudeMarkerIdentifier extrudeMarkerIdentifier) {
-            position = String.format(" label='%s'", LogUtils.sanitizeForLog(extrudeMarkerIdentifier.label()));
+        } else if (identifier instanceof MultiPointMarkerIdentifier multiPointMarkerIdentifier) {
+            position = switch (action) {
+                case SetLineMarkerAction setAction -> String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
+                case SetShapeMarkerAction setAction -> String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
+                case SetExtrudeMarkerAction setAction -> String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
+                default -> String.format(" label='%s'", LogUtils.sanitizeForLog(multiPointMarkerIdentifier.label()));
+            };
         }
 
         LOGGER.debug("{} {} type marker in {}{}{}",
@@ -364,7 +368,12 @@ public class BlueMapAPIConnector {
 
     private static void setLineMarker(SetLineMarkerAction action, Map<String, Marker> markers) {
         LOGGER.debug("Setting line marker...");
-        if (action.getPoints().size() < 2) return; // defensive - SignManager should never dispatch below 2
+        if (action.getPoints().size() < 2) {
+            // defensive - SignManager should never dispatch below 2; warn so a regression is visible.
+            LOGGER.warn("Refusing to set line marker '{}' with fewer than 2 points ({})",
+                    LogUtils.sanitizeForLog(action.getLabel()), action.getPoints().size());
+            return;
+        }
 
         var line = new Line(action.getPoints().stream().map(p -> new Vector3d(p.x(), p.y(), p.z())).toList());
         var color = ColorUtils.parseHex(action.getLineColor());
@@ -385,7 +394,12 @@ public class BlueMapAPIConnector {
 
     private static void setShapeMarker(SetShapeMarkerAction action, Map<String, Marker> markers) {
         LOGGER.debug("Setting shape marker...");
-        if (action.getPoints().size() < 3) return; // defensive - SignManager should never dispatch below 3
+        if (action.getPoints().size() < 3) {
+            // defensive - SignManager should never dispatch below 3; warn so a regression is visible.
+            LOGGER.warn("Refusing to set shape marker '{}' with fewer than 3 points ({})",
+                    LogUtils.sanitizeForLog(action.getLabel()), action.getPoints().size());
+            return;
+        }
 
         var points = action.getPoints();
         var shape = new Shape(points.stream().map(p -> new Vector2d(p.x(), p.z())).toList());
@@ -432,7 +446,12 @@ public class BlueMapAPIConnector {
 
     private static void setExtrudeMarker(SetExtrudeMarkerAction action, Map<String, Marker> markers) {
         LOGGER.debug("Setting extrude marker...");
-        if (action.getPoints().size() < 3) return; // defensive - SignManager should never dispatch below 3
+        if (action.getPoints().size() < 3) {
+            // defensive - SignManager should never dispatch below 3; warn so a regression is visible.
+            LOGGER.warn("Refusing to set extrude marker '{}' with fewer than 3 points ({})",
+                    LogUtils.sanitizeForLog(action.getLabel()), action.getPoints().size());
+            return;
+        }
 
         var points = action.getPoints();
         var shape = new Shape(points.stream().map(p -> new Vector2d(p.x(), p.z())).toList());
@@ -456,52 +475,100 @@ public class BlueMapAPIConnector {
     }
 
     private static void addMarker(AddMarkerAction addAction, Map<String, Marker> markers) {
-        LOGGER.debug("Adding marker...");
         var identifier = addAction.getMarkerIdentifier();
         var markerGroup = identifier.parentSet().markerGroup();
-        if (markerGroup.type() == MarkerGroupType.POI) {
-            LOGGER.debug("Adding POI marker...");
-            var markerBuilder = POIMarker.builder()
-                    .position((double) identifier.x(), (double) identifier.y(), (double) identifier.z())
-                    .label(addAction.getLabel())
-                    .detail(HtmlUtils.toHtmlDetail(addAction.getDetail()));
-
-            if (markerGroup.icon() != null && !markerGroup.icon().isEmpty()) {
-                markerBuilder.icon(markerGroup.icon(), markerGroup.offsetX(), markerGroup.offsetY());
-            }
-
-            if (!markerGroup.cssClasses().isEmpty()) {
-                markerBuilder.styleClasses(markerGroup.cssClasses().toArray(new String[0]));
-            }
-
-            LOGGER.debug("Adding marker (id {}) to marker set", identifier.getId());
-            var marker = markerBuilder.build();
-            marker.setMinDistance(markerGroup.minDistance());
-            marker.setMaxDistance(markerGroup.maxDistance());
-            markers.put(identifier.getId(), marker);
+        if (markerGroup.type() != MarkerGroupType.POI) {
+            LOGGER.warn("Refusing to add a POI marker for non-POI marker group '{}' (type {})",
+                    markerGroup.name(), markerGroup.type());
+            return;
         }
+
+        LOGGER.debug("Adding POI marker...");
+        var markerBuilder = POIMarker.builder()
+                .position((double) identifier.x(), (double) identifier.y(), (double) identifier.z())
+                .label(addAction.getLabel())
+                .detail(HtmlUtils.toHtmlDetail(addAction.getDetail()));
+
+        if (markerGroup.icon() != null && !markerGroup.icon().isEmpty()) {
+            markerBuilder.icon(markerGroup.icon(), markerGroup.offsetX(), markerGroup.offsetY());
+        }
+
+        if (!markerGroup.cssClasses().isEmpty()) {
+            markerBuilder.styleClasses(markerGroup.cssClasses().toArray(new String[0]));
+        }
+
+        LOGGER.debug("Adding marker (id {}) to marker set", identifier.getId());
+        var marker = markerBuilder.build();
+        marker.setMinDistance(markerGroup.minDistance());
+        marker.setMaxDistance(markerGroup.maxDistance());
+        markers.put(identifier.getId(), marker);
     }
 
     private void onError(Throwable throwable) {
         LOGGER.error("Error processing marker action", throwable);
     }
 
+    // Genuine BlueMap disable/re-enable cycle (a real reload, which must resetQueue()/fireReset() to
+    // re-diff signCache against the reloaded config) vs. the very first onEnable() a server ever sees: told
+    // apart by markerActionQueue.isShutdown(), read here before resetQueue() replaces the reference below.
+    // Correct now that isShutdown() reports true only for a genuine shutdown() call rather than also
+    // conflating "never started" (finding 63,
+    // .scratch/concurrency-pass-2026-09/issues/04-reactivequeue-isshutdown-semantics.md) - this used to need
+    // a dedicated disabledSinceLastEnable flag instead, precisely because the old isShutdown() would also
+    // report true for a brand-new queue whose executor was never lazily created (e.g. SERVER_STARTING
+    // dispatching actions for every migrated/loaded sign before BlueMap is available - process() returns
+    // early via shouldRun() without ever creating an executor), which mistook first startup for a reload and
+    // discarded every action enqueued during sign load before a single one was ever processed.
     private void onEnable(BlueMapAPI api) {
-        this.blueMapAPI = api;
+        // synchronized: BlueMap's listener dispatch is presumed single-threaded today, but the
+        // isShutdown() check-then-act (resetQueue()/fireReset()) isn't atomic on its own - a
+        // hypothetical concurrent onEnable() call could otherwise also observe isShutdown()==true and
+        // double-fire both (finding 44, agent-context/reviews/full-codebase-review_2026-09-07_0900.md).
+        // Shares the same lock as processMarkerAction/applySingleAction's marker mutations, which is
+        // fine here - onEnable() only runs on a genuine BlueMap enable/reload, never on the hot path.
+        synchronized (this) {
+            var isGenuineReload = markerActionQueue.isShutdown();
+            // Checked (and cleared) even on the very first onEnable(), before isGenuineReload's branch
+            // below can replace markerActionQueue with a fresh, never-overflowed one: capacity rejection
+            // permanently drops a message (enqueue() has no failure signal back to its caller, and this
+            // queue has no retry/replay path of its own), so a large sign count enqueuing every migrated/
+            // loaded sign's add action while BlueMap is still unavailable at startup can silently overflow
+            // - and since this is the very first enable, isGenuineReload is false and fireReset() would
+            // otherwise never run to recover the dropped markers. See the "capacity does not bound..."
+            // finding, agent-context/reviews/copilotreview.2026-09-09.md.
+            var overflowedBeforeAvailable = markerActionQueue.consumeOverflowSinceLastCheck();
 
-        if (disabledSinceLastEnable) {
-            disabledSinceLastEnable = false;
-            resetQueue();
+            if (isGenuineReload) {
+                if (!lastShutdownConfirmedClean) {
+                    LOGGER.warn("Resuming after a BlueMap disable whose shutdown() could not confirm every "
+                            + "in-flight marker action had stopped; a straggler task may still race this reset's "
+                            + "replay of marker state");
+                }
 
-            fireReset();
+                // Reload config before resetQueue() rather than after: resetQueue() reads
+                // ConfigManager.get().getShutdownAwaitSeconds() to build the new queue, and fireReset()
+                // (below) is what would otherwise reload config via SignManager.reloadConfig() - too
+                // late, since the queue's shutdownAwaitSeconds is fixed at construction. Without this,
+                // editing that setting and running /bluemap reload had no effect until a later
+                // disable/re-enable cycle. fireReset() still runs its own ConfigManager.reload() right
+                // after (harmless - just re-reads the same just-reloaded file) since it also needs to
+                // rebuild SignManager's parser/prefix map from the reloaded config.
+                ConfigManager.reload();
+                resetQueue();
+
+                fireReset();
+            } else if (overflowedBeforeAvailable) {
+                LOGGER.warn("Marker action queue dropped one or more actions to capacity before BlueMap became "
+                        + "available; replaying every currently tracked sign's marker state to recover them");
+                fireReset();
+            }
         }
 
         markerActionQueue.process();
     }
 
     private void onDisable(BlueMapAPI api) {
-        disabledSinceLastEnable = true;
-        markerActionQueue.shutdown();
+        lastShutdownConfirmedClean = markerActionQueue.shutdown();
     }
 
     private synchronized Optional<List<MappedMarkerSet>> getMarkerSets(MarkerSetIdentifier markerSetIdentifier) {
@@ -532,6 +599,7 @@ public class BlueMapAPIConnector {
                         .build();
                 blueMapMap.getMarkerSets().putIfAbsent(markerSetIdentifier.markerGroup().name(), markerSet);
             } else {
+                markerSet.setLabel(markerSetIdentifier.markerGroup().name());
                 markerSet.setDefaultHidden(markerSetIdentifier.markerGroup().defaultHidden());
                 markerSet.setSorting(markerSetIdentifier.markerGroup().sorting());
                 markerSet.setToggleable(markerSetIdentifier.markerGroup().toggleable());
@@ -546,7 +614,16 @@ public class BlueMapAPIConnector {
     }
 
     private Optional<Collection<BlueMapMap>> getMaps(String mapId) {
-        var world = this.blueMapAPI.getWorld(mapId);
+        // Re-fetch rather than trust a cached BlueMapAPI reference: a disable/re-enable between
+        // processMarkerAction's guard check and this call could otherwise operate against a defunct
+        // instance (finding 43, agent-context/reviews/full-codebase-review_2026-09-07_0900.md).
+        var apiInstance = BlueMapAPI.getInstance();
+        if (apiInstance.isEmpty()) {
+            LOGGER.debug("BlueMap API not present; skipping map lookup for {}", mapId);
+            return Optional.empty();
+        }
+
+        var world = apiInstance.get().getWorld(mapId);
 
         if (world.isEmpty()) {
             LOGGER.warn(WORLD_NOT_FOUND, mapId);

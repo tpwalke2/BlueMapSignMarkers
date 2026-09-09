@@ -52,6 +52,11 @@ public class Version1SignEntryLoader {
             result[i] = Version6Converter.convertToV6(signEntriesV5[i]);
         }
 
+        // Aborts on backup failure (rather than logging and continuing, as VersionedFileSignEntryLoader's
+        // v2-v5 branches do) because this is the one-time legacy signs.json migration path: failing loudly
+        // here leaves the legacy file untouched and migration retryable on a later boot, instead of
+        // converting the last remaining copy of very old data with no recoverable backup if something
+        // then goes wrong.
         if (!FileUtils.createBackup(path, ".v1.bak", "markers file")) {
             throw new IllegalStateException(
                     "Failed to back up markers file " + path + " before v1-to-v3 migration; aborting migration to "

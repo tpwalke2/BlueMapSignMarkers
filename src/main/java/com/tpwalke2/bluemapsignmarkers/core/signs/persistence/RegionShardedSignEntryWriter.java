@@ -2,6 +2,7 @@ package com.tpwalke2.bluemapsignmarkers.core.signs.persistence;
 
 import com.google.gson.Gson;
 import com.tpwalke2.bluemapsignmarkers.Constants;
+import com.tpwalke2.bluemapsignmarkers.common.FileUtils;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignEntry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,48 +23,62 @@ public class RegionShardedSignEntryWriter {
     private RegionShardedSignEntryWriter() {
     }
 
-public static void write(Path storageRoot, List<SignEntry> signEntries, Gson gson) {
-    var partitions = SignRegionPartitioner.partition(signEntries);
+    // Returns true if every region file wrote cleanly (callers use this instead of independently re-deriving
+    // the same success/failure by re-partitioning and re-stating every file, which can drift from what
+    // actually happened here - see LegacySignFileMigrator).
+    public static boolean write(Path storageRoot, List<SignEntry> signEntries, Gson gson) {
+        var partitions = SignRegionPartitioner.partition(signEntries);
 
-    var writtenFiles = new HashSet<Path>();
-    var hadWriteFailures = false;
+        var writtenFiles = new HashSet<Path>();
+        var hadWriteFailures = false;
 
-    for (var partition : partitions.entrySet()) {
-        Path filePath;
-        try {
-            filePath = storageRoot.resolve(partition.getKey().relativeFilePath());
-        } catch (IllegalArgumentException e) {
-            hadWriteFailures = true;
-            LOGGER.error("Failed to resolve storage path for region key {}; skipping this partition", partition.getKey(), e);
-            continue;
+        for (var partition : partitions.entrySet()) {
+            Path filePath;
+            try {
+                filePath = storageRoot.resolve(partition.getKey().relativeFilePath());
+            } catch (IllegalArgumentException e) {
+                hadWriteFailures = true;
+                LOGGER.error("Failed to resolve storage path for region key {}; skipping this partition", partition.getKey(), e);
+                continue;
+            }
+
+            if (writeRegionFile(filePath, partition.getValue(), gson)) {
+                writtenFiles.add(filePath);
+            } else {
+                hadWriteFailures = true;
+            }
         }
 
-        if (writeRegionFile(filePath, partition.getValue(), gson)) {
-            writtenFiles.add(filePath);
+        if (!hadWriteFailures) {
+            quarantineStaleRegionFiles(storageRoot, writtenFiles);
         } else {
-            hadWriteFailures = true;
+            LOGGER.warn("One or more region files failed to write; skipping stale-file quarantine under {}", storageRoot);
+        }
+
+        return !hadWriteFailures;
+    }
+
+    // Writes via a temp file in the same directory, then an atomic move into place (same pattern as
+    // FileUtils.copyFile), so a crash or disk-full mid-write never leaves a truncated/corrupt file sitting at
+    // filePath - one that load would otherwise silently treat as "no entries for that region".
+    private static boolean writeRegionFile(Path filePath, List<SignEntry> signEntries, Gson gson) {
+        Path tempFile = null;
+        try {
+            Files.createDirectories(filePath.getParent());
+            var signEntryData = gson.toJson(signEntries);
+            var json = gson.toJson(new VersionedSignFile(SignFileVersions.V6, signEntryData));
+            tempFile = filePath.resolveSibling(filePath.getFileName() + ".tmp");
+            Files.writeString(tempFile, json, StandardCharsets.UTF_8);
+            Files.move(tempFile, filePath, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            return true;
+        } catch (IOException e) {
+            LOGGER.error("Failed to write region file {}", filePath, e);
+            if (tempFile != null) {
+                FileUtils.deleteQuietly(tempFile);
+            }
+            return false;
         }
     }
-
-    if (!hadWriteFailures) {
-        quarantineStaleRegionFiles(storageRoot, writtenFiles);
-    } else {
-        LOGGER.warn("One or more region files failed to write; skipping stale-file quarantine under {}", storageRoot);
-    }
-}
-
-private static boolean writeRegionFile(Path filePath, List<SignEntry> signEntries, Gson gson) {
-    try {
-        Files.createDirectories(filePath.getParent());
-        var signEntryData = gson.toJson(signEntries);
-        var json = gson.toJson(new VersionedSignFile(SignFileVersions.V6, signEntryData));
-        Files.writeString(filePath, json, StandardCharsets.UTF_8);
-        return true;
-    } catch (IOException e) {
-        LOGGER.error("Failed to write region file {}", filePath, e);
-        return false;
-    }
-}
 
     // A region absent from writtenFiles may be genuinely empty, or may have failed to load at
     // startup - can't tell which here, so quarantine instead of delete to avoid losing real data.

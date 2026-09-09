@@ -15,8 +15,27 @@ public class ConfigManager {
     }
 
     public static BMSMConfigV2 get() {
+        return getOrLoad(ConfigManager::reload);
+    }
+
+    // Visible for testing: same first-load race protection as get(), but loading from a temp-directory path
+    // instead of the hardcoded config path, so merely referencing this class in a test never touches the real
+    // config/<mod-id>/BMSM-Core.json on disk.
+    static BMSMConfigV2 get(Path configPath) {
+        return getOrLoad(() -> reload(configPath));
+    }
+
+    // Synchronizes the check-then-act of "is coreConfig loaded yet?" (double-checked locking on the same
+    // monitor reload() already uses) so racing first-time callers converge on a single load/parse pass and the
+    // same config instance, instead of each redundantly loading config and racing over which instance wins
+    // (finding #72, review: agent-context/reviews/full-codebase-review_2026-09-07_0900.md).
+    private static BMSMConfigV2 getOrLoad(Runnable loader) {
         if (coreConfig == null) {
-            reload();
+            synchronized (ConfigManager.class) {
+                if (coreConfig == null) {
+                    loader.run();
+                }
+            }
         }
 
         return coreConfig;
@@ -30,6 +49,12 @@ public class ConfigManager {
     // so merely referencing this class in a test never touches the real config/<mod-id>/BMSM-Core.json on disk.
     static synchronized void reload(Path configPath) {
         coreConfig = loadCoreConfig(ConfigProvider.loadConfig(configPath));
+    }
+
+    // Visible for testing: resets the static config to unloaded state so a test can exercise get()'s
+    // first-load path repeatedly instead of only once per JVM.
+    static synchronized void resetForTesting() {
+        coreConfig = null;
     }
 
     private static BMSMConfigV2 loadCoreConfig(BMSMConfigV2 result) {

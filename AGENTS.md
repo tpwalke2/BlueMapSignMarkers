@@ -127,11 +127,14 @@ restart alone does not trigger the upgrade sweep (only a genuine BlueMap disable
 
 `MarkerGroup` (record: prefix, matchType, type, name, icon, offsetX/Y, defaultHidden, minDistance/maxDistance,
 lineWidth, lineColor, fillColor, sorting, toggleable, depthTest, cssClasses) is the unit of configuration described
-in `README.md`. `type` (`MarkerGroupType`: `POI`, `LINE`, or `SHAPE`) picks which kind of marker the group's signs produce;
-`lineWidth`/`lineColor` apply to `LINE`/`SHAPE` groups (setting them on a `POI` group is a warning, not an error).
+in `README.md`. `type` (`MarkerGroupType`: `POI`, `LINE`, `SHAPE`, or `EXTRUDE`) picks which kind of marker the
+group's signs produce; `lineWidth`/`lineColor` apply to `LINE`/`SHAPE`/`EXTRUDE` groups (setting them on a `POI`
+group is a warning, not an error), and `fillColor` additionally applies to `SHAPE`/`EXTRUDE` (a volume gets a
+floor/ceiling anchored to its members' Y range, per `BlueMapAPIConnector.resolveExtrudeHeightRange`).
 `sorting`/`toggleable` are thin BlueMap `MarkerSet` passthroughs (menu order, hideability) that apply to every group
-type; `depthTest` (terrain occlusion) is `LINE`/`SHAPE`-only and `cssClasses` (custom.css hooks) is `POI`-only, each
-resolved in `ConfigProvider` and wired into the corresponding BlueMap builder call in `BlueMapAPIConnector`.
+type; `depthTest` (terrain occlusion) is `LINE`/`SHAPE`/`EXTRUDE`-only and `cssClasses` (custom.css hooks) is
+`POI`-only, each resolved in `ConfigProvider` and wired into the corresponding BlueMap builder call in
+`BlueMapAPIConnector`.
 `ConfigManager` lazily loads a singleton `BMSMConfigV2`
 via `ConfigProvider` from `config/bluemapsignmarkers/BMSM-Core.json`, creating sane defaults (a single `[poi]` group)
 if the file is missing or fails to load. `SignLinesParser` matches sign text against groups using either
@@ -148,15 +151,24 @@ sign text after the prefix) — that shared (group, label) is a line's membershi
 
 Sign state is stored per-world, region-sharded (one file per dimension + 32x32-chunk region — see "Entry point"
 above), with each region file wrapped in a `VersionedSignFile` envelope (`{version, data}`) so the format can evolve
-without breaking old saves. `SignProvider.loadSigns` checks whether the storage root already has region files
-(`RegionShardedSignEntryLoader.hasSignData`); if so, it loads every region file the same version-aware way as
-before sharding — the versioned-file loader (`VersionedFileSignEntryLoader`, handling V2→V3 migration via
-`Version3Converter`, V3→V4 migration via `Version4Converter` (adds `createdAtMillis`, needed to order points within
-a line marker; backfilled for pre-V4 entries), and current V4 files directly), falling back to
-`Version1SignEntryLoader` for pre-versioning files. If no region files exist yet, `LegacySignFileMigrator` reads a
-pre-sharding single `signs.json` (if present) through that same version chain, writes it out region-sharded, and
-backs up the legacy file (renamed, not deleted)
-only once every expected region file is confirmed on disk. When adding a new persisted field, bump
+without breaking old saves. `SignProvider.loadSigns` decides between the two loading paths by whether the
+pre-sharding legacy `signs.json` is still present at its legacy path, not merely by whether region files exist yet
+(`RegionShardedSignEntryLoader.hasSignData`) — a crash partway through a first migration can leave some region
+files written and others missing, and the legacy file is the actual source of truth until it's renamed to its
+`.migrated` backup, so its continued presence (regardless of what's already on disk region-sharded) means
+`LegacySignFileMigrator` must re-run and re-derive every region file from it. Once the legacy file is gone (already
+backed up), `loadSigns` loads every region file the same version-aware way as before sharding — the versioned-file
+loader (`VersionedFileSignEntryLoader`, handling V2→V3 migration via `Version3Converter`, V3→V4 migration via
+`Version4Converter` (adds `createdAtMillis`, needed to order points within a line marker; backfilled for pre-V4
+entries), V4→V5 migration via `Version5Converter` (adds raw front/back sign lines, backfilled `null` for pre-V5
+entries — needed to reparse a sign against a reloaded config instead of trusting a stale cached parse), and V5→V6
+migration via `Version6Converter` (adds front/back dye, backfilled to `SignEntryHelper.UNDYED_DYE` for pre-V6
+entries), and current V6 files directly), falling back to `Version1SignEntryLoader` for pre-versioning files. When
+`LegacySignFileMigrator` runs, it writes the entries out region-sharded (`RegionShardedSignEntryWriter`, via
+temp-file + atomic move so a crash mid-write never leaves a truncated region file) and backs up the legacy file
+(renamed, not deleted) only once every expected region file round-trip parses back to valid data — not just exists
+on disk, since a truncated file existing but failing to parse must still block finalizing the migration (see
+`docs/adr/0004-atomic-write-content-verify-persistence.md`). When adding a new persisted field, bump
 `SignFileVersions` and add a loader/converter rather than changing an existing version's shape in place — old
 region files (or a not-yet-migrated legacy `signs.json`) on live servers must keep loading.
 
@@ -178,7 +190,7 @@ signature (like `SignLinesParser`/`ParsingContext`, `SignEntry`/`SignEntryHelper
 `MarkerGroup`/`MarkerGroupMatchType`, `ConfigManager`/`ConfigProvider`, `ReactiveQueue`, `HtmlUtils`, `FileUtils`,
 the persistence loaders/converters (including `Version1SignEntryLoader`, `Version4Converter`),
 `ActionFactory`/`MarkerSetIdentifierCollection`, `LineGroupResolver`, `SignTransitionResolver`, `ColorUtils`,
-`DispatchedMarkerIdentifier`/`LineMarkerIdentifier`/`LinePoint`, `RenderMaskEvaluator`) — these can be unit tested
+`DispatchedMarkerIdentifier`/`MultiPointMarkerIdentifier`/`LinePoint`, `RenderMaskEvaluator`) — these can be unit tested
 directly (see
 `src/test/java/.../core/signs/SignLinesParserTest.java` for the pattern).
 Code that must reference game types (`SignHelper`, the mixins, `BlueMapSignMarkersMod`, `BlueMapAPIConnector`)

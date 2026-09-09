@@ -33,4 +33,4 @@ method-level behavior, data-shape history — so an agent doesn't have to re-der
 | `context/testing.md` | `src/test/java/`, `.github/workflows/build.yml`, `.github/workflows/publish.yml` |
 
 ---
-*Last updated: 2026-09-06 | Verified against: feature/tpwalke2/198-dye-colors (535bb13)*
+*Last updated: 2026-09-09 | Verified against: main (b2c5fa0)*

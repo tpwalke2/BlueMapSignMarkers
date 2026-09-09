@@ -49,4 +49,14 @@ class HtmlUtilsTest {
     void toHtmlDetailIsNoOpOnLineBreaksWhenNoneArePresent() {
         assertEquals("Town Hall", HtmlUtils.toHtmlDetail("Town Hall"));
     }
+
+    @Test
+    void escapeTreatsNullAsEmptyString() {
+        assertEquals("", HtmlUtils.escape(null));
+    }
+
+    @Test
+    void toHtmlDetailTreatsNullAsEmptyString() {
+        assertEquals("", HtmlUtils.toHtmlDetail(null));
+    }
 }

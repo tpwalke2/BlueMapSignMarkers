@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.UUID;
 
 public class FileUtils {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
@@ -38,12 +39,24 @@ public class FileUtils {
         var originalFile = new File(originalPath);
         if (!originalFile.exists()) return;
 
-        var backupPath = originalPath + suffix;
-        var backupFile = new File(backupPath);
-        if (backupFile.exists()) return;
+        var backupPath = uniqueBackupPath(originalPath, suffix);
 
         LOGGER.info("Backing up {}...", fileDescription);
         moveFile(originalPath, backupPath);
+    }
+
+    // Never leaves the original sitting at originalPath just because an earlier backup already occupies the
+    // default backup path - a caller relying on "the original is gone once backed up" (e.g. LegacySignFileMigrator,
+    // which re-runs a full migration on every boot for as long as the legacy file still exists) would otherwise
+    // re-trigger forever, silently overwriting newer state with whatever that stale legacy file still holds.
+    private static String uniqueBackupPath(String originalPath, String suffix) {
+        var candidate = originalPath + suffix;
+        var attempt = 2;
+        while (new File(candidate).exists()) {
+            candidate = originalPath + suffix + "." + attempt;
+            attempt++;
+        }
+        return candidate;
     }
 
     // Copies via a temp file in the same directory, then an atomic move into place, so a failure partway through
@@ -51,7 +64,9 @@ public class FileUtils {
     // later createBackup() call would otherwise mistake for a valid completed backup.
     private static boolean copyFile(String sourcePath, String destinationPath) {
         var destination = Paths.get(destinationPath);
-        var tempFile = destination.resolveSibling(destination.getFileName() + ".tmp");
+        // UUID suffix: currently unreachable given single-threaded call sites, purely defensive against a
+        // future concurrent caller writing the same destinationPath colliding on this temp file's name.
+        var tempFile = destination.resolveSibling(destination.getFileName() + "." + UUID.randomUUID() + ".tmp");
         try {
             Files.copy(Paths.get(sourcePath), tempFile, StandardCopyOption.REPLACE_EXISTING);
             Files.move(tempFile, destination, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
@@ -63,7 +78,9 @@ public class FileUtils {
         }
     }
 
-    private static void deleteQuietly(Path path) {
+    // Public so other writers doing their own temp-file + ATOMIC_MOVE (RegionShardedSignEntryWriter,
+    // ConfigProvider) can clean up a leftover temp file the same way copyFile does here.
+    public static void deleteQuietly(Path path) {
         try {
             Files.deleteIfExists(path);
         } catch (IOException e) {

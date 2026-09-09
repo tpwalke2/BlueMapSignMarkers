@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -34,8 +35,11 @@ public class RenderMaskEvaluator {
     // subtract: "true") as equivalent to the bare form, and this mod's fields are all
     // numeric/boolean, so there's no case where treating the quoted and bare spellings the same way
     // is wrong.
+    // The numeric alternative includes an optional exponent (1.5e3, -2E-4) so scientific notation
+    // parses to its full value instead of the mantissa alone matching and the exponent being left
+    // as unmatched trailing text (silently wrong shape math, not a parse failure).
     private static final Pattern FIELD_PATTERN =
-            Pattern.compile("([A-Za-z][\\w-]*)\\s*[:=]\\s*\"?(-?\\d+(?:\\.\\d+)?|true|false)\"?");
+            Pattern.compile("([A-Za-z][\\w-]*)\\s*[:=]\\s*\"?(-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?|true|false)\"?");
 
     private RenderMaskEvaluator() {}
 
@@ -110,6 +114,9 @@ public class RenderMaskEvaluator {
 
     // Mirrors BlueMapConfigManager.sanitiseMapId (\W -> _) so an oddly-named config file still
     // resolves to the same id BlueMap itself computed, rather than assuming literal identity.
+    // findFirst() means that if two *.conf files sanitize to the same mapId (very unlikely given
+    // BlueMap assigns ids), which one wins is filesystem-listing-order-dependent, i.e. non-deterministic
+    // across platforms/runs - Files.list() makes no ordering guarantee.
     private static Path findConfigFile(String mapId, Path mapsConfigDir) {
         if (!Files.isDirectory(mapsConfigDir)) {
             return null;
@@ -242,9 +249,14 @@ public class RenderMaskEvaluator {
         return fields;
     }
 
+    // FIELD_PATTERN's numeric alternative allows exponent notation (e.g. "1e3") on every numeric field,
+    // int-typed ones (min-x/max-x/min-y/max-y/min-z/max-z) included - Integer.parseInt can't handle that
+    // form and would throw, failing the whole map open on an otherwise-valid value. Parse via BigDecimal
+    // instead so any exact-integer value (exponent notation or not) resolves correctly; a genuinely
+    // fractional value (e.g. "1.5") still throws via intValueExact, same as before.
     private static int intField(Map<String, String> fields, String key, int defaultValue) {
         var value = fields.get(key);
-        return value == null ? defaultValue : Integer.parseInt(value);
+        return value == null ? defaultValue : new BigDecimal(value).intValueExact();
     }
 
     private static double requiredDoubleField(Map<String, String> fields, String key) {
@@ -281,7 +293,7 @@ public class RenderMaskEvaluator {
         return new RenderMaskCircle(
                 requiredDoubleField(fields, "center-x"),
                 requiredDoubleField(fields, "center-z"),
-                requiredDoubleField(fields, "radius"),
+                requiredPositiveDoubleField(fields, "radius"),
                 intField(fields, "min-y", Integer.MIN_VALUE),
                 intField(fields, "max-y", Integer.MAX_VALUE),
                 subtract);

@@ -1,16 +1,19 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap.actions;
 
-import com.tpwalke2.bluemapsignmarkers.core.markers.ExtrudeMarkerIdentifier;
-import com.tpwalke2.bluemapsignmarkers.core.markers.LineMarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.LinePoint;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifierCollection;
-import com.tpwalke2.bluemapsignmarkers.core.markers.ShapeMarkerIdentifier;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointMarkerIdentifier;
 
 import java.util.List;
 
 public class ActionFactory {
+    private static final String LINE_KIND = "line";
+    private static final String SHAPE_KIND = "shape";
+    private static final String EXTRUDE_KIND = "extrude";
+
     private final MarkerSetIdentifierCollection markerSetIdentifierCollection;
 
     public ActionFactory(MarkerSetIdentifierCollection markerSetIdentifierCollection) {
@@ -82,8 +85,9 @@ public class ActionFactory {
             List<LinePoint> points,
             String lineColor,
             boolean isFirstAppearance) {
+        requireGroupType(markerGroup, MarkerGroupType.LINE, "createSetLineAction");
         return new SetLineMarkerAction(
-                new LineMarkerIdentifier(label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
+                new MultiPointMarkerIdentifier(LINE_KIND, label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
                 label,
                 detail,
                 points,
@@ -94,7 +98,7 @@ public class ActionFactory {
 
     public RemoveLineMarkerAction createRemoveLineAction(String mapId, MarkerGroup markerGroup, String label) {
         return new RemoveLineMarkerAction(
-                new LineMarkerIdentifier(label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)));
+                new MultiPointMarkerIdentifier(LINE_KIND, label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)));
     }
 
     public SetShapeMarkerAction createSetShapeAction(
@@ -106,8 +110,9 @@ public class ActionFactory {
             String lineColor,
             String fillColor,
             boolean isFirstAppearance) {
+        requireGroupType(markerGroup, MarkerGroupType.SHAPE, "createSetShapeAction");
         return new SetShapeMarkerAction(
-                new ShapeMarkerIdentifier(label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
+                new MultiPointMarkerIdentifier(SHAPE_KIND, label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
                 label,
                 detail,
                 points,
@@ -119,7 +124,7 @@ public class ActionFactory {
 
     public RemoveShapeMarkerAction createRemoveShapeAction(String mapId, MarkerGroup markerGroup, String label) {
         return new RemoveShapeMarkerAction(
-                new ShapeMarkerIdentifier(label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)));
+                new MultiPointMarkerIdentifier(SHAPE_KIND, label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)));
     }
 
     public SetExtrudeMarkerAction createSetExtrudeAction(
@@ -131,8 +136,9 @@ public class ActionFactory {
             String lineColor,
             String fillColor,
             boolean isFirstAppearance) {
+        requireGroupType(markerGroup, MarkerGroupType.EXTRUDE, "createSetExtrudeAction");
         return new SetExtrudeMarkerAction(
-                new ExtrudeMarkerIdentifier(label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
+                new MultiPointMarkerIdentifier(EXTRUDE_KIND, label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
                 label,
                 detail,
                 points,
@@ -144,7 +150,7 @@ public class ActionFactory {
 
     public RemoveExtrudeMarkerAction createRemoveExtrudeAction(String mapId, MarkerGroup markerGroup, String label) {
         return new RemoveExtrudeMarkerAction(
-                new ExtrudeMarkerIdentifier(label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)));
+                new MultiPointMarkerIdentifier(EXTRUDE_KIND, label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)));
     }
 
     public UpdateMarkerAction createUpdatePOIAction(
@@ -163,5 +169,12 @@ public class ActionFactory {
                         markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
                 newLabel,
                 newDetail);
+    }
+
+    private static void requireGroupType(MarkerGroup markerGroup, MarkerGroupType expected, String methodName) {
+        if (markerGroup.type() != expected) {
+            throw new IllegalArgumentException(
+                    methodName + " requires a " + expected + " marker group, got " + markerGroup.type());
+        }
     }
 }

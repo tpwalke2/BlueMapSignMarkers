@@ -523,6 +523,23 @@ class ConfigProviderTest {
     }
 
     @Test
+    void aFailedSaveLeavesNoPartialFileAtTheFinalPathAndCleansUpItsTempFile(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, "{ \"markerGroups\": [] }");
+        // Occupies the final path with a directory, so the save's ATOMIC_MOVE onto it must fail - standing
+        // in for a crash/interrupt partway through the write without actually killing the JVM mid-test.
+        Files.delete(path);
+        Files.createDirectory(path);
+
+        ConfigProvider.saveConfig(new BMSMConfigV2(), path);
+
+        assertTrue(Files.isDirectory(path), "a failed save must never leave a partial file at the final path");
+        assertFalse(
+                Files.exists(path.resolveSibling(path.getFileName() + ".tmp")),
+                "a failed save must clean up its temp file rather than leaving it behind");
+    }
+
+    @Test
     void loadConfigDefaultsSortingToggleableDepthTestAndCssClassesWhenOmitted(@TempDir Path tempDir) throws IOException {
         var path = tempDir.resolve("BMSM-Core.json");
         Files.writeString(path, """
@@ -599,6 +616,79 @@ class ConfigProviderTest {
         assertEquals(1, config.getMarkerGroups().length);
         assertEquals(List.of("custom-poi"), config.getMarkerGroups()[0].cssClasses());
         assertTrue(warnings.stream().anyMatch(m -> m.contains("cssClasses")));
+    }
+
+    @Test
+    void loadConfigDefaultsShutdownAwaitSecondsWhenOmitted(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(BMSMConfigV2.DEFAULT_SHUTDOWN_AWAIT_SECONDS, config.getShutdownAwaitSeconds());
+    }
+
+    @Test
+    void loadConfigPreservesExplicitShutdownAwaitSeconds(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "shutdownAwaitSeconds": 30,
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(30, config.getShutdownAwaitSeconds());
+    }
+
+    @Test
+    void loadConfigFallsBackToDefaultShutdownAwaitSecondsWhenMalformed(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "shutdownAwaitSeconds": "notanumber",
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group" }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(BMSMConfigV2.DEFAULT_SHUTDOWN_AWAIT_SECONDS, config.getShutdownAwaitSeconds());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("shutdownAwaitSeconds")));
+    }
+
+    @Test
+    void loadConfigFallsBackToDefaultShutdownAwaitSecondsWhenNonPositive(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "shutdownAwaitSeconds": 0,
+                  "markerGroups": [
+                    { "prefix": "[poi]", "name": "POI Group" }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(BMSMConfigV2.DEFAULT_SHUTDOWN_AWAIT_SECONDS, config.getShutdownAwaitSeconds());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("shutdownAwaitSeconds")));
     }
 
     @Test
@@ -878,6 +968,122 @@ class ConfigProviderTest {
         assertTrue(warnings.stream().anyMatch(m -> m.contains("offsetY")));
     }
 
+    // Superseded by copilotreview.2026-09-09.md: finding 41 keyed duplicate-prefix detection on
+    // (matchType, prefix), reasoning that a STARTS_WITH "[a]" group and a REGEX "[a]" group match different
+    // sign text and so aren't real duplicates. That's true for matching, but every runtime lookup that
+    // resolves a sign's representation back to its group (SignManager.buildPrefixGroupMap,
+    // SignEntryHelper.getPrefix/SignTransitionResolver.computeRepresentation) is keyed on raw prefix text
+    // alone, with no way to recover which of the two groups a given sign actually matched - so this pair
+    // validated successfully while one of the two groups silently never matched any sign. Raw prefixes must
+    // be unique across groups again until (matchType, prefix) identity is threaded through
+    // SignLinesParseResult and every downstream lookup too.
+    @Test
+    void loadConfigRejectsTheSamePrefixTextAcrossDifferentMatchTypes(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[a]", "matchType": "STARTS_WITH", "name": "First" },
+                    { "prefix": "[a]", "matchType": "REGEX", "name": "Second" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertNull(config);
+    }
+
+    // finding 6: a v1 config with an empty/blank poiPrefix must not migrate into a v2 group whose empty
+    // STARTS_WITH "" prefix would silently match every sign's text - it should fall back to defaults instead.
+    @Test
+    void loadConfigFallsBackToDefaultsWhenAV1ConfigHasABlankPoiPrefix(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                { "poiPrefix": "" }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertEquals(1, config.getMarkerGroups().length);
+        assertEquals("[poi]", config.getMarkerGroups()[0].prefix());
+        assertTrue(
+                Files.exists(tempDir.resolve("BMSM-Core.json.v1.bak")),
+                "original v1 file should still have been backed up even though migration was rejected");
+    }
+
+    // finding 7: a single group with a malformed 'type' must degrade just that group's type to POI (with a
+    // warning) rather than throwing out of GSON.fromJson and wiping every group in the config back to one
+    // default [poi] group.
+    @Test
+    void loadConfigDegradesJustOneGroupWhenItsTypeIsMalformedRatherThanWipingTheWholeConfig(
+            @TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[good]", "name": "Good Group" },
+                    { "prefix": "[bad]", "name": "Bad Group", "type": "NOT_A_TYPE" }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(2, config.getMarkerGroups().length);
+        assertEquals("[good]", config.getMarkerGroups()[0].prefix());
+        assertEquals("[bad]", config.getMarkerGroups()[1].prefix());
+        assertEquals(MarkerGroupType.POI, config.getMarkerGroups()[1].type());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("type")));
+    }
+
+    // Same as above, but for a malformed 'matchType' rather than 'type'.
+    @Test
+    void loadConfigDegradesJustOneGroupWhenItsMatchTypeIsMalformedRatherThanWipingTheWholeConfig(
+            @TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[bad]", "name": "Bad Group", "matchType": "NOT_A_MATCH_TYPE" }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(1, config.getMarkerGroups().length);
+        assertEquals(MarkerGroupMatchType.STARTS_WITH, config.getMarkerGroups()[0].matchType());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("matchType")));
+    }
+
+    // Same as above, but for a malformed 'offsetX' (a non-numeric value rather than a wrong-shaped enum).
+    @Test
+    void loadConfigDegradesJustOneGroupWhenItsOffsetXIsMalformedRatherThanWipingTheWholeConfig(
+            @TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[good]", "name": "Good Group" },
+                    { "prefix": "[bad]", "name": "Bad Group", "offsetX": "notanumber" }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(2, config.getMarkerGroups().length);
+        assertEquals(0, config.getMarkerGroups()[1].offsetX());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("offsetX")));
+    }
+
     @Test
     void loadConfigWarnsWhenCssClassesIsSetOnAnExtrudeGroup(@TempDir Path tempDir) throws IOException {
         var path = tempDir.resolve("BMSM-Core.json");
@@ -896,5 +1102,73 @@ class ConfigProviderTest {
         assertEquals(1, config.getMarkerGroups().length);
         assertTrue(config.getMarkerGroups()[0].cssClasses().isEmpty());
         assertTrue(warnings.stream().anyMatch(m -> m.contains("cssClasses")));
+    }
+
+    // finding 14: a group with a missing 'name' must degrade to a fallback name (with a warning) rather than
+    // throwing MarkerGroup's requireNonNull and wiping every group in the config back to one default [poi] group.
+    @Test
+    void loadConfigFallsBackToThePrefixWhenNameIsMissingRatherThanWipingTheWholeConfig(
+            @TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[good]", "name": "Good Group" },
+                    { "prefix": "[bad]" }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(2, config.getMarkerGroups().length);
+        assertEquals("[good]", config.getMarkerGroups()[0].prefix());
+        assertEquals("[bad]", config.getMarkerGroups()[1].prefix());
+        assertEquals("[bad]", config.getMarkerGroups()[1].name());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("name")));
+    }
+
+    // Same as above, but the name is present and blank rather than entirely absent.
+    @Test
+    void loadConfigFallsBackToThePrefixWhenNameIsBlank(@TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "[bad]", "name": "   " }
+                  ]
+                }
+                """);
+
+        var result = new BMSMConfigV2[1];
+        var warnings = captureWarnMessages(() -> ConfigProvider.loadConfig(path), result);
+        var config = result[0];
+
+        assertEquals(1, config.getMarkerGroups().length);
+        assertEquals("[bad]", config.getMarkerGroups()[0].name());
+        assertTrue(warnings.stream().anyMatch(m -> m.contains("name")));
+    }
+
+    // A missing name and an empty prefix together must not make resolveName itself throw (it falls back to
+    // DEFAULT_NAME_PLACEHOLDER rather than assuming prefix is present) - validateMarkerGroups still rejects
+    // the empty prefix afterwards, so the placeholder value is never observable here, only that construction
+    // doesn't NPE before validation gets a chance to run.
+    @Test
+    void loadConfigStillRejectsAnEmptyPrefixEvenWhenNameAlsoFallsBackToAPlaceholder(
+            @TempDir Path tempDir) throws IOException {
+        var path = tempDir.resolve("BMSM-Core.json");
+        Files.writeString(path, """
+                {
+                  "markerGroups": [
+                    { "prefix": "" }
+                  ]
+                }
+                """);
+
+        var config = ConfigProvider.loadConfig(path);
+
+        assertNull(config, "an empty prefix is still rejected by validateMarkerGroups after name resolution");
     }
 }

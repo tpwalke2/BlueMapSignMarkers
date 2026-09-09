@@ -1,9 +1,9 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap.actions;
 
-import com.tpwalke2.bluemapsignmarkers.core.markers.ShapeMarkerIdentifier;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointMarkerIdentifier;
 
 public class RemoveShapeMarkerAction extends MarkerAction {
-    public RemoveShapeMarkerAction(ShapeMarkerIdentifier markerIdentifier) {
+    public RemoveShapeMarkerAction(MultiPointMarkerIdentifier markerIdentifier) {
         super(markerIdentifier);
     }
 

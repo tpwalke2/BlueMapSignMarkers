@@ -25,6 +25,9 @@ The mod will create a `BMSM-Core.json` file in the `config/bluemapsignmarkers` f
 options:
 - `markerGroups` - a list of marker groups (described in detail below); default is a list with a single marker group
 configured for the `[poi]` prefix.
+- `shutdownAwaitSeconds` - how long (in seconds) the mod waits for in-flight BlueMap marker updates to finish when
+BlueMap disables (or the server stops), before forcing them to stop; optional; default is `5`; must be a positive
+number, otherwise it falls back to the default with a warning.
 
 ## Marker Groups
 A marker group is a collection of markers that can be toggled on and off in the BlueMap UI. Each marker group

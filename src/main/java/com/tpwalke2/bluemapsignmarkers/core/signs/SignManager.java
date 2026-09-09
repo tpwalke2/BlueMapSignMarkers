@@ -1,8 +1,8 @@
 package com.tpwalke2.bluemapsignmarkers.core.signs;
 
 import com.tpwalke2.bluemapsignmarkers.Constants;
+import com.tpwalke2.bluemapsignmarkers.common.SafeCall;
 import com.tpwalke2.bluemapsignmarkers.config.ConfigManager;
-import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.BlueMapAPIConnector;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.IResetHandler;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.ActionFactory;
@@ -41,11 +41,11 @@ public class SignManager implements IResetHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
 
     public static void addOrUpdate(SignEntry signEntry) {
-        getInstance().addOrUpdateSign(signEntry);
+        SafeCall.run("SignManager.addOrUpdate", () -> getInstance().addOrUpdateSign(signEntry));
     }
 
     public static void remove(SignEntryKey key) {
-        getInstance().removeByKey(key);
+        SafeCall.run("SignManager.remove", () -> getInstance().removeByKey(key));
     }
 
     public static List<SignEntry> getAll() {
@@ -128,7 +128,7 @@ public class SignManager implements IResetHandler {
                 ? signEntry
                 : new SignEntry(
                         key,
-                        WorldMap.UNKNOWN.equals(signEntry.playerId()) ? existing.playerId() : signEntry.playerId(),
+                        PlayerIds.UNKNOWN.equals(signEntry.playerId()) ? existing.playerId() : signEntry.playerId(),
                         signEntry.frontText(),
                         signEntry.backText(),
                         existing.createdAtMillis(),
@@ -196,13 +196,20 @@ public class SignManager implements IResetHandler {
         reloadConfig();
     }
 
-    // synchronized (same monitor as addOrUpdateSign/removeByKey above) so the whole swap-config-then-diff
-    // sequence is one atomic step relative to live sign edits/removals arriving from the mixins on the
-    // server thread. IResetHandler.reset() fires on whatever thread BlueMapAPI.onEnable runs on, not
-    // necessarily the server thread, so without this a live edit could land mid-diff and get clobbered by
-    // a stale dispatch, or a sign removed mid-diff could be silently re-added. dispatch() only enqueues
-    // onto ReactiveQueue (no blocking BlueMap API work happens under this lock), so this doesn't introduce
-    // hot-path contention the way locking around processMarkerAction would.
+    // Only the config swap + phase 1 reparse run under the monitor (same one addOrUpdateSign/removeByKey
+    // use) - see the phase 1/phase 2 split below. That's the minimum needed to keep IResetHandler.reset()
+    // (which can fire on any thread, not necessarily the server thread) from racing a live edit: a sign
+    // landing mid-swap-or-reparse could otherwise get clobbered by a stale dispatch, or a sign removed
+    // mid-reparse could be silently re-added. Phase 2 - the expensive part, an O(n) membership
+    // filter/sort per LINE/SHAPE/EXTRUDE sign, O(n^2) total across a reload - runs unlocked, so it no
+    // longer blocks every concurrent sign edit/removal from the mixins for the reload's full duration (see
+    // .scratch/concurrency-pass-2026-09/issues/05-signmanager-reloadconfig-lock-contention.md). A sign
+    // edited concurrently during phase 2 is not clobbered: phase 2 reads `signCache` fresh (never mutated
+    // by phase 2 itself) for both its own transitions and LINE/SHAPE/EXTRUDE membership resolution, so it
+    // can only race a concurrent edit's own independent dispatch for the same key or the same line/shape -
+    // both are best-effort idempotent set/remove actions applied through ReactiveQueue, which already gives
+    // no cross-dispatch ordering guarantee (see dispatchTransition), so this doesn't introduce a new class
+    // of risk, only widens an existing one to a rarer window.
     //
     // signCache/chunkIndex are deliberately NOT cleared here (unlike a naive clear-and-replay): a marker's
     // id can be content-keyed (a LINE marker's id is "line:" + label) rather than position-keyed, so a
@@ -211,43 +218,57 @@ public class SignManager implements IResetHandler {
     // and nothing ever explicitly removes the old one. Diffing each sign's representation under the old vs.
     // new config and running that pair through the same transition table as a live edit dispatches an
     // explicit leave-effect for the old representation whenever it differs, so no id is ever left behind.
-    private synchronized void reloadConfig() {
+    private void reloadConfig() {
         LOGGER.info("Reloading marker group configuration...");
-        var oldPrefixGroupMap = runtimeConfig.prefixGroupMap();
 
-        ConfigManager.reload();
-        SignHelper.reloadParser();
-        runtimeConfig = buildRuntimeConfig();
-        blueMapAPIConnector.clearMarkerSetsCache();
+        RuntimeConfig newConfig;
+        HashMap<SignEntryKey, SignTransitionResolver.Representation> oldReps;
 
-        var newConfig = runtimeConfig;
-        var allSigns = getAllSigns();
+        synchronized (this) {
+            var oldPrefixGroupMap = runtimeConfig.prefixGroupMap();
 
-        // Phase 1: reparse every entry against the new config and land it in signCache before dispatching
-        // anything. LINE transitions look up a line's current membership via the allSignsSupplier passed
-        // to dispatchTransition below; if reparsing and dispatching were interleaved in one pass, that
-        // supplier would see a different, partially-reparsed membership set on each iteration, so two
-        // signs joining the same line under a prefix change could enqueue conflicting intermediate
-        // transitions for the same line id - and since ReactiveQueue gives no ordering guarantee between
-        // them, BlueMap could apply them out of order and leave the line absent. Finishing every reparse
-        // first means every dispatch in phase 2 sees the final, fully-reparsed membership set.
-        var oldReps = new HashMap<SignEntryKey, SignTransitionResolver.Representation>();
-        for (SignEntry entry : allSigns) {
-            oldReps.put(entry.key(), SignTransitionResolver.computeRepresentation(entry, oldPrefixGroupMap));
+            ConfigManager.reload();
+            SignHelper.reloadParser();
+            newConfig = buildRuntimeConfig();
+            runtimeConfig = newConfig;
+            blueMapAPIConnector.clearMarkerSetsCache();
 
-            // Self-heal a sign whose representation drifted from its cached parse (e.g. a REGEX group's
-            // prefix text was edited) by reparsing from the raw sign text under the new config, rather
-            // than trusting the stale cached SignLinesParseResult as an identity key - see
-            // agent-context/plans/stale-prefix-orphaned-signs-fix.md. Entries with no raw text (migrated
-            // pre-V5) fall back to today's behavior: diff the cached parse as-is.
-            var reparsed = safeReparseFromRawLines(entry, newConfig.parser());
-            if (reparsed != entry) {
-                signCache.put(reparsed.key(), reparsed);
+            var allSigns = getAllSigns();
+
+            // Phase 1: reparse every entry against the new config and land it in signCache before
+            // dispatching anything. LINE transitions look up a line's current membership via the
+            // allSignsSupplier passed to dispatchTransition below; if reparsing and dispatching were
+            // interleaved in one pass, that supplier would see a different, partially-reparsed membership
+            // set on each iteration, so two signs joining the same line under a prefix change could
+            // enqueue conflicting intermediate transitions for the same line id - and since ReactiveQueue
+            // gives no ordering guarantee between them, BlueMap could apply them out of order and leave
+            // the line absent. Finishing every reparse first means every dispatch in phase 2 sees the
+            // final, fully-reparsed membership set.
+            oldReps = new HashMap<>();
+            for (SignEntry entry : allSigns) {
+                oldReps.put(entry.key(), SignTransitionResolver.computeRepresentation(entry, oldPrefixGroupMap));
+
+                // Self-heal a sign whose representation drifted from its cached parse (e.g. a REGEX
+                // group's prefix text was edited) by reparsing from the raw sign text under the new
+                // config, rather than trusting the stale cached SignLinesParseResult as an identity key -
+                // see agent-context/plans/stale-prefix-orphaned-signs-fix.md. Entries with no raw text
+                // (migrated pre-V5) fall back to today's behavior: diff the cached parse as-is.
+                var reparsed = safeReparseFromRawLines(entry, newConfig.parser());
+                if (reparsed != entry) {
+                    signCache.put(reparsed.key(), reparsed);
+                }
             }
         }
 
-        // Phase 2: cache is now fully reparsed, so dispatch each entry's transition against a consistent
-        // final state.
+        // Phase 2: dispatch each entry's transition. Deliberately unlocked - see the method comment above.
+        // allSignsSupplier reads signCache live (via this::getAllSigns) rather than a snapshot frozen at
+        // the end of phase 1: a snapshot can go stale mid-phase-2 when a sign is concurrently
+        // added/removed/edited (e.g. removeByKey dropping a line's other member), and LINE/SHAPE/EXTRUDE
+        // membership resolution (LineGroupResolver.members et al.) would then recompute a marker against
+        // membership that no longer matches signCache - e.g. resurrecting a line member that a concurrent
+        // removeByKey had just independently dispatched a remove for. Reading live costs an extra
+        // signCache.values() copy per multi-point dispatch instead of one snapshot copy for the whole
+        // phase, but that's the same cost every live sign edit already pays via dispatchTransition.
         for (var keyAndOldRep : oldReps.entrySet()) {
             var key = keyAndOldRep.getKey();
             var current = signCache.get(key);

@@ -71,6 +71,25 @@ class RegionShardedSignEntryWriterTest {
         assertTrue(Files.exists(newRegionFile));
     }
 
+    @Test
+    void aFailedWriteLeavesNoPartialFileAtTheFinalPathAndCleansUpItsTempFile(@TempDir Path storageRoot) throws IOException {
+        var entry = signEntry(0, 0, "minecraft:overworld", "Town Hall");
+        var regionDir = storageRoot.resolve("minecraft").resolve("overworld");
+        Files.createDirectories(regionDir);
+        var regionFile = regionDir.resolve("r.0.0.json");
+        // Occupies the final path with a directory, so the write's ATOMIC_MOVE onto it must fail - standing
+        // in for a crash/interrupt partway through the write without actually killing the JVM mid-test.
+        Files.createDirectory(regionFile);
+
+        var succeeded = RegionShardedSignEntryWriter.write(storageRoot, List.of(entry), GSON);
+
+        assertFalse(succeeded);
+        assertTrue(Files.isDirectory(regionFile), "a failed write must never leave a partial file at the final path");
+        assertFalse(
+                Files.exists(regionFile.resolveSibling(regionFile.getFileName() + ".tmp")),
+                "a failed write must clean up its temp file rather than leaving it behind");
+    }
+
     private static SignEntry signEntry(int x, int z, String dimension, String label) {
         return new SignEntry(
                 new SignEntryKey(x, 64, z, dimension),

@@ -1,11 +1,15 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap.actions;
 
-import com.tpwalke2.bluemapsignmarkers.core.markers.LineMarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.LinePoint;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointMarkerIdentifier;
 
 import java.util.List;
 
 public class SetLineMarkerAction extends MarkerAction {
+    // A line marker only exists once 2+ signs share the same group/label - see AGENTS.md "Marker groups and
+    // config".
+    private static final int MIN_POINTS = 2;
+
     private final String label;
     private final String detail;
     private final List<LinePoint> points;
@@ -17,7 +21,7 @@ public class SetLineMarkerAction extends MarkerAction {
     private final boolean isFirstAppearance;
 
     public SetLineMarkerAction(
-            LineMarkerIdentifier markerIdentifier,
+            MultiPointMarkerIdentifier markerIdentifier,
             String label,
             String detail,
             List<LinePoint> points,
@@ -25,9 +29,9 @@ public class SetLineMarkerAction extends MarkerAction {
             String lineColor,
             boolean isFirstAppearance) {
         super(markerIdentifier);
-        this.label = label;
-        this.detail = detail;
-        this.points = points;
+        this.label = MarkerActionValidation.requireNonNullField(label, "label", "SetLineMarkerAction");
+        this.detail = MarkerActionValidation.requireNonNullField(detail, "detail", "SetLineMarkerAction");
+        this.points = MarkerActionValidation.requireMinPoints(points, MIN_POINTS, "SetLineMarkerAction");
         this.lineWidth = lineWidth;
         this.lineColor = lineColor;
         this.isFirstAppearance = isFirstAppearance;

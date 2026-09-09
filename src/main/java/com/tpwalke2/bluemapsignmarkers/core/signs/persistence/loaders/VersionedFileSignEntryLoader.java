@@ -21,6 +21,12 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
+// Deliberately logs and continues on backup failure below (rather than aborting the whole load, as
+// Version1SignEntryLoader does for the one-time legacy signs.json migration) - this loader also runs once
+// per region file on every server boot, and never overwrites the file it's reading, only writes an
+// optional backup copy alongside it. Aborting the whole load over one region's transient backup failure
+// would risk data becoming unavailable for a reason unrelated to that data's own integrity; the region file
+// itself is untouched either way, so backing it up can be retried on a later boot.
 public class VersionedFileSignEntryLoader {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
 

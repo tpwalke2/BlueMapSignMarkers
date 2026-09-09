@@ -10,10 +10,15 @@ loading/migration mechanics, not the format itself.
 File: `config/bluemapsignmarkers/BMSM-Core.json`. Path is fixed (not per-world) —
 `ConfigProvider.getConfigPath()` = `Path.of("config", Constants.MOD_ID, "BMSM-Core.json")`.
 
-- `ConfigManager.get()` returns a `volatile` singleton reference, lazily populated by calling `reload()` on first
-  access if still `null` (not an eager static-field initializer — that would run the instant anything references
-  the class, including a test merely loading `ConfigManagerTest`, and write a real config file as a side effect).
-  **Config is hot-reloadable**: `ConfigManager.reload()` (`synchronized`, public) loads via `ConfigProvider.loadConfig()`
+- `ConfigManager.get()` returns a singleton reference, lazily populated by calling `reload()` on first access if
+  still `null` (not an eager static-field initializer — that would run the instant anything references the class,
+  including a test merely loading `ConfigManagerTest`, and write a real config file as a side effect). The
+  null-check-then-load is itself double-checked-locking (finding #72,
+  `agent-context/reviews/full-codebase-review_2026-09-07_0900.md`): the unsynchronized first check avoids paying a
+  lock on every `get()` call once loaded, but a second check *inside* a `synchronized (ConfigManager.class)` block
+  guards the actual `reload()` call, so racing first-time callers converge on a single load/parse pass and the same
+  config instance instead of each redundantly loading and racing over which instance wins. **Config is
+  hot-reloadable**: `ConfigManager.reload()` (`synchronized`, public) loads via `ConfigProvider.loadConfig()`
   and swaps the reference; `volatile` alone is enough for safe publication to other threads since the new
   `BMSMConfigV2` is fully built before the swap. Reload is wired to BlueMap's `/bluemap reload` via
   `SignManager.reloadConfig()` — see `core-pipeline.md` §3. A package-private `reload(Path)` overload (and matching
@@ -75,7 +80,12 @@ File: `config/bluemapsignmarkers/BMSM-Core.json`. Path is fixed (not per-world) 
      `lineWidth`/`lineColor`, which both also use for their border) — those fields are silently ignored for the
      group's actual type, so this just flags a likely config mistake rather than rejecting it. `sorting`/`toggleable`
      apply to every group type (thin `MarkerSet` passthroughs — see `core-pipeline.md` §6) so neither has a
-     type-mismatch warning. `allowPlayerColors` (GitHub issue #198) is `LINE`/`SHAPE`/`EXTRUDE`-only, resolved by
+     type-mismatch warning. `name` has no default-safe fallback like the fields above (it's not derivable from a
+     Java default, only from the group's own prefix): `resolveName` returns the configured name if non-blank,
+     otherwise falls back to the group's `prefix` if that's non-blank, otherwise the literal `"(unnamed)"`, logging
+     a warning either way — this replaced passing `markerGroup.name()` straight to `MarkerGroup`'s constructor,
+     which `requireNonNull`s the field and previously threw on a missing/blank name, wiping the *entire* config
+     back to defaults rather than degrading just that one group. `allowPlayerColors` (GitHub issue #198) is `LINE`/`SHAPE`/`EXTRUDE`-only, resolved by
      `resolveAllowPlayerColors`: unset or set on a `POI` group both resolve to `false` (`warnOnTypeFieldMismatches`
      warns on the `POI` case, alongside `lineWidth`/`lineColor`/`fillColor`/`depthTest`). It lets a player set a
      multi-point marker's rendered colour by dyeing one of its member signs instead of an admin editing
@@ -83,10 +93,22 @@ File: `config/bluemapsignmarkers/BMSM-Core.json`. Path is fixed (not per-world) 
   4. Any exception during load (`Gson.fromJson` failure, I/O error, or a `validateMarkerGroups` failure) logs and
      returns `null`, and `ConfigManager.loadCoreConfig` falls back to `new BMSMConfigV2()` defaults — a broken
      config file never prevents server startup, it just silently reverts to a single default `[poi]` group.
+- `BMSMConfigV2` also carries `shutdownAwaitSeconds` (default `DEFAULT_SHUTDOWN_AWAIT_SECONDS = 5`) — how long
+  `ReactiveQueue.shutdown()` (the BlueMap marker-action queue, `core-pipeline.md` §7) waits for in-flight tasks to
+  finish before forcing a `shutdownNow()`. Loaded the same validating-with-fallback way as `sorting`
+  (`LoadingBMSMConfigV2.shutdownAwaitSeconds` is a raw `JsonElement`, not a boxed `Integer`, so a malformed value —
+  wrong type or non-positive — degrades to the default with a warning via `resolveShutdownAwaitSeconds` instead of
+  failing `Gson.fromJson` for the whole config). `BlueMapAPIConnector.resetQueue()` reads
+  `ConfigManager.get().getShutdownAwaitSeconds()` when building each new `ReactiveQueue` instance, so an edited value
+  takes effect on the next BlueMap disable/enable or `/bluemap reload` (the connector's `onEnable` reloads config
+  *before* calling `resetQueue()` specifically so this value is current at construction time, not one reload behind
+  — see `core-pipeline.md` §6).
 - Config file reads/writes both go through `StandardCharsets.UTF_8` explicitly (`Files.readString`/
   `OutputStreamWriter`, ticket 01) rather than the JVM's platform-default charset, so a non-ASCII marker-group
   name survives a restart regardless of the host's default encoding.
 - `saveConfig(config)` creates parent dirs if needed and writes pretty-printed Gson JSON.
+- `BMSMConfigV2.getMarkerGroups()` returns `markerGroups.clone()`, a defensive shallow copy — a caller mutating the
+  returned array (e.g. reordering it) can no longer corrupt the singleton config's own backing array.
 
 ## Sign persistence (`core/signs/persistence/`)
 
@@ -99,15 +121,18 @@ Storage root is **per-world, region-sharded**: `{server_root}/bluemapsignmarkers
 externally deleted/regenerated — GitHub issue #109) can query "signs known in this region" cheaply instead of
 scanning every cached sign; that reconciliation logic itself is not yet implemented.
 
-`ServerPathProvider.getMarkerStorageRoot(server)` (implemented on `BlueMapSignMarkersMod`) resolves the root:
-`levelDir = server.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize()`, server root =
-`levelDir.getParent()`, level name = `levelDir.getFileName()`. The `.normalize()` is required because
+`ServerPathProvider.getMarkerStorageRoot(server)` (implemented on `BlueMapSignMarkersMod`) delegates to
+`ServerPathResolver.resolveMarkerStorageRoot(rawLevelPath)` (`common`, plain Java — extracted so this path math is
+directly unit-testable, see `architecture.md`): `levelDir = rawLevelPath.normalize()`, server root =
+`levelDir.getParent()`, level name = `levelDir.getFileName()`, where `rawLevelPath` is
+`server.getWorldPath(LevelResource.ROOT).toAbsolutePath()`. The `.normalize()` is required because
 `LevelResource.ROOT`'s relative path is literally `"."`, which `Path.resolve()` doesn't collapse on its own —
 skipping it shifts `getParent()`/`getFileName()` by one level and lands the storage root inside the world save
 folder instead of beside it. This also fixed a pre-existing bug where the old path formula's extra `.getParent()`
 resolved to the *run directory's* name, not the level name (`../plans/codebase-review-2026-07-11.md` finding #1).
-`BlueMapSignMarkersMod.getLegacyMarkerFilePath` intentionally keeps the old (buggy) formula unchanged — migration
-must locate files at the path they were actually written to, not the corrected one.
+`BlueMapSignMarkersMod.getLegacyMarkerFilePath` delegates to `ServerPathResolver.resolveLegacyMarkerFilePath`, which
+intentionally keeps the old (buggy) formula unchanged — migration must locate files at the path they were actually
+written to, not the corrected one.
 
 Loaded on `SERVER_STARTING`, saved on `SERVER_STOPPING` (then `SignManager.stop()`).
 
@@ -149,8 +174,11 @@ representation.
 `relativeFilePath()` splits `dimension` (a string like `minecraft:overworld`, or the `WorldMap.UNKNOWN` sentinel
 `"unknown"` with no colon) on the first `:` into namespace/path segments, appending `r.{regionX}.{regionZ}.json`.
 It rejects (throws `IllegalArgumentException`) a blank/`.`/`..` namespace, or a resolved relative path that's
-absolute, starts with `..`, or otherwise escapes the namespace directory after `.normalize()` — a defense against a
-maliciously/accidentally crafted dimension id writing outside the storage root.
+absolute, starts with `..`, has a non-`null` root component (catches a Windows "drive-relative" path — e.g. a raw
+path segment starting with a single `\` — that reports `isAbsolute() == false` but still carries a root component
+`resolve()` takes on in place of the namespace directory, so `isAbsolute()` alone wouldn't catch it), or otherwise
+escapes the namespace directory after `.normalize()` — a defense against a maliciously/accidentally crafted
+dimension id writing outside the storage root.
 `SignRegionPartitioner.partition(List<SignEntry>)` groups entries into `Map<SignRegionKey, List<SignEntry>>` using
 each entry's `key().parentMap()`/`x()`/`z()` — the shared grouping logic behind both save and migration.
 
@@ -177,7 +205,10 @@ each entry's `key().parentMap()`/`x()`/`z()` — the shared grouping logic behin
      a `V5` file goes straight to `Version6Converter`. All loaders isolate per-entry conversion failures
      (`convertV2EntrySafely`/`loadEntry`, ticket 05) so one malformed V1/V2 entry logs and is skipped instead of
      losing the whole file — the same pattern `SignProvider.loadSigns` already applies per entry at step 3 below.
-     `Version1SignEntryLoader`'s dimension
+     Every `V3`/`V4`/`V5`/current-version branch also filters out `null` elements from the deserialized array
+     (`Arrays.stream(...).filter(Objects::nonNull)`, GitHub issue #198 review finding) before converting/returning
+     it — a JSON array with a stray `null` entry (hand-edited or corrupted file) would otherwise NPE partway through
+     conversion instead of just dropping that one slot. `Version1SignEntryLoader`'s dimension
      normalization (`getNormalizedMapId`) recognizes both the short legacy names (`"nether"`/`"end"`/`"overworld"`)
      and the canonical-but-unnamespaced resource paths (`"the_nether"`/`"the_end"`), with or without a `minecraft:`
      namespace already attached (ticket 05) — previously only the three exact lowercase shorthand strings
@@ -192,11 +223,16 @@ each entry's `key().parentMap()`/`x()`/`z()` — the shared grouping logic behin
      still returning the converted current-version entries in-memory without a pre-migration backup on disk.
    - Writes the resulting entries via `RegionShardedSignEntryWriter.write(...)` (see below). Backs up the legacy
      file via `FileUtils.moveToBackup(legacyPath, ".migrated", ...)` — **renamed, not deleted** — only after
-     confirming every region file expected from `SignRegionPartitioner.partition(entryList)` actually exists on
-     disk (or the entry list was empty to begin with); if any expected region file is missing, the legacy file is
-     left in place and an error is logged, so a partial/failed migration doesn't lose the only remaining copy of
-     the data. A successful migration isn't re-attempted on future boots since step 1 will find the new storage
-     root non-empty from then on.
+     `regionFilesRoundTripCleanly` confirms every region file expected from
+     `SignRegionPartitioner.partition(entryList)` round-trip parses back to the *exact same entry content* it was
+     written from (or the entry list was empty to begin with); if any expected region file is missing, fails to
+     parse, or parses to a different entry set than expected (matching count with different/altered content — e.g.
+     valid-but-corrupted JSON — used to slip past a size-only check), the legacy file is left in place and an error
+     is logged, so a partial/failed migration doesn't lose the only remaining copy of the data. The comparison is a
+     `Set<SignEntry>` equality check (`SignEntry` is a record, so this is structural content comparison), not a
+     positional list compare, since the writer's on-disk ordering isn't guaranteed to match `partition()`'s
+     insertion order. A successful migration isn't re-attempted on future boots since step 1 will find the new
+     storage root non-empty from then on.
 3. Every resulting `SignEntry` (from either path) is fed through `SignManager.addOrUpdate(...)` — same as before
    sharding, loading signs at startup goes through the exact same decision logic as any other sign event (see
    `core-pipeline.md` §3). Each entry is wrapped in its own try/catch, so one malformed entry logs an error and is
@@ -255,5 +291,5 @@ in place. Old region files (or a not-yet-migrated legacy `signs.json`) on live s
 the version they were written with.
 
 ---
-*Last updated: 2026-09-06 | Verified against: feature/tpwalke2/198-dye-colors (535bb13)*
+*Last updated: 2026-09-09 | Verified against: main (b2c5fa0)*
 

@@ -1,11 +1,15 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap.actions;
 
-import com.tpwalke2.bluemapsignmarkers.core.markers.ExtrudeMarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.LinePoint;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointMarkerIdentifier;
 
 import java.util.List;
 
 public class SetExtrudeMarkerAction extends MarkerAction {
+    // An extrude marker only exists once EXTRUDE_MIN_MEMBERS (3) signs share the same group/label - see
+    // SignTransitionResolver.EXTRUDE_MIN_MEMBERS.
+    private static final int MIN_POINTS = 3;
+
     private final String label;
     private final String detail;
     private final List<LinePoint> points;
@@ -18,7 +22,7 @@ public class SetExtrudeMarkerAction extends MarkerAction {
     private final boolean isFirstAppearance;
 
     public SetExtrudeMarkerAction(
-            ExtrudeMarkerIdentifier markerIdentifier,
+            MultiPointMarkerIdentifier markerIdentifier,
             String label,
             String detail,
             List<LinePoint> points,
@@ -27,9 +31,9 @@ public class SetExtrudeMarkerAction extends MarkerAction {
             String fillColor,
             boolean isFirstAppearance) {
         super(markerIdentifier);
-        this.label = label;
-        this.detail = detail;
-        this.points = points;
+        this.label = MarkerActionValidation.requireNonNullField(label, "label", "SetExtrudeMarkerAction");
+        this.detail = MarkerActionValidation.requireNonNullField(detail, "detail", "SetExtrudeMarkerAction");
+        this.points = MarkerActionValidation.requireMinPoints(points, MIN_POINTS, "SetExtrudeMarkerAction");
         this.lineWidth = lineWidth;
         this.lineColor = lineColor;
         this.fillColor = fillColor;

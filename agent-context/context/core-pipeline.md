@@ -12,10 +12,12 @@ builds/adds) an entry:
    found) and calls `SignManager.addOrUpdate(...)` for every stored entry (see `config-and-persistence.md`).
 2. **Block entity load** — `BlueMapSignMarkersMod.onBlockEntityLoad` (registered on
    `ServerBlockEntityEvents.BLOCK_ENTITY_LOAD`) fires for every loaded `SignBlockEntity` and calls
-   `SignHelper.createSignEntry(entity, WorldMap.UNKNOWN)` → `SignManager.addOrUpdate(...)`. Player id is the
-   `WorldMap.UNKNOWN` (`"unknown"`) sentinel here because chunk load isn't attributable to a player — this
-   constant is the single canonical source for that sentinel (ticket 08 consolidated a second, independent
-   `"unknown"` literal duplicated in `SignManager`; both now reference `WorldMap.UNKNOWN`).
+   `SignHelper.createSignEntry(entity, PlayerIds.UNKNOWN)` → `SignManager.addOrUpdate(...)`. Player id is the
+   `PlayerIds.UNKNOWN` (`"unknown"`) sentinel here because chunk load isn't attributable to a player. `PlayerIds`
+   (`core.signs`) is the single canonical source for that sentinel — deliberately a separate constant from
+   `WorldMap.UNKNOWN` (the no-dimension-known sentinel), even though both currently hold `"unknown"`, since
+   `PlayerIds.UNKNOWN` is compared/persisted as a real `playerId` and must keep that exact value regardless of
+   what `WorldMap.UNKNOWN` does.
 3. **Mixins** (`src/main/resources/bluemapsignmarkers.mixins.json`, server-only, `JAVA_21` compat level):
    - `SignBlockEntityInject` injects `SignBlockEntity.updateSignText` at `HEAD` (sets a `@Unique` guard flag,
      `bluemapsignmarkers$inUpdateSignText`) and at `TAIL` (clears the flag) → a player edited a sign →
@@ -25,7 +27,7 @@ builds/adds) an entry:
      guard a plain text edit would dispatch twice (harmless but wasteful). This second hook is what makes
      dyeing/glowing/un-glowing an already-placed sign (right-clicking it with a dye, ink sac, or glow ink sac —
      none of which call `updateSignText`) visible to the mod at all: `SignManager.addOrUpdate(SignHelper.createSignEntry(this,
-     WorldMap.UNKNOWN))`, `WorldMap.UNKNOWN` because no `Player` is available at this injection point. See
+     PlayerIds.UNKNOWN))`, `PlayerIds.UNKNOWN` because no `Player` is available at this injection point. See
      `../plans/player-marker-colors/spec.md` "Detecting a dye change: mixin" for why a mixin (not a Fabric API
      event) is the only clean hook for this.
    - `AbstractBlockInject` injects `BlockBehaviour.affectNeighborsAfterRemoval` at `HEAD`, but only proceeds
@@ -79,7 +81,11 @@ the same label/detail.
 
 `SignEntryHelper` (plain Java, `core.signs`) derives the values `SignManager` dispatches from a `SignEntry`'s
 front/back `SignLinesParseResult`s: `getPrefix` prefers the front side's prefix, falling back to the back side's
-(`null` if neither matched); `getLabel` likewise prefers front, falling back to back. `getDetail` merges both
+(`null` if neither matched); `getLabel` likewise prefers front, falling back to back — but only falls back when
+front and back either match the *same* group or the front side didn't match at all; if front and back matched two
+*different* groups, a blank front label returns `""` rather than the back's label, since the marker belongs to the
+front's group (mirrors `getDetail`'s same-group rule below, and closes the same class of bug: previously a blank
+front label on a group-mismatched sign silently borrowed the other group's label text). `getDetail` merges both
 sides' detail text (`"FRONT: ...%nBACK: ..."`) only when front and back **matched the same marker group** (ticket
 07, `.scratch/codebase-review-followups/issues/07-fix-dual-sided-sign-semantics.md`); when they matched two
 *different* groups, only the front side's detail is used — matching `getPrefix`'s front-preferred rule for which
@@ -107,11 +113,14 @@ Singleton (double-checked locking), holds:
   re-reading the volatile field twice.
 - One `BlueMapAPIConnector`; `SignManager` registers itself as an `IResetHandler` on it.
 
-`addOrUpdateSign`, `removeByKey`, and `reloadConfig` are all `synchronized` on the same monitor (finding #17,
-`../plans/codebase-review-2026-07-11.md`, resolved 2026-07-23) — `reset()`'s config-swap-then-diff sequence in
-`reloadConfig()` (below) runs on whatever thread `BlueMapAPI.onEnable` fires on, not necessarily the server thread,
-so without this a live sign edit/removal arriving from the mixins mid-diff could be clobbered by a stale
-dispatch, or a sign removed mid-diff could be silently re-added. `dispatch()`
+`addOrUpdateSign`, `removeByKey`, and `reloadConfig`'s phase 1 (below) are all `synchronized` on the same monitor
+(finding #17, `../plans/codebase-review-2026-07-11.md`, resolved 2026-07-23) — `reset()`'s config-swap-then-reparse
+sequence runs on whatever thread `BlueMapAPI.onEnable` fires on, not necessarily the server thread, so without this a
+live sign edit/removal arriving from the mixins mid-swap could be clobbered by a stale dispatch, or a sign removed
+mid-swap could be silently re-added. `reloadConfig`'s phase 2 (the actual dispatch loop) runs **unlocked** — see
+below, `.scratch/concurrency-pass-2026-09/issues/05-signmanager-reloadconfig-lock-contention.md` — since it's O(n²)
+work (a membership filter/sort per `LINE`/`SHAPE`/`EXTRUDE` sign) that would otherwise block every concurrent sign
+edit for the reload's full duration. `dispatch()`
 only enqueues onto `ReactiveQueue` under this lock (no blocking BlueMap API work), so it doesn't add hot-path
 contention the way locking around `processMarkerAction` would.
 
@@ -160,11 +169,17 @@ EXTRUDE/EXTRUDE cells all use `sameGroupAndLabel(a, b)` (compares `group().prefi
 same-group-recompute shortcut condition is `oldType == newType && oldType != MarkerGroupType.POI &&
 sameGroupAndLabel(...)`, generalized to cover any non-`POI` type rather than naming `LINE` explicitly, since a
 `LINE`/`SHAPE`/`EXTRUDE` group's identity (and marker id, §5) is keyed on group+label either way. The recompute
-shortcut's no-op guard is `oldRep.detail().equals(newRep.detail()) && oldRep.dye().equals(newRep.dye()) &&
-!isReload` — `dye` was added to that guard (GitHub issue #198) alongside `detail` precisely so a dye-only edit
-(detail unchanged) doesn't get silently swallowed: it makes `oldRep != newRep`, defeats the no-op check, and falls
-through to the normal recompute path (`joinEffect`), which re-derives the marker's colour from the *current full
-membership* via `ColorResolver` regardless of which member's dye actually changed. When a transition
+shortcut's no-op guard is `oldRep.detail().equals(newRep.detail()) && dyeUnchanged && !isReload`, where
+`dyeUnchanged = !newRep.group().allowPlayerColors() || Objects.equals(oldRep.dye(), newRep.dye())` — `dye` was added
+to that guard (GitHub issue #198) alongside `detail` precisely so a dye-only edit (detail unchanged) doesn't get
+silently swallowed: it makes `oldRep != newRep`, defeats the no-op check, and falls through to the normal recompute
+path (`joinEffect`), which re-derives the marker's colour from the *current full membership* via `ColorResolver`
+regardless of which member's dye actually changed. `Objects.equals` (not `oldRep.dye().equals(newRep.dye())`) is a
+post-review fix (`../reviews/copilot-review-2026-09-07.md`): a `Representation`'s dye can be `null` in practice
+(corrupted/hand-edited persisted data), and the direct `.equals()` call threw an NPE on that path. The
+`allowPlayerColors()` short-circuit was added in the same fix so a group that hasn't opted into dye-derived colour
+doesn't pay the full membership scan/sort/dispatch cost on every dye change to one of its signs — dye is compared
+only when it could actually change the rendered colour. When a transition
 needs both a leave-effect and a join-effect (a group/label/type change, for any pair of the four types), each
 effect is computed independently (`null` if that half is a no-op, e.g. leaving a `LINE` group that still has ≥2
 members after removal dispatches a `Set`, not a leave at all) and both are collected into a `List<MarkerAction>`:
@@ -226,7 +241,7 @@ through this method, so a sign whose prefix was renamed while the server was off
 correctly rather than dispatched under a stale cached parse. Then looks up `existing` from `signCache`, computes
 `oldRep`/`newRep` from `existing`/the reparsed `signEntry` respectively, updates `signCache`/`chunkIndex` (removing the key if
 `newRep == null` and something was cached, else caching the merged entry — the merge preserves the *existing*
-cached `playerId` when the incoming entry's is the `WorldMap.UNKNOWN` chunk-load sentinel, and preserves the
+cached `playerId` when the incoming entry's is the `PlayerIds.UNKNOWN` chunk-load sentinel, and preserves the
 existing entry's `createdAtMillis` rather than ever recomputing it), then dispatches whatever
 `computeTransitionAction` returns (if non-`null`), passing a fresh `getAllSigns()` snapshot as `allSigns`.
 
@@ -237,7 +252,11 @@ code path.
 
 ### Config reload (`/bluemap reload`) — `reset()`/`reloadConfig()`
 
-`reset()` (from `IResetHandler`) calls `reloadConfig()`, which:
+`reset()` (from `IResetHandler`) calls `reloadConfig()`, which is split into a locked **phase 1** (config swap +
+reparse) and an unlocked **phase 2** (dispatch) — see the `synchronized`-monitor note above and
+`.scratch/concurrency-pass-2026-09/issues/05-signmanager-reloadconfig-lock-contention.md`:
+
+**Phase 1** (`synchronized`):
 1. Captures `oldPrefixGroupMap = runtimeConfig.prefixGroupMap()` **before** touching anything else.
 2. `ConfigManager.reload()` (re-reads `BMSM-Core.json` from disk), `SignHelper.reloadParser()`, then replaces
    `runtimeConfig` wholesale via `buildRuntimeConfig()` — a freshly rebuilt `prefixGroupMap` paired with a
@@ -245,21 +264,31 @@ code path.
    `blueMapAPIConnector.clearMarkerSetsCache()` (see §6), so neither identifier cache accumulates entries keyed on
    a `MarkerGroup` value from before the last reload (`MarkerSetIdentifier` keys on the whole record by value, so
    a changed icon/offset/distance would otherwise be a new, never-evicted cache entry).
-3. Before diffing, every currently-cached `SignEntry` is passed through `safeReparseFromRawLines(entry,
-   newConfig.parser())` (a static, log-and-fall-back wrapper around `reparseFromRawLines`) and, if the result
-   differs from the original reference, the reparsed entry replaces it in `signCache`. `reparseFromRawLines`
-   re-runs `SignLinesParser.parse(...)` on the entry's persisted `frontRawLines`/`backRawLines` against the new
-   config and returns `entry.withParsedText(freshFront, freshBack)` — or the *same* entry reference, cheaply
-   detectable via `!=`, if either raw-lines array is `null` (an entry migrated from pre-V5 data, with no raw text
-   on disk to re-parse; see `config-and-persistence.md`).
-4. Takes one `getAllSigns()` snapshot (`allSigns`) up front, then for every currently-cached `SignEntry` (the cache
-   is **not** cleared): computes `oldRep` under `oldPrefixGroupMap` from the sign's representation as cached
-   *before* reload, `newRep` under the just-rebuilt `prefixGroupMap` from the (possibly reparsed, step 3) entry,
-   and dispatches `computeTransitionAction(allSigns, entry.key(), oldRep, newRep, ...)` if non-`null` — the exact
-   same transition table a live sign edit uses, just fed a before/after diff against the *config* instead of the
-   *sign text*. Reusing one snapshot across the whole loop (rather than each sign's `LINE`/`SHAPE`-group recompute
-   re-querying `getAllSigns()` independently) avoids an O(n²) re-scan of the cache when a config reload touches
-   many signs at once.
+3. Takes one `getAllSigns()` snapshot (`allSigns`), and for every entry in it computes `oldRep` under
+   `oldPrefixGroupMap` (stored in an `oldReps` map keyed by `SignEntryKey`) and passes the entry through
+   `safeReparseFromRawLines(entry, newConfig.parser())` (a static, log-and-fall-back wrapper around
+   `reparseFromRawLines`); if the result differs from the original reference, the reparsed entry replaces it in
+   `signCache`. `reparseFromRawLines` re-runs `SignLinesParser.parse(...)` on the entry's persisted
+   `frontRawLines`/`backRawLines` against the new config and returns `entry.withParsedText(freshFront, freshBack)` —
+   or the *same* entry reference, cheaply detectable via `!=`, if either raw-lines array is `null` (an entry
+   migrated from pre-V5 data, with no raw text on disk to re-parse; see `config-and-persistence.md`).
+
+**Phase 2** (unlocked, runs after the `synchronized` block exits): for every `(key, oldRep)` pair captured in phase
+1, re-reads `current = signCache.get(key)` fresh and computes `newRep` under the just-rebuilt `prefixGroupMap` from
+`current` (`null` if the key's no longer cached), then dispatches `computeTransitionAction(allSigns, key, oldRep,
+newRep, ...)` if non-`null` — the exact same transition table a live sign edit uses, just fed a before/after diff
+against the *config* instead of the *sign text*. The `allSigns` snapshot passed to `computeTransitionAction` (via
+`this::getAllSigns`, an `allSignsSupplier`) is read **live** off `signCache` on every call, not a snapshot frozen at
+the end of phase 1 — a frozen snapshot could go stale mid-phase-2 if a sign is concurrently added/removed/edited
+(e.g. a concurrent `removeByKey` dropping a `LINE` member), which would make `LineGroupResolver.members` recompute
+against membership that no longer matches `signCache` and could resurrect a member a concurrent dispatch had just
+independently removed. A sign edited concurrently during phase 2 is not clobbered: phase 2 only ever reads
+`signCache` (never mutates it), so it can only race a concurrent edit's own independent dispatch for the same key or
+line/shape — both are best-effort idempotent set/remove actions applied through `ReactiveQueue`, which already gives
+no cross-dispatch ordering guarantee (§7), so unlocking phase 2 doesn't introduce a new class of risk, only widens
+an existing one to a rarer window. Reading `signCache` fresh per multi-point dispatch costs an extra
+`signCache.values()` copy compared to one shared snapshot, but that's the same cost every live sign edit already
+pays via `dispatchTransition`.
 
 This replaced the previous behavior (`reloadSigns()`: snapshot the cache, clear it, replay every entry through
 `addOrUpdateSign` so every entry always took the Add branch) for a concrete bug fix documented in
@@ -366,22 +395,22 @@ Two id schemes now exist side by side (position-keyed and content-keyed), unifie
 ## 6. `BlueMapAPIConnector` — the only class touching the BlueMap API
 
 - Holds a `volatile ReactiveQueue<MarkerAction> markerActionQueue`, a
-  `volatile Map<MarkerSetIdentifier, List<MarkerSet>> markerSetsCache`, a
-  `volatile Map<String, RenderMaskEvaluator.RenderMask> renderMaskCache` (keyed by real `BlueMapMap` id — see §8),
-  and a `volatile BlueMapAPI blueMapAPI`. All four are `volatile` because `resetQueue()`/`onEnable()`/
-  `clearMarkerSetsCache()` always replace them wholesale with a brand-new object rather than mutating the existing
-  one, so correctness only needs a reader to see the latest *reference*
-  — that's what `volatile` guarantees (it says nothing about the referenced objects, which are mutated afterward
-  through their own thread-safe methods: `ReactiveQueue.enqueue()`/`process()`, `ConcurrentHashMap.get()`/
+  `volatile Map<MarkerSetIdentifier, List<MarkerSet>> markerSetsCache`, and a
+  `volatile Map<String, RenderMaskEvaluator.RenderMask> renderMaskCache` (keyed by real `BlueMapMap` id — see §8).
+  All three are `volatile` because `resetQueue()`/`clearMarkerSetsCache()` always replace them wholesale with a
+  brand-new object rather than mutating the existing one, so correctness only needs a reader to see the latest
+  *reference* — that's what `volatile` guarantees (it says nothing about the referenced objects, which are mutated
+  afterward through their own thread-safe methods: `ReactiveQueue.enqueue()`/`process()`, `ConcurrentHashMap.get()`/
   `putIfAbsent()`/`computeIfAbsent()`). No reader (`dispatch()`/`onDisable()`/`onEnable()` for the queue,
-  `getMarkerSets()` for the marker-set cache, `getRenderMask()` for the render-mask cache, `getMaps()` for
-  `blueMapAPI`) ever needs a joint snapshot of more than one of these fields at once, so per-field visibility is
-  enough — a shared lock would additionally serialize `dispatch()` (hot path, every sign event) behind
-  `processMarkerAction()`'s BlueMap API calls, an unrelated critical section. This resolves finding #12
+  `getMarkerSets()` for the marker-set cache, `getRenderMask()` for the render-mask cache) ever needs a joint
+  snapshot of more than one of these fields at once, so per-field visibility is enough — a shared lock would
+  additionally serialize `dispatch()` (hot path, every sign event) behind `processMarkerAction()`'s BlueMap API
+  calls, an unrelated critical section. This resolves finding #12
   (`../plans/codebase-review-2026-07-11.md`, resolved 2026-07-22) and the field-visibility half of #11.
   `renderMaskCache` is invalidated (replaced with a fresh empty map) at the exact same call sites as
   `markerSetsCache` — `resetQueue()` and `clearMarkerSetsCache()` — so neither cache survives a config reload or a
-  genuine BlueMap disable/enable cycle carrying stale entries.
+  genuine BlueMap disable/enable cycle carrying stale entries. There is no cached `blueMapAPI` field anymore (see
+  "No cached `BlueMapAPI` reference" below) — `getMaps()` re-fetches `BlueMapAPI.getInstance()` on every call.
 - **Listener detach (finding #7, GitHub issue #140, resolved 2026-07-23):** the constructor registers
   `BlueMapAPI.onEnable(...)`/`onDisable(...)` with two `final Consumer<BlueMapAPI>` fields
   (`onEnableListener`/`onDisableListener` — each built once as `this::onEnable`/`this::onDisable`), and
@@ -392,32 +421,55 @@ Two id schemes now exist side by side (position-keyed and content-keyed), unifie
   `bluemap-api` 2.8.0's source that `onEnable`/`onDisable` do store the `Consumer` and `unregisterListener` does
   remove it correctly once the same instance is passed both ways — this class is excluded from unit-test coverage
   (game-coupled, see `testing.md`), so this was verified by reading the dependency's source, not by a test.
-- **Startup sign-load bugfix:** `onEnable`/`onDisable` used to gate the reload-vs-first-boot decision on
-  `markerActionQueue.isShutdown()`, but a brand-new `ReactiveQueue` whose executor was never lazily created also
-  reports `isShutdown() == true` — exactly what happens at server startup, when `SERVER_STARTING` dispatches an
-  action for every migrated/loaded sign before BlueMap is available: `process()` returns early (`shouldRun()` is
-  `false`) without ever creating an executor. That made the *first* `onEnable()` a server ever sees mistake startup
-  for a reload, call `resetQueue()`, and discard every action enqueued during sign load before a single one was
-  processed. Fixed with an explicit `volatile boolean disabledSinceLastEnable` field: `onDisable()` sets it `true`;
-  `onEnable()` only treats the cycle as a genuine reload (and calls `resetQueue()`/`fireReset()`) `if
-  (disabledSinceLastEnable)`, resetting the flag to `false` immediately after. A freshly constructed connector
-  starts with the flag `false`, so the very first `onEnable()` always resumes draining the queue that startup
-  already populated instead of replacing it.
+  `shutdown()` also now retires `markerActionQueue` itself (`markerActionQueue.shutdown()`, warning if it returns
+  `false` — couldn't confirm every in-flight task stopped), not just the two listeners — previously this left the
+  queue's fixed thread pool alive and any in-flight marker action unawaited on server stop, so
+  `BlueMapSignMarkersMod.onServerStopping`'s configured shutdown timeout (§7) had no effect at all on the connector's
+  own `shutdown()` path. Mirrors `onDisable()`'s own `shutdown()` call, but runs on server stop regardless of
+  whether BlueMap ever fired `onDisable` first.
+- **Startup sign-load bugfix, superseded twice:** `onEnable`/`onDisable` originally gated the reload-vs-first-boot
+  decision on `markerActionQueue.isShutdown()`, but a brand-new `ReactiveQueue` whose executor was never lazily
+  created also reported `isShutdown() == true` — exactly what happens at server startup, when `SERVER_STARTING`
+  dispatches an action for every migrated/loaded sign before BlueMap is available: `process()` returns early
+  (`shouldRun()` is `false`) without ever creating an executor. That made the *first* `onEnable()` a server ever sees
+  mistake startup for a reload, call `resetQueue()`, and discard every action enqueued during sign load before a
+  single one was processed. That was first fixed with an explicit `volatile boolean disabledSinceLastEnable` field,
+  then that field was removed once `ReactiveQueue.isShutdown()` itself was corrected to stop conflating "genuinely
+  shut down" with "never started" (finding 63, `.scratch/concurrency-pass-2026-09/issues/04-reactivequeue-isshutdown-semantics.md`
+  — see §7's `isShutdown()`/`hasStarted()` split) — `onEnable()` now asks `markerActionQueue.isShutdown()` directly
+  again, correctly this time.
 - `BlueMapAPI.onEnable`/`onDisable` are registered in the constructor. `onDisable` shuts the queue down (actions
-  keep enqueuing but stop draining) and sets `disabledSinceLastEnable = true`. `onEnable(api)`: assigns
-  `this.blueMapAPI = api` **first**, then, if `disabledSinceLastEnable`, calls `resetQueue()` (fresh queue + fresh
-  `markerSetsCache`) and `fireReset()` (→ every registered
-  `IResetHandler`, i.e. `SignManager.reset()`) before resuming draining — this is why a BlueMap reload re-diffs the
-  entire sign cache against the reloaded config rather than assuming stale `MarkerSet` state is still valid. The `blueMapAPI` assignment must
-  come before `fireReset()`, not after: `fireReset()`'s replay dispatches `MarkerAction`s that `ReactiveQueue`
-  starts draining on background threads immediately (`enqueue()` calls `process()` synchronously, which submits
-  to the executor right away — it doesn't wait for the enqueuing loop, let alone `onEnable`, to finish), and those
-  threads read `this.blueMapAPI` in `getMaps()`. Assigning it after `fireReset()` (the pre-fix ordering) let replay
-  actions race ahead and read the *previous* cycle's `blueMapAPI` reference — root cause of a bug where editing a
-  marker group's config and running `/bluemap reload` made that group's markers (and its `MarkerSet` layer) vanish
-  instead of updating in place, recoverable only by reloading a second time. `SignManager.reloadConfig()`'s disk
-  read (see §3) made the race reliably reproducible by widening the window between replay-dispatch and the
-  now-corrected assignment point.
+  keep enqueuing but stop draining) and records `lastShutdownConfirmedClean = markerActionQueue.shutdown()`'s return
+  value (see §7's `shutdown()`) — read by the next `onEnable()` to log a warning if a non-interruptible straggler
+  task may still race the reset replay below (no better recovery is available; this only makes the violation
+  observable). `onEnable(api)` runs its whole isGenuineReload check-then-act **`synchronized (this)`** (shares the
+  monitor `processMarkerAction`/`applySingleAction` use) — BlueMap's listener dispatch is presumed single-threaded
+  today, but the check-then-act wasn't atomic on its own, so a hypothetical concurrent `onEnable()` call could
+  otherwise also observe `isShutdown()==true` and double-fire both (finding 44,
+  `agent-context/reviews/full-codebase-review_2026-09-07_0900.md`) — safe to share since `onEnable()` only runs on a
+  genuine BlueMap enable/reload, never the hot path. Inside the lock: if `markerActionQueue.isShutdown()` is a
+  genuine reload, it calls `ConfigManager.reload()` **before** `resetQueue()` (not after) — `resetQueue()` reads
+  `ConfigManager.get().getShutdownAwaitSeconds()` to build the new queue, and the old ordering left an edited
+  `shutdownAwaitSeconds` value with no effect until a later disable/re-enable cycle, since the queue's value is
+  fixed at construction; `fireReset()` still runs its own `ConfigManager.reload()` right after (harmless — re-reads
+  the same just-reloaded file) since it also needs to rebuild `SignManager`'s parser/prefix map — then calls
+  `resetQueue()` (fresh queue + fresh `markerSetsCache`) and `fireReset()` (→ every registered `IResetHandler`, i.e.
+  `SignManager.reset()`). Otherwise, if `markerActionQueue.consumeOverflowSinceLastCheck()` reports at least one
+  message was rejected for capacity since the last check (see §7's `DEFAULT_CAPACITY`/`overflowedSinceLastCheck`) —
+  checked and cleared even on this very first `onEnable()`, since a large sign count enqueuing every migrated/loaded
+  sign's add action while BlueMap is still unavailable at startup can silently overflow, and `isGenuineReload` is
+  `false` on a first boot so `fireReset()` wouldn't otherwise run to recover the dropped markers (the "capacity does
+  not bound..." finding, `agent-context/reviews/copilotreview.2026-09-09.md`) — it logs a warning and calls
+  `fireReset()` to replay every currently tracked sign's marker state and recover the ones capacity dropped. No
+  `blueMapAPI` field is assigned or read anymore (see below); the previous ordering bug where a cached `BlueMapAPI`
+  reference could go stale mid-replay no longer applies since `getMaps()` re-fetches the instance fresh every call.
+- **No cached `BlueMapAPI` reference:** the connector used to hold a `volatile BlueMapAPI blueMapAPI` field, set in
+  the constructor (`BlueMapAPI.getInstance().orElse(null)`, since BlueMap may already be enabled by construction
+  time) and reassigned first thing in `onEnable`, with `getMaps()` reading `this.blueMapAPI.getWorld(mapId)`. That
+  field is gone (finding 43, `agent-context/reviews/full-codebase-review_2026-09-07_0900.md`): `getMaps(mapId)` now
+  calls `BlueMapAPI.getInstance()` itself on every invocation, returning `Optional.empty()` (logged at debug) if
+  empty — a disable/re-enable landing between `processMarkerAction`'s own guard check and this call could otherwise
+  operate against a defunct cached instance instead of the current one.
 - `getMarkerSets(identifier)` is `synchronized`; on cache miss it resolves `BlueMapAPI.getWorld(mapId)` →
   `.getMaps()`, and for each map either fetches an existing `MarkerSet` by `markerGroup.name()` or builds+registers
   one (`label`, `defaultHidden`, `sorting`, `toggleable` from the `MarkerGroup` — `sorting`/`toggleable` are thin
@@ -487,6 +539,12 @@ Two id schemes now exist side by side (position-keyed and content-keyed), unifie
   `setShapeMarker` does, then `put`s an `ExtrudeMarker.builder().label(...).detail(...).shape(shape, minY,
   maxY).lineWidth(...).lineColor(...).fillColor(...).depthTestEnabled(markerGroup.depthTest()).build()` into each
   marker set's map, keyed by `action.getMarkerIdentifier().getId()` (the content-keyed `"extrude:" + label` id, §5).
+- Two more small helpers are package-private (not `private`) specifically for direct unit testing, alongside
+  `resolveExtrudeHeightRange` above: `pointOf(MarkerIdentifier)` (builds the single-point `List<LinePoint>` used by
+  the render-bounds gate, §8, for a position-keyed POI marker) and `isInsideRenderBounds(RenderMaskEvaluator.RenderMask,
+  List<LinePoint>)` (the pure mask-vs-points predicate, split out of the `mapId`-taking overload that does the cache
+  lookup) — both covered in `BlueMapAPIConnectorTest` without needing a live connector instance or `bluemap-api`
+  (`compileOnly`) on the test classpath.
 - `addMarker` only actually builds a marker `if (markerGroup.type() == MarkerGroupType.POI)` — this is a real,
   live branch now that `MarkerGroupType.LINE`/`SHAPE`/`EXTRUDE` exist (no longer future-proofing for values that
   didn't exist): a `LINE`-, `SHAPE`-, or `EXTRUDE`-typed group's signs never reach `addMarker` at all, since
@@ -509,17 +567,43 @@ Two id schemes now exist side by side (position-keyed and content-keyed), unifie
 Lives in `core.reactive`, not BlueMap-specific — reusable anywhere something needs to "queue while a dependency is
 unavailable, drain once it's back."
 
-- `enqueue(message)`: offers to an internal `ConcurrentLinkedQueue`, then calls `process()`.
+- `enqueue(message)`: reserves a capacity slot via `tryReserveSlot()` (an `AtomicInteger queuedCount` compare-and-set
+  loop against `capacity`, default `DEFAULT_CAPACITY = 100_000`); on success offers to an internal
+  `ConcurrentLinkedQueue` and calls `process()`. On failure (capacity reached), `warnAtCapacity(message)` sets
+  `overflowedSinceLastCheck` and logs a throttled warning (at most once per `CAPACITY_WARNING_THROTTLE_MILLIS` =
+  1000ms, so sustained overflow doesn't flood the log), and the message is **permanently dropped** — `enqueue()` has
+  no failure signal back to its caller and this queue has no retry/replay path of its own. `capacity` is a defensive
+  cap (finding 61, `agent-context/reviews/full-codebase-review_2026-09-07_0900.md`) for a class documented as
+  reusable beyond today's sign-count-bounded usage; set high specifically because `SignManager.reset()` (a
+  `/bluemap reload`) re-dispatches one message per cached sign and region-sharded persistence exists to support
+  large sign counts — a tight cap would risk silently dropping markers on reload for exactly the large-server case
+  this mod targets. `consumeOverflowSinceLastCheck()` (an `AtomicBoolean.getAndSet(false)`) lets a caller with its
+  own replay mechanism recover from overflow — `BlueMapAPIConnector.onEnable()` polls it and calls `fireReset()` if
+  it was ever set (§6) — rather than the dropped message staying silently lost forever.
 - `process()`: bails immediately if `shutdownRequested` or `!shouldRunCallback.shouldRun()` (for
-  `BlueMapAPIConnector`, `shouldRun` is `BlueMapAPI.getInstance().isPresent()`); otherwise submits `processMessages`
-  to `getExecutor()`'s fixed thread pool (`Executors.newFixedThreadPool(availableProcessors())`), swallowing a
-  `RejectedExecutionException` (shut down concurrently between the check and the submission — nothing more to
-  schedule on a retired instance).
-- `processMessages` loops while `!shutdownRequested && !queue.isEmpty() && shouldRun()` still holds, polling one
-  message at a time and submitting **each individual message** as its own task to the same executor (so message
-  processing itself is also concurrent, not just the drain loop) — a per-message `RejectedExecutionException`
-  during a shutdown race just returns; any other exception from the submission reaches
-  `messageProcessorErrorCallback`.
+  `BlueMapAPIConnector`, `shouldRun` is `BlueMapAPI.getInstance().isPresent()`); otherwise, if an `AtomicBoolean
+  draining` compare-and-set from `false`→`true` succeeds (finding 62,
+  `agent-context/reviews/full-codebase-review_2026-09-07_0900.md` — guards against a burst of concurrent `enqueue()`
+  calls each submitting their own redundant drain-loop task; if the CAS fails, a drain loop is already active or
+  about to be, and it will drain this message too, so `process()` just returns), submits `processMessages` to
+  `getExecutor()`'s fixed thread pool (`Executors.newFixedThreadPool(availableProcessors())`) — resetting `draining`
+  back to `false` if `getExecutor()` returns `null` or submission throws `RejectedExecutionException` (shut down
+  concurrently between the check and the submission — nothing more to schedule on a retired instance).
+- `processMessages` loops while `canContinueDraining()` (`!shutdownRequested && !queue.isEmpty() && shouldRun()`,
+  extracted so the loop condition and its post-drain recheck below can't drift apart) holds, polling one message at
+  a time and submitting **each individual message** as its own task to the same executor (so message processing
+  itself is also concurrent, not just the drain loop) — a per-message `RejectedExecutionException` during a
+  shutdown race just returns; any other exception from the submission reaches `messageProcessorErrorCallback`.
+  `queuedCount` is decremented only once a message's submitted task actually *finishes* (in a `finally` around the
+  processor/error-callback calls) or is known never to run (executor `null`, submission threw) — **not** right
+  after `poll()` — because decrementing immediately would free a capacity slot the instant a message left `queue`,
+  even though it then sat in the executor's own unbounded internal work queue awaiting a free worker thread; a slow
+  processor could accumulate arbitrarily many not-yet-run tasks there while `enqueue()` kept accepting more,
+  defeating the point of capacity (it would only ever bound `queue` itself, not total outstanding work). A `finally`
+  block around the whole loop always resets `draining` back to `false` on exit, then re-checks
+  `canContinueDraining()` and calls `process()` again if it's still true — closing a race window between the loop
+  observing "nothing left to do" and the flag actually clearing, where a concurrent `enqueue()`/`process()` call
+  could otherwise see `draining` still true, skip submitting, and never get drained.
 - **No ordering guarantee between messages** (investigated for ticket 09,
   `.scratch/codebase-review-followups/issues/09-reactivequeue-message-ordering.md`, confirmed): because each
   message becomes its own independent executor task, once the fixed thread pool has more than one worker thread
@@ -534,22 +618,44 @@ unavailable, drain once it's back."
   under a `synchronized` block it sets a `volatile shutdownRequested` flag and calls `executor.shutdown()`
   together (paired with `getExecutor()` sharing the same monitor, so a `shutdown()` racing a lazy executor
   creation can't leave a freshly-created executor un-shut-down), then — lock released, so an in-flight task's own
-  `getExecutor()` call can't deadlock against it — blocks up to `SHUTDOWN_AWAIT_SECONDS` (5) on
+  `getExecutor()` call can't deadlock against it — blocks up to `shutdownAwaitSeconds` on
   `awaitTermination`, falling back to `shutdownNow()` (then one more bounded `awaitTermination`) if the timeout
-  elapses. This is what lets a caller that awaits `shutdown()` returning (e.g. `BlueMapAPIConnector.onDisable`)
+  elapses, returning `true`/`false` for whether it confirmed a clean stop (read by `BlueMapAPIConnector.onDisable`/
+  `shutdown()`, §6). This is what lets a caller that awaits `shutdown()` returning (e.g. `BlueMapAPIConnector.onDisable`)
   rely on there being no straggler task still able to touch shared state afterward, which otherwise could run
   after a subsequent `resetQueue()`/`fireReset()` replay and clobber the state that replay just established.
+  `shutdownAwaitSeconds` is now **configurable** rather than the fixed `DEFAULT_SHUTDOWN_AWAIT_SECONDS` (5): the
+  public/BlueMapAPIConnector-facing constructor takes it as a parameter, sourced from
+  `ConfigManager.get().getShutdownAwaitSeconds()` — a `BMSMConfigV2` field (`config-and-persistence.md`) resolved
+  the same validating-with-fallback way as `sorting`/`lineWidth` (malformed or non-positive falls back to the
+  default with a warning, `ConfigProvider.resolveShutdownAwaitSeconds`) — so an operator can tune how long server
+  stop/BlueMap-disable waits for in-flight marker actions before forcing them.
 - Once `shutdownRequested` is set, `getExecutor()` **never creates a replacement executor** — a shut-down queue is
   permanently retired rather than self-healing (finding #2). This is why `BlueMapAPIConnector.onEnable` has to call
   `resetQueue()` (a brand-new `ReactiveQueue` instance) rather than relying on the old one to resurrect itself.
-- `executor` is `volatile` (finding #12, resolved 2026-07-22) so `isShutdown()` — callable with no lock held, from
-  any thread — sees `getExecutor()`'s synchronized write without needing its own synchronization.
-- A package-private constructor overload accepts an `ExecutorService` directly (the public 3-arg constructor
+- `executor` is `volatile` (finding #12, resolved 2026-07-22) so `isShutdown()`/`hasStarted()` — callable with no
+  lock held, from any thread — see `getExecutor()`'s synchronized write without needing their own synchronization.
+  `isShutdown()` returns `shutdownRequested` alone now (finding 63,
+  `.scratch/concurrency-pass-2026-09/issues/04-reactivequeue-isshutdown-semantics.md`) — it used to also return
+  `true` for `executor == null || executor.isShutdown()`, conflating "genuinely shut down" with "never started" (a
+  queue whose `process()` calls all returned early via `shouldRun()`/`shutdownRequested` before ever lazily creating
+  an executor). That conflation was real: `BlueMapAPIConnector.onEnable()` needed a whole separate
+  `disabledSinceLastEnable` flag to tell a genuine BlueMap disable/re-enable apart from the very first `onEnable()`
+  a server ever sees (§6), precisely because the old `isShutdown()` also reported `true` for the never-started case.
+  `shutdownRequested` alone is sufficient — only `shutdown()` ever sets it, always synchronously with calling
+  `executor.shutdown()` on whatever executor exists at that moment, and nothing outside this class can shut the
+  internal executor down through any other path. `hasStarted()` (`executor != null`) exposes the other half of the
+  old conflation directly, for any caller that genuinely needs to know "has this instance ever lazily created its
+  executor" regardless of shutdown state.
+- A package-private constructor overload accepts an `ExecutorService` directly (the public constructor
   delegates to it with `null`, same as before) — test-only seam so `ReactiveQueueTest` can inject a synchronous or
   failure-simulating fake executor instead of the lazily-created fixed thread pool, with no change to real
-  behavior. See `testing.md` for what it covers, including a documented remaining gap: an exception thrown by the
-  processor callback itself is swallowed (captured on an unawaited `Future`, never reaching
-  `messageProcessorErrorCallback`) — only a submission-time failure reaches that callback.
+  behavior. A previously-documented gap — an exception thrown by the processor callback itself was swallowed
+  (captured on an unawaited `Future`, never reaching `messageProcessorErrorCallback`), only a submission-time
+  failure reached that callback — is now fixed: the task submitted per-message in `processMessages` wraps
+  `messageProcessorCallback.processMessage(message)` in its own `try/catch`, forwarding any exception to
+  `messageProcessorErrorCallback` (itself wrapped in a `try/catch` so a broken error callback can't kill the worker
+  thread or propagate back to `enqueue()`'s caller). See `testing.md` for full coverage.
 
 ## 8. Per-map render-bounds gating — `core.bounds.RenderMaskEvaluator`
 
@@ -563,7 +669,12 @@ gating" section. This section covers the code-level mechanics.
   brace-depth-aware splitting on commas); `extractFields`/`extractType` pull a shape's fields into a
   `Map<String, String>` (type defaults to `"box"` if omitted). `FIELD_PATTERN` allows an optional matching pair of
   `"` around a numeric/boolean literal (fixed so `subtract: "true"` parses identically to `subtract: true`, rather
-  than silently falling back to the field's default because the quoted form went unmatched).
+  than silently falling back to the field's default because the quoted form went unmatched). `intField` parses its
+  int-typed fields (`min-x`/`max-x`/`min-y`/`max-y`/`min-z`/`max-z`) via `new BigDecimal(value).intValueExact()`
+  rather than `Integer.parseInt` — `FIELD_PATTERN`'s numeric alternative allows exponent notation (e.g. `"1e3"`) on
+  every numeric field, int-typed ones included, and `Integer.parseInt` can't handle that form (would throw, failing
+  the whole map open on an otherwise-valid value); a genuinely fractional value (e.g. `"1.5"`) still throws via
+  `intValueExact`, same as before.
 - Two entry points: `isInsideRenderBounds(mapId, mapsConfigDir, x, y, z)` (one-shot convenience) and
   `load(mapId, mapsConfigDir)` → `RenderMask` (a small class wrapping `List<RenderMaskShape>` with one method,
   `contains(x, y, z)`) — `BlueMapAPIConnector` always uses `load`, since it tests many points against the same
@@ -614,5 +725,5 @@ gating" section. This section covers the code-level mechanics.
   themselves are otherwise unchanged — the fix is localized to `prepareGated`.
 
 ---
-*Last updated: 2026-09-06 | Verified against: feature/tpwalke2/198-dye-colors (535bb13)*
+*Last updated: 2026-09-09 | Verified against: main (b2c5fa0)*
 

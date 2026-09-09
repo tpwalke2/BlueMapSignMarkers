@@ -1,6 +1,7 @@
 package com.tpwalke2.bluemapsignmarkers.mixin;
 
-import com.tpwalke2.bluemapsignmarkers.core.WorldMap;
+import com.tpwalke2.bluemapsignmarkers.common.SafeCall;
+import com.tpwalke2.bluemapsignmarkers.core.signs.PlayerIds;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignHelper;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignManager;
 import org.spongepowered.asm.mixin.Mixin;
@@ -43,9 +44,9 @@ public class SignBlockEntityInject {
             List<FilteredText> lines,
             CallbackInfo cir) {
         bluemapsignmarkers$inUpdateSignText = false;
-        SignManager.addOrUpdate(SignHelper.createSignEntry(
+        SafeCall.run("onTryChangeText", () -> SignManager.addOrUpdate(SignHelper.createSignEntry(
                 (SignBlockEntity) (Object) this,
-                player.getStringUUID()));
+                player.getStringUUID())));
     }
 
     // updateSignText (above) routes through this same method internally, so without the
@@ -53,7 +54,7 @@ public class SignBlockEntityInject {
     // duplicate, idempotent recompute - for every plain text edit. This is the only hook that fires for
     // dye/ink-sac/glow-ink-sac application, none of which call updateSignText - see
     // agent-context/plans/player-marker-colors/spec.md "Detecting a dye change: mixin". No Player is
-    // available at this injection point, so playerId falls back to WorldMap.UNKNOWN, the same placeholder
+    // available at this injection point, so playerId falls back to PlayerIds.UNKNOWN, the same placeholder
     // BlueMapSignMarkersMod.onBlockEntityLoad uses when it has no live player context either.
     @Inject(method = "updateText", at = @At("RETURN"))
     void onUpdateText(
@@ -63,8 +64,8 @@ public class SignBlockEntityInject {
         if (!cir.getReturnValueZ()) return;
         if (bluemapsignmarkers$inUpdateSignText) return;
 
-        SignManager.addOrUpdate(SignHelper.createSignEntry(
+        SafeCall.run("onUpdateText", () -> SignManager.addOrUpdate(SignHelper.createSignEntry(
                 (SignBlockEntity) (Object) this,
-                WorldMap.UNKNOWN));
+                PlayerIds.UNKNOWN)));
     }
 }

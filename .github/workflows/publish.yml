@@ -7,10 +7,12 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: modrinth-publish
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
         with:
-          submodules: recursive
           fetch-depth: 0 # needed for versioning
       - name: Set up JDK 25
         uses: actions/setup-java@v5
@@ -22,7 +24,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: "${{ runner.os }}-bluemapsignmarkers-${{ hashFiles('**/*.gradle*') }}"
+          key: "${{ runner.os }}-bluemapsignmarkers-${{ hashFiles('**/*.gradle*', '**/gradle.properties') }}"
           restore-keys: |
             ${{ runner.os }}-bluemapsignmarkers-
       - name: make gradle wrapper executable
@@ -31,30 +33,7 @@ jobs:
         run: ./gradlew test
       - name: summarize test results
         if: always()
-        run: |
-          total=0
-          failed=0
-          errors=0
-          skipped=0
-          shopt -s nullglob
-          for f in build/test-results/test/*.xml; do
-            t=$(sed -n 's/.*tests="\([0-9]*\)".*/\1/p' "$f" | head -1)
-            fl=$(sed -n 's/.*failures="\([0-9]*\)".*/\1/p' "$f" | head -1)
-            er=$(sed -n 's/.*errors="\([0-9]*\)".*/\1/p' "$f" | head -1)
-            sk=$(sed -n 's/.*skipped="\([0-9]*\)".*/\1/p' "$f" | head -1)
-            total=$((total + t))
-            failed=$((failed + fl))
-            errors=$((errors + er))
-            skipped=$((skipped + sk))
-          done
-          passed=$((total - failed - errors - skipped))
-          {
-            echo "### Unit test results"
-            echo ""
-            echo "| Total | Passed | Failed | Errors | Skipped |"
-            echo "|---|---|---|---|---|"
-            echo "| $total | $passed | $failed | $errors | $skipped |"
-          } >> "$GITHUB_STEP_SUMMARY"
+        uses: ./.github/actions/summarize-test-results
       - name: Publish alpha to Modrinth
         if: startsWith(github.ref, 'refs/heads/')
         env:

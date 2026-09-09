@@ -1,9 +1,9 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap.actions;
 
-import com.tpwalke2.bluemapsignmarkers.core.markers.ExtrudeMarkerIdentifier;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointMarkerIdentifier;
 
 public class RemoveExtrudeMarkerAction extends MarkerAction {
-    public RemoveExtrudeMarkerAction(ExtrudeMarkerIdentifier markerIdentifier) {
+    public RemoveExtrudeMarkerAction(MultiPointMarkerIdentifier markerIdentifier) {
         super(markerIdentifier);
     }
 
