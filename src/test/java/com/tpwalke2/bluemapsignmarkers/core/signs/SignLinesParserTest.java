@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Timeout;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 class SignLinesParserTest {
@@ -225,5 +226,23 @@ class SignLinesParserTest {
 
         assertEquals("[poi]", result.prefix());
         assertEquals(100 - prefix.length(), result.label().length());
+    }
+
+    @Test
+    void oversizedLineTruncationDoesNotSplitASurrogatePair() {
+        // Copilot review finding: substring(0, MAX_LINE_LENGTH) can land mid-surrogate-pair when the
+        // line contains characters outside the BMP (e.g. an emoji), leaving an unpaired low/high
+        // surrogate in the truncated string. Build a label whose emoji straddles the truncation
+        // boundary and verify truncation backs off a character instead of splitting the pair.
+        var parser = new SignLinesParser(List.of(startsWithGroup("[poi]", "Points of Interest")));
+
+        var prefix = "[poi] ";
+        var padding = "x".repeat(100 - prefix.length() - 1);
+        var emoji = "😀"; // U+1F600, a surrogate pair
+        var result = parser.parse(new String[]{prefix + padding + emoji});
+
+        assertEquals("[poi]", result.prefix());
+        assertFalse(Character.isLowSurrogate(result.label().charAt(result.label().length() - 1)));
+        assertFalse(Character.isHighSurrogate(result.label().charAt(result.label().length() - 1)));
     }
 }

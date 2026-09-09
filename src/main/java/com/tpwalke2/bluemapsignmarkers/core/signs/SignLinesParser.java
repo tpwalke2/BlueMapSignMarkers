@@ -89,7 +89,12 @@ public class SignLinesParser {
     }
 
     private static String truncateLine(String line) {
-        return line.length() > MAX_LINE_LENGTH ? line.substring(0, MAX_LINE_LENGTH) : line;
+        if (line.length() <= MAX_LINE_LENGTH) {
+            return line;
+        }
+
+        int end = Character.isHighSurrogate(line.charAt(MAX_LINE_LENGTH - 1)) ? MAX_LINE_LENGTH - 1 : MAX_LINE_LENGTH;
+        return line.substring(0, end);
     }
 
     private static ParseStates processStartState(

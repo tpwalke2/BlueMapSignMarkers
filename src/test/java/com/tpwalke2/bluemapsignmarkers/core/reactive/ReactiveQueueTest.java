@@ -66,7 +66,7 @@ class ReactiveQueueTest {
     // conflating that state with a genuine shutdown - hasStarted() now answers "never started" directly, so
     // isShutdown() no longer needs to (and doesn't) report true for it.
     @Test
-    void isShutdownIsFalseAndHasNotStartedIsFalseBeforeAnyWorkHasBeenScheduled() {
+    void isShutdownIsFalseAndHasStartedIsFalseBeforeAnyWorkHasBeenScheduled() {
         var queue = new ReactiveQueue<String>(() -> true, message -> { }, error -> { });
 
         assertFalse(queue.isShutdown(), "a queue that never processed anything is not shut down");
@@ -76,7 +76,7 @@ class ReactiveQueueTest {
     // The other conflated state from finding 63: shouldRun() being false stops process() from ever creating
     // an executor, same as a queue that's simply never been enqueued to - neither is a genuine shutdown.
     @Test
-    void isShutdownIsFalseAndHasNotStartedIsFalseWhenShouldRunIsFalse() {
+    void isShutdownIsFalseAndHasStartedIsFalseWhenShouldRunIsFalse() {
         var invocations = new AtomicInteger();
         var queue = new ReactiveQueue<String>(() -> false, message -> invocations.incrementAndGet(), error -> { });
 
@@ -298,7 +298,7 @@ class ReactiveQueueTest {
 
         // shouldRun() is checked before any executor is touched, so nothing was ever scheduled.
         assertEquals(0, invocations.get());
-        // Not a shutdown - just never started (finding 63, see isShutdownIsFalseAndHasNotStartedIsFalseWhenShouldRunIsFalse).
+        // Not a shutdown - just never started (finding 63, see isShutdownIsFalseAndHasStartedIsFalseWhenShouldRunIsFalse).
         assertFalse(queue.isShutdown());
     }
 
