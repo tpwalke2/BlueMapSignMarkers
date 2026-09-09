@@ -968,10 +968,17 @@ class ConfigProviderTest {
         assertTrue(warnings.stream().anyMatch(m -> m.contains("offsetY")));
     }
 
-    // finding 41: matchType is part of the duplicate-prefix key, so a STARTS_WITH "[a]" group and a REGEX
-    // "[a]" group (which match different sign text) aren't wrongly rejected as duplicates of each other.
+    // Superseded by copilotreview.2026-09-09.md: finding 41 keyed duplicate-prefix detection on
+    // (matchType, prefix), reasoning that a STARTS_WITH "[a]" group and a REGEX "[a]" group match different
+    // sign text and so aren't real duplicates. That's true for matching, but every runtime lookup that
+    // resolves a sign's representation back to its group (SignManager.buildPrefixGroupMap,
+    // SignEntryHelper.getPrefix/SignTransitionResolver.computeRepresentation) is keyed on raw prefix text
+    // alone, with no way to recover which of the two groups a given sign actually matched - so this pair
+    // validated successfully while one of the two groups silently never matched any sign. Raw prefixes must
+    // be unique across groups again until (matchType, prefix) identity is threaded through
+    // SignLinesParseResult and every downstream lookup too.
     @Test
-    void loadConfigAllowsTheSamePrefixTextAcrossDifferentMatchTypes(@TempDir Path tempDir) throws IOException {
+    void loadConfigRejectsTheSamePrefixTextAcrossDifferentMatchTypes(@TempDir Path tempDir) throws IOException {
         var path = tempDir.resolve("BMSM-Core.json");
         Files.writeString(path, """
                 {
@@ -984,7 +991,7 @@ class ConfigProviderTest {
 
         var config = ConfigProvider.loadConfig(path);
 
-        assertEquals(2, config.getMarkerGroups().length);
+        assertNull(config);
     }
 
     // finding 6: a v1 config with an empty/blank poiPrefix must not migrate into a v2 group whose empty

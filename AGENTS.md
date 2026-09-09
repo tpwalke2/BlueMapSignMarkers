@@ -160,7 +160,10 @@ files written and others missing, and the legacy file is the actual source of tr
 backed up), `loadSigns` loads every region file the same version-aware way as before sharding — the versioned-file
 loader (`VersionedFileSignEntryLoader`, handling V2→V3 migration via `Version3Converter`, V3→V4 migration via
 `Version4Converter` (adds `createdAtMillis`, needed to order points within a line marker; backfilled for pre-V4
-entries), and current V4 files directly), falling back to `Version1SignEntryLoader` for pre-versioning files. When
+entries), V4→V5 migration via `Version5Converter` (adds raw front/back sign lines, backfilled `null` for pre-V5
+entries — needed to reparse a sign against a reloaded config instead of trusting a stale cached parse), and V5→V6
+migration via `Version6Converter` (adds front/back dye, backfilled to `SignEntryHelper.UNDYED_DYE` for pre-V6
+entries), and current V6 files directly), falling back to `Version1SignEntryLoader` for pre-versioning files. When
 `LegacySignFileMigrator` runs, it writes the entries out region-sharded (`RegionShardedSignEntryWriter`, via
 temp-file + atomic move so a crash mid-write never leaves a truncated region file) and backs up the legacy file
 (renamed, not deleted) only once every expected region file round-trip parses back to valid data — not just exists

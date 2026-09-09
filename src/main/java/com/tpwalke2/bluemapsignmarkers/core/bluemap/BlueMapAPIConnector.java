@@ -94,9 +94,19 @@ public class BlueMapAPIConnector {
         BlueMapAPI.onDisable(onDisableListener);
     }
 
+    // Also retires markerActionQueue (awaiting up to its configured shutdownAwaitSeconds) rather than just
+    // unregistering the BlueMap listeners - previously this left the queue's fixed thread pool alive and
+    // any in-flight marker action unawaited on server stop, so BlueMapSignMarkersMod.onServerStopping's
+    // configured shutdown timeout had no effect at all. Mirrors onDisable()'s own shutdown() call, but
+    // this path runs on server stop regardless of whether BlueMap ever fired onDisable first.
     public void shutdown() {
         BlueMapAPI.unregisterListener(onEnableListener);
         BlueMapAPI.unregisterListener(onDisableListener);
+
+        if (!markerActionQueue.shutdown()) {
+            LOGGER.warn("Marker action queue shutdown could not confirm all in-flight tasks stopped before "
+                    + "server stop completed");
+        }
     }
 
     public void dispatch(MarkerAction action) {
@@ -517,14 +527,39 @@ public class BlueMapAPIConnector {
         // Shares the same lock as processMarkerAction/applySingleAction's marker mutations, which is
         // fine here - onEnable() only runs on a genuine BlueMap enable/reload, never on the hot path.
         synchronized (this) {
-            if (markerActionQueue.isShutdown()) {
+            var isGenuineReload = markerActionQueue.isShutdown();
+            // Checked (and cleared) even on the very first onEnable(), before isGenuineReload's branch
+            // below can replace markerActionQueue with a fresh, never-overflowed one: capacity rejection
+            // permanently drops a message (enqueue() has no failure signal back to its caller, and this
+            // queue has no retry/replay path of its own), so a large sign count enqueuing every migrated/
+            // loaded sign's add action while BlueMap is still unavailable at startup can silently overflow
+            // - and since this is the very first enable, isGenuineReload is false and fireReset() would
+            // otherwise never run to recover the dropped markers. See the "capacity does not bound..."
+            // finding, agent-context/reviews/copilotreview.2026-09-09.md.
+            var overflowedBeforeAvailable = markerActionQueue.consumeOverflowSinceLastCheck();
+
+            if (isGenuineReload) {
                 if (!lastShutdownConfirmedClean) {
                     LOGGER.warn("Resuming after a BlueMap disable whose shutdown() could not confirm every "
                             + "in-flight marker action had stopped; a straggler task may still race this reset's "
                             + "replay of marker state");
                 }
+
+                // Reload config before resetQueue() rather than after: resetQueue() reads
+                // ConfigManager.get().getShutdownAwaitSeconds() to build the new queue, and fireReset()
+                // (below) is what would otherwise reload config via SignManager.reloadConfig() - too
+                // late, since the queue's shutdownAwaitSeconds is fixed at construction. Without this,
+                // editing that setting and running /bluemap reload had no effect until a later
+                // disable/re-enable cycle. fireReset() still runs its own ConfigManager.reload() right
+                // after (harmless - just re-reads the same just-reloaded file) since it also needs to
+                // rebuild SignManager's parser/prefix map from the reloaded config.
+                ConfigManager.reload();
                 resetQueue();
 
+                fireReset();
+            } else if (overflowedBeforeAvailable) {
+                LOGGER.warn("Marker action queue dropped one or more actions to capacity before BlueMap became "
+                        + "available; replaying every currently tracked sign's marker state to recover them");
                 fireReset();
             }
         }

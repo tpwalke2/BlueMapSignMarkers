@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -248,9 +249,14 @@ public class RenderMaskEvaluator {
         return fields;
     }
 
+    // FIELD_PATTERN's numeric alternative allows exponent notation (e.g. "1e3") on every numeric field,
+    // int-typed ones (min-x/max-x/min-y/max-y/min-z/max-z) included - Integer.parseInt can't handle that
+    // form and would throw, failing the whole map open on an otherwise-valid value. Parse via BigDecimal
+    // instead so any exact-integer value (exponent notation or not) resolves correctly; a genuinely
+    // fractional value (e.g. "1.5") still throws via intValueExact, same as before.
     private static int intField(Map<String, String> fields, String key, int defaultValue) {
         var value = fields.get(key);
-        return value == null ? defaultValue : Integer.parseInt(value);
+        return value == null ? defaultValue : new BigDecimal(value).intValueExact();
     }
 
     private static double requiredDoubleField(Map<String, String> fields, String key) {

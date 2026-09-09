@@ -506,22 +506,47 @@ class ReactiveQueueTest {
                 delegate,
                 capacity);
         try {
-            // Consumed by the single worker thread immediately, blocking on releaseProcessing - so it
-            // never occupies a capacity slot on `queue` itself, only the two enqueues below do.
+            // Stays counted against capacity for as long as it's in flight - its slot isn't released
+            // until the callback above actually returns (see copilotreview.2026-09-09.md's "capacity
+            // does not bound backlog while processing is enabled" finding) - so it, not just what's
+            // still sitting in the internal queue, counts toward the limit below.
             queue.enqueue(0);
             assertTrue(firstMessageStarted.await(5, TimeUnit.SECONDS), "first message never started processing");
 
             queue.enqueue(1);
+            // Capacity (2) is now exhausted: message 0 still in flight (blocked on releaseProcessing) plus
+            // message 1 queued behind it.
             queue.enqueue(2);
-            // Capacity (2) is now exhausted by messages 1 and 2 sitting on the queue behind the blocked worker.
-            queue.enqueue(3);
 
             releaseProcessing.countDown();
 
-            assertTrue(awaitTrue(() -> received.size() >= 3, 5000),
+            assertTrue(awaitTrue(() -> received.size() >= 2, 5000),
                     "the messages that fit within capacity should still all be processed");
-            assertEquals(List.of(0, 1, 2), List.copyOf(received),
-                    "message 3 should have been rejected once capacity was reached, never processed");
+            assertEquals(List.of(0, 1), List.copyOf(received),
+                    "message 2 should have been rejected once capacity was reached, never processed");
+        } finally {
+            delegate.shutdownNow();
+        }
+    }
+
+    // Regression test for the "capacity rejection permanently loses marker state updates" finding
+    // (agent-context/reviews/copilotreview.2026-09-09.md): a caller with its own replay mechanism needs a
+    // way to learn that enqueue() dropped a message, so consumeOverflowSinceLastCheck() must actually flip
+    // true on overflow and reset to false once consumed rather than staying stuck either way.
+    @Test
+    void consumeOverflowSinceLastCheckReportsAndClearsCapacityRejection() {
+        var delegate = Executors.newSingleThreadExecutor();
+        try {
+            var queue = new ReactiveQueue<Integer>(
+                    () -> false, message -> { }, error -> { }, delegate, 1);
+
+            assertFalse(queue.consumeOverflowSinceLastCheck(), "no overflow should be reported before any rejection");
+
+            queue.enqueue(0);
+            queue.enqueue(1); // rejected: capacity is 1 and shouldRun() is always false, so nothing ever drains
+
+            assertTrue(queue.consumeOverflowSinceLastCheck(), "a rejected enqueue should be reported as overflow");
+            assertFalse(queue.consumeOverflowSinceLastCheck(), "overflow should be cleared once consumed");
         } finally {
             delegate.shutdownNow();
         }

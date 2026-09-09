@@ -43,6 +43,13 @@ public class ReactiveQueue<T> {
     private final int capacity;
     private final AtomicInteger queuedCount = new AtomicInteger(0);
     private final AtomicLong lastCapacityWarningAtMillis = new AtomicLong(0);
+    // Set whenever enqueue() rejects a message for capacity, cleared only by consumeOverflowSinceLastCheck().
+    // A caller with its own replay mechanism (BlueMapAPIConnector.onEnable(), re-dispatching every current
+    // sign representation via SignManager.reset()) can poll this to recover a message permanently lost to
+    // capacity rejection instead of it staying silently missing forever - concretely, a server with more
+    // persisted signs than capacity booting while BlueMap is still unavailable (see
+    // agent-context/reviews/copilotreview.2026-09-09.md).
+    private final AtomicBoolean overflowedSinceLastCheck = new AtomicBoolean(false);
     // Guards against a burst of enqueue() calls each submitting their own redundant drain-loop task
     // (finding 62, agent-context/reviews/full-codebase-review_2026-09-07_0900.md). Only the thread that
     // wins the compareAndSet actually submits processMessages(); everyone else's message is still safe
@@ -127,6 +134,8 @@ public class ReactiveQueue<T> {
     }
 
     private void warnAtCapacity(T message) {
+        overflowedSinceLastCheck.set(true);
+
         var now = System.currentTimeMillis();
         var last = lastCapacityWarningAtMillis.get();
         if (now - last < CAPACITY_WARNING_THROTTLE_MILLIS
@@ -191,10 +200,20 @@ public class ReactiveQueue<T> {
             while (canContinueDraining()) {
                 T message = queue.poll();
                 if (message == null) continue;
-                queuedCount.decrementAndGet();
 
+                // queuedCount is decremented only once the submitted task actually finishes (or is known
+                // never to run), not here right after poll() - decrementing here freed a capacity slot the
+                // instant a message left `queue`, even though it then sat in the executor's own unbounded
+                // internal work queue awaiting a free worker thread. That let a slow processor accumulate
+                // arbitrarily many not-yet-run tasks there while enqueue() kept accepting more, defeating
+                // the whole point of capacity - it only ever bounded `queue` itself, not total outstanding
+                // work. Counting "submitted but not yet complete" the same as "still queued" makes capacity
+                // an actual bound on total outstanding work.
                 var currentExecutor = getExecutor();
-                if (currentExecutor == null) return;
+                if (currentExecutor == null) {
+                    queuedCount.decrementAndGet();
+                    return;
+                }
 
                 try {
                     currentExecutor.submit(() -> {
@@ -207,13 +226,17 @@ public class ReactiveQueue<T> {
                                 // A broken error callback must not kill this worker thread mid-drain (leaving
                                 // later messages unprocessed) or propagate back to enqueue()'s caller.
                             }
+                        } finally {
+                            queuedCount.decrementAndGet();
                         }
                     });
                 } catch (RejectedExecutionException e) {
                     // Shut down concurrently between poll() and this submission; expected during a normal
                     // shutdown race, not a processing failure worth reporting to the error callback.
+                    queuedCount.decrementAndGet();
                     return;
                 } catch (Exception e) {
+                    queuedCount.decrementAndGet();
                     messageProcessorErrorCallback.onError(e);
                 }
             }
@@ -256,6 +279,13 @@ public class ReactiveQueue<T> {
     // checks - regardless of whether it has since been shut down.
     public boolean hasStarted() {
         return executor != null;
+    }
+
+    // True if enqueue() rejected at least one message for capacity since the last call to this method,
+    // false otherwise - clears the flag as a side effect so repeated polling only reports genuinely new
+    // overflow. See overflowedSinceLastCheck's declaration for why a caller needs this.
+    public boolean consumeOverflowSinceLastCheck() {
+        return overflowedSinceLastCheck.getAndSet(false);
     }
 
     // Blocks (up to shutdownAwaitSeconds) until every task already submitted to this generation's

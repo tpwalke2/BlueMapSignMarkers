@@ -199,10 +199,18 @@ public class ConfigProvider {
                 }
             }
 
-            // Keyed on matchType + prefix together, not prefix alone - a STARTS_WITH "[a]" group and a
-            // REGEX "[a]" group match different sign text (a literal prefix vs. a pattern that happens to
-            // share the same string) and aren't actually duplicates of each other.
-            if (!seenPrefixes.add(markerGroup.matchType() + " " + prefix)) {
+            // Keyed on raw prefix text alone, not matchType + prefix: a STARTS_WITH "[a]" group and a
+            // REGEX "[a]" group match different sign text, but every runtime lookup that resolves a
+            // sign's representation back to its group (SignManager.buildPrefixGroupMap,
+            // SignEntryHelper.getPrefix/SignTransitionResolver.computeRepresentation) is keyed on raw
+            // prefix text alone - it has no way to recover which of two same-prefix groups a given sign
+            // matched. Allowing this pair to validate previously let a config load successfully while one
+            // of the two groups silently never matched any sign (see
+            // agent-context/reviews/copilotreview.2026-09-09.md); rejecting it here instead gives the
+            // admin an upfront error instead of the group quietly not working. Revisit only alongside
+            // threading (matchType, prefix) identity through SignLinesParseResult and every downstream
+            // lookup.
+            if (!seenPrefixes.add(prefix)) {
                 throw new IllegalArgumentException(
                         "Marker group '" + markerGroup.name() + "' has a prefix duplicated across groups: "
                                 + prefix);

@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 
 public class LegacySignFileMigrator {
@@ -79,7 +80,12 @@ public class LegacySignFileMigrator {
 
     // Round-trip parses each region file the write pass produced (rather than just checking it exists) so
     // a truncated/corrupt region file - which loads as "no entries" - can't slip past verification and
-    // let the legacy file get backed up over genuinely lost data.
+    // let the legacy file get backed up over genuinely lost data. Compares the full parsed entry set
+    // against what was expected to be written, not just its size - matching lengths with different/altered
+    // content (e.g. valid-but-corrupted JSON) would otherwise pass and retire the legacy source over
+    // altered data. SignEntry is a record, so set equality is a structural content comparison; a Set
+    // (rather than a positional list compare) is used since the writer's on-disk ordering isn't guaranteed
+    // to match partition()'s insertion order.
     // Visible for testing: lets tests exercise this against a region file corrupted after being written,
     // which migrate() itself has no seam to do (it writes and verifies in the same call).
     static boolean regionFilesRoundTripCleanly(
@@ -104,10 +110,11 @@ public class LegacySignFileMigrator {
             }
 
             var parsed = VersionedFileSignEntryLoader.loadSignEntries(filePath.toString(), content, markerGroups, gson);
-            if (parsed == null || parsed.length != partition.getValue().size()) {
+            var expected = partition.getValue();
+            if (parsed == null || parsed.length != expected.size() || !new HashSet<>(Arrays.asList(parsed)).equals(new HashSet<>(expected))) {
                 LOGGER.error(
-                        "Region file {} failed to round-trip parse after migration write (expected {} entries, got {})",
-                        filePath, partition.getValue().size(), parsed == null ? "none" : parsed.length);
+                        "Region file {} failed to round-trip parse after migration write (expected {} entries matching {}, got {})",
+                        filePath, expected.size(), expected, parsed == null ? "none" : Arrays.toString(parsed));
                 return false;
             }
         }

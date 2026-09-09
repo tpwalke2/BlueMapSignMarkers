@@ -204,12 +204,12 @@ public class SignManager implements IResetHandler {
     // filter/sort per LINE/SHAPE/EXTRUDE sign, O(n^2) total across a reload - runs unlocked, so it no
     // longer blocks every concurrent sign edit/removal from the mixins for the reload's full duration (see
     // .scratch/concurrency-pass-2026-09/issues/05-signmanager-reloadconfig-lock-contention.md). A sign
-    // edited concurrently during phase 2 is not clobbered: phase 2 dispatches strictly against
-    // `postReparseSnapshot` (an immutable copy taken at the end of the locked section) and `signCache`
-    // (read fresh, never mutated by phase 2), so it can only race a concurrent edit's own independent
-    // dispatch for the same key - both are best-effort idempotent set/remove actions applied through
-    // ReactiveQueue, which already gives no cross-dispatch ordering guarantee (see dispatchTransition), so
-    // this doesn't introduce a new class of risk, only widens an existing one to a rarer window.
+    // edited concurrently during phase 2 is not clobbered: phase 2 reads `signCache` fresh (never mutated
+    // by phase 2 itself) for both its own transitions and LINE/SHAPE/EXTRUDE membership resolution, so it
+    // can only race a concurrent edit's own independent dispatch for the same key or the same line/shape -
+    // both are best-effort idempotent set/remove actions applied through ReactiveQueue, which already gives
+    // no cross-dispatch ordering guarantee (see dispatchTransition), so this doesn't introduce a new class
+    // of risk, only widens an existing one to a rarer window.
     //
     // signCache/chunkIndex are deliberately NOT cleared here (unlike a naive clear-and-replay): a marker's
     // id can be content-keyed (a LINE marker's id is "line:" + label) rather than position-keyed, so a
@@ -223,7 +223,6 @@ public class SignManager implements IResetHandler {
 
         RuntimeConfig newConfig;
         HashMap<SignEntryKey, SignTransitionResolver.Representation> oldReps;
-        List<SignEntry> postReparseSnapshot;
 
         synchronized (this) {
             var oldPrefixGroupMap = runtimeConfig.prefixGroupMap();
@@ -259,20 +258,22 @@ public class SignManager implements IResetHandler {
                     signCache.put(reparsed.key(), reparsed);
                 }
             }
-
-            // Snapshot taken while still holding the lock, so it reflects every phase 1 reparse exactly
-            // once each - the O(n^2) membership resolution in phase 2 reads this instead of re-copying
-            // signCache (via this::getAllSigns) on every single multi-point sign.
-            postReparseSnapshot = getAllSigns();
         }
 
         // Phase 2: dispatch each entry's transition. Deliberately unlocked - see the method comment above.
-        Supplier<List<SignEntry>> snapshotSupplier = () -> postReparseSnapshot;
+        // allSignsSupplier reads signCache live (via this::getAllSigns) rather than a snapshot frozen at
+        // the end of phase 1: a snapshot can go stale mid-phase-2 when a sign is concurrently
+        // added/removed/edited (e.g. removeByKey dropping a line's other member), and LINE/SHAPE/EXTRUDE
+        // membership resolution (LineGroupResolver.members et al.) would then recompute a marker against
+        // membership that no longer matches signCache - e.g. resurrecting a line member that a concurrent
+        // removeByKey had just independently dispatched a remove for. Reading live costs an extra
+        // signCache.values() copy per multi-point dispatch instead of one snapshot copy for the whole
+        // phase, but that's the same cost every live sign edit already pays via dispatchTransition.
         for (var keyAndOldRep : oldReps.entrySet()) {
             var key = keyAndOldRep.getKey();
             var current = signCache.get(key);
             var newRep = current == null ? null : SignTransitionResolver.computeRepresentation(current, newConfig.prefixGroupMap());
-            dispatchTransition(snapshotSupplier, key, keyAndOldRep.getValue(), newRep, newConfig.actionFactory(), true, newConfig.prefixGroupMap());
+            dispatchTransition(this::getAllSigns, key, keyAndOldRep.getValue(), newRep, newConfig.actionFactory(), true, newConfig.prefixGroupMap());
         }
     }
 
