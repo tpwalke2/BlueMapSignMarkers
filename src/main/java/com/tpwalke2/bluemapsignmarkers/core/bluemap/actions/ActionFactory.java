@@ -96,8 +96,8 @@ public class ActionFactory {
                 isFirstAppearance);
     }
 
-    public RemoveLineMarkerAction createRemoveLineAction(String mapId, MarkerGroup markerGroup, String label) {
-        return new RemoveLineMarkerAction(
+    public RemoveMultiPointMarkerAction createRemoveLineAction(String mapId, MarkerGroup markerGroup, String label) {
+        return new RemoveMultiPointMarkerAction(
                 new MultiPointMarkerIdentifier(LINE_KIND, label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)));
     }
 
@@ -122,8 +122,8 @@ public class ActionFactory {
                 isFirstAppearance);
     }
 
-    public RemoveShapeMarkerAction createRemoveShapeAction(String mapId, MarkerGroup markerGroup, String label) {
-        return new RemoveShapeMarkerAction(
+    public RemoveMultiPointMarkerAction createRemoveShapeAction(String mapId, MarkerGroup markerGroup, String label) {
+        return new RemoveMultiPointMarkerAction(
                 new MultiPointMarkerIdentifier(SHAPE_KIND, label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)));
     }
 
@@ -148,8 +148,8 @@ public class ActionFactory {
                 isFirstAppearance);
     }
 
-    public RemoveExtrudeMarkerAction createRemoveExtrudeAction(String mapId, MarkerGroup markerGroup, String label) {
-        return new RemoveExtrudeMarkerAction(
+    public RemoveMultiPointMarkerAction createRemoveExtrudeAction(String mapId, MarkerGroup markerGroup, String label) {
+        return new RemoveMultiPointMarkerAction(
                 new MultiPointMarkerIdentifier(EXTRUDE_KIND, label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)));
     }
 

@@ -157,9 +157,9 @@ duplicates the same pattern rather than generalizing it):
 |---|---|---|---|---|---|
 | **NONE** | no-op (`null`) | dispatch `createAddPOIAction` | `lineJoinAction` (recompute group *including* this sign; dispatch `SetLineMarkerAction` if ≥2 members, else no-op) | `shapeJoinAction` (same shape, gated on `SHAPE_MIN_MEMBERS = 3` instead of 2) | `extrudeJoinAction` (same shape again, gated on `EXTRUDE_MIN_MEMBERS = 3`) |
 | **POI** | dispatch `createRemovePOIAction` | same group (prefix unchanged): label/detail both unchanged is a no-op, either changed dispatches `createUpdatePOIAction`. Different group (prefix changed): leave-effect + join-effect, bundled | leave-effect (Remove POI) + join-effect (`lineJoinAction`) | leave-effect (Remove POI) + join-effect (`shapeJoinAction`) | leave-effect (Remove POI) + join-effect (`extrudeJoinAction`) |
-| **LINE** | `lineLeaveAction` (recompute group *excluding* this sign; `SetLineMarkerAction` if ≥2 remain, `RemoveLineMarkerAction` if exactly 1 remains, no-op if 0) | leave-effect (as above) + join-effect (Add POI) | same group+label: `lineJoinAction` with `sameGroupRecompute=true` (refreshes detail/points — always dispatches `Set` since ≥2 members necessarily already existed); different group/label: leave-effect + join-effect | leave-effect (`lineLeaveAction`) + join-effect (`shapeJoinAction`) | leave-effect (`lineLeaveAction`) + join-effect (`extrudeJoinAction`) |
-| **SHAPE** | `shapeLeaveAction` (mirrors `lineLeaveAction`, but `RemoveShapeMarkerAction` once membership drops below 3) | leave-effect (`shapeLeaveAction`) + join-effect (Add POI) | leave-effect (`shapeLeaveAction`) + join-effect (`lineJoinAction`) | same group+label: `shapeJoinAction` with `sameGroupRecompute=true` (mirrors `LINE`/`LINE`); different group/label: leave-effect + join-effect | leave-effect (`shapeLeaveAction`) + join-effect (`extrudeJoinAction`) |
-| **EXTRUDE** | `extrudeLeaveAction` (mirrors `shapeLeaveAction`, `RemoveExtrudeMarkerAction` once membership drops below 3) | leave-effect (`extrudeLeaveAction`) + join-effect (Add POI) | leave-effect (`extrudeLeaveAction`) + join-effect (`lineJoinAction`) | leave-effect (`extrudeLeaveAction`) + join-effect (`shapeJoinAction`) | same group+label: `extrudeJoinAction` with `sameGroupRecompute=true` (mirrors `SHAPE`/`SHAPE`); different group/label: leave-effect + join-effect |
+| **LINE** | `lineLeaveAction` (recompute group *excluding* this sign; `SetLineMarkerAction` if ≥2 remain, `RemoveMultiPointMarkerAction` if exactly 1 remains, no-op if 0) | leave-effect (as above) + join-effect (Add POI) | same group+label: `lineJoinAction` with `sameGroupRecompute=true` (refreshes detail/points — always dispatches `Set` since ≥2 members necessarily already existed); different group/label: leave-effect + join-effect | leave-effect (`lineLeaveAction`) + join-effect (`shapeJoinAction`) | leave-effect (`lineLeaveAction`) + join-effect (`extrudeJoinAction`) |
+| **SHAPE** | `shapeLeaveAction` (mirrors `lineLeaveAction`, but `RemoveMultiPointMarkerAction` once membership drops below 3) | leave-effect (`shapeLeaveAction`) + join-effect (Add POI) | leave-effect (`shapeLeaveAction`) + join-effect (`lineJoinAction`) | same group+label: `shapeJoinAction` with `sameGroupRecompute=true` (mirrors `LINE`/`LINE`); different group/label: leave-effect + join-effect | leave-effect (`shapeLeaveAction`) + join-effect (`extrudeJoinAction`) |
+| **EXTRUDE** | `extrudeLeaveAction` (mirrors `shapeLeaveAction`, `RemoveMultiPointMarkerAction` once membership drops below 3) | leave-effect (`extrudeLeaveAction`) + join-effect (Add POI) | leave-effect (`extrudeLeaveAction`) + join-effect (`lineJoinAction`) | leave-effect (`extrudeLeaveAction`) + join-effect (`shapeJoinAction`) | same group+label: `extrudeJoinAction` with `sameGroupRecompute=true` (mirrors `SHAPE`/`SHAPE`); different group/label: leave-effect + join-effect |
 
 The POI/POI cell deliberately compares only `group().prefix()`, not label — a label-only edit on an unchanged group
 used to fall through to the different-group (leave+join) branch, because the older check compared
@@ -378,7 +378,7 @@ Two id schemes now exist side by side (position-keyed and content-keyed), unifie
   `createRemoveShapeAction(mapId, markerGroup, label)` mirror those two exactly but build a `ShapeMarkerIdentifier`
   and take both resolved colours as explicit parameters. `createSetExtrudeAction`/`createRemoveExtrudeAction` are
   structurally identical to the `SHAPE` pair (same parameters) but build an `ExtrudeMarkerIdentifier` and the
-  resulting `SetExtrudeMarkerAction`/`RemoveExtrudeMarkerAction`.
+  resulting `SetExtrudeMarkerAction`/`RemoveMultiPointMarkerAction`.
 - `MarkerSetIdentifierCollection` is a per-`SignManager`-instance cache that guarantees the *same*
   `MarkerSetIdentifier` object is returned for a given `(mapId, markerGroup)` pair (indexed both by map and by
   marker group, intersected) — `ActionFactory` always goes through this rather than constructing
@@ -496,17 +496,18 @@ Two id schemes now exist side by side (position-keyed and content-keyed), unifie
   pair (or POI↔LINE swap) can never be observed half-applied by another thread; otherwise it calls
   `applySingleAction` directly on the one action. `applySingleAction` logs (`logProcessingMessage`) then dispatches
   on the concrete `MarkerAction` subtype via a `switch` pattern-match: `AddMarkerAction`/`RemoveMarkerAction`/
-  `UpdateMarkerAction`/`SetLineMarkerAction`/`RemoveLineMarkerAction` each have a `case` arm — **`MarkerAction` is a
+  `UpdateMarkerAction`/`SetLineMarkerAction`/`RemoveMultiPointMarkerAction` each have a `case` arm — **`MarkerAction` is a
   plain abstract class, not `sealed`**, so adding a new subtype without adding a `case` here (and in
   `logProcessingMessage`'s switch) silently falls through to `default` instead of failing to compile — see
   `AGENTS.md`'s "Adding a new marker/BlueMap action" section. All cases resolve their marker sets via a shared
   `applyToMarkerSets(markerIdentifier, consumer)` helper (parameter type `DispatchedMarkerIdentifier`, needs only
   `.parentSet()` — looks up via `getMarkerSets`, no-ops with a debug log if none found, otherwise hands the
-  consumer a `Stream<Map<String, Marker>>`); `RemoveMarkerAction`, `RemoveLineMarkerAction`, `RemoveShapeMarkerAction`,
-  and `RemoveExtrudeMarkerAction` all route through an id-based `removeMarkerById(String id, Stream<...>)` helper
-  extracted out of the old `removeMarker` body. `SetShapeMarkerAction`/`RemoveShapeMarkerAction` and
-  `SetExtrudeMarkerAction`/`RemoveExtrudeMarkerAction` have their own `case` arms alongside the line ones (both in
-  `processMarkerAction`'s switch and in `logProcessingMessage`).
+  consumer a `Stream<Map<String, Marker>>`); `RemoveMultiPointMarkerAction` (one class covering line/shape/extrude
+  removal, distinguished by `MultiPointMarkerIdentifier`'s `kind` field — see "Adding a new marker/BlueMap action" in
+  `AGENTS.md`) routes through an id-based `removeMarkerById(String id, Stream<...>)` helper extracted out of the old
+  `removeMarker` body. `SetShapeMarkerAction`/`SetExtrudeMarkerAction` have their own `case` arms alongside
+  `SetLineMarkerAction` and `RemoveMultiPointMarkerAction` (both in `processMarkerAction`'s switch and in
+  `logProcessingMessage`).
 - `setLineMarker(SetLineMarkerAction, Stream<Map<String, Marker>>)` builds/replaces a BlueMap `LineMarker`: bails
   (defensively — `SignManager` should never dispatch below 2 points) if `action.getPoints().size() < 2`, otherwise
   builds a `de.bluecolored.bluemap.api.math.Line` from the action's `LinePoint`s (via `Vector3d`), parses
@@ -711,9 +712,9 @@ gating" section. This section covers the code-level mechanics.
   on a gate failure, the marker id is actively removed from that map's set (`markers.remove(identifier.getId())`)
   instead of merely skipping the add/update — this is what sweeps a marker that already existed on a
   now-out-of-bounds map before this feature shipped, reusing `SignManager.reset()`'s existing reload-forced
-  re-dispatch of every sign (§3) as the trigger. `RemoveMarkerAction`/`RemoveLineMarkerAction`/
-  `RemoveShapeMarkerAction` instead go through `prepareUngated(identifier, effect)` — unconditional, no
-  gating, since an explicit removal means the sign's representation is genuinely leaving, independent of bounds.
+  re-dispatch of every sign (§3) as the trigger. `RemoveMarkerAction`/`RemoveMultiPointMarkerAction` instead go
+  through `prepareUngated(identifier, effect)` — unconditional, no gating, since an explicit removal means the
+  sign's representation is genuinely leaving, independent of bounds.
 - **Cold-load-off-the-lock fix**: `prepareGated`/`prepareUngated` return a `Runnable` that performs only the
   marker-set mutation; `prepareGated` computes each target map's gate decision
   (`markerSets.get().stream().map(mapped -> Map.entry(mapped, isInsideRenderBounds(...))).toList()`) up front, before
