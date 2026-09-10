@@ -14,6 +14,7 @@ import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupMatchType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifierCollection;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointMarkerIdentifier;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -231,7 +232,8 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(remaining), departing.key(), oldRep, null, actionFactory(), false, Map.of(group.prefix(), group));
 
-        assertInstanceOf(RemoveMultiPointMarkerAction.class, action);
+        var remove = assertInstanceOf(RemoveMultiPointMarkerAction.class, action);
+        assertEquals("line", ((MultiPointMarkerIdentifier) remove.getMarkerIdentifier()).kind());
     }
 
     @Test
@@ -416,7 +418,8 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(remaining1, remaining2), departing.key(), oldRep, null, actionFactory(), false, Map.of(group.prefix(), group));
 
-        assertInstanceOf(RemoveMultiPointMarkerAction.class, action);
+        var remove = assertInstanceOf(RemoveMultiPointMarkerAction.class, action);
+        assertEquals("shape", ((MultiPointMarkerIdentifier) remove.getMarkerIdentifier()).kind());
     }
 
     @Test
@@ -789,7 +792,8 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(remaining1, remaining2), departing.key(), oldRep, null, actionFactory(), false, Map.of(group.prefix(), group));
 
-        assertInstanceOf(RemoveMultiPointMarkerAction.class, action);
+        var remove = assertInstanceOf(RemoveMultiPointMarkerAction.class, action);
+        assertEquals("extrude", ((MultiPointMarkerIdentifier) remove.getMarkerIdentifier()).kind());
     }
 
     @Test
