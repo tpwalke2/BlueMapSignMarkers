@@ -350,9 +350,8 @@ public class BlueMapAPIConnector {
     }
 
     // Dispatches to the right BlueMap marker builder for this SetMultiPointMarkerAction's kind (set by
-    // ActionFactory.createSetLineAction/createSetShapeAction/createSetExtrudeAction on the
-    // MultiPointMarkerIdentifier) - a single action type now covers all three, so this is the one place
-    // that still needs to tell them apart.
+    // ActionFactory.createSetMultiPointAction on the MultiPointMarkerIdentifier) - a single action type
+    // now covers all three, so this is the one place that still needs to tell them apart.
     private static void setMultiPointMarker(SetMultiPointMarkerAction action, Map<String, Marker> markers) {
         var kind = ((MultiPointMarkerIdentifier) action.getMarkerIdentifier()).kind();
         switch (kind) {

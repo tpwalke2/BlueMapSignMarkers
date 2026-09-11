@@ -104,7 +104,7 @@ public class SignTransitionResolver {
                 }
                 return actionFactory.createUpdatePOIAction(key.x(), key.y(), key.z(), key.parentMap(), newRep.label(), newRep.detail(), newRep.group());
             }
-            return actionFactory.createChangeGroupPOIAction(key.x(), key.y(), key.z(), key.parentMap(), newRep.label(), newRep.detail(), oldRep.group(), newRep.group());
+            return actionFactory.createGroupTransitionPOIAction(key.x(), key.y(), key.z(), key.parentMap(), newRep.label(), newRep.detail(), oldRep.group(), newRep.group());
         }
 
         // Same-group-and-label recompute for either multi-point type (LINE↔LINE or SHAPE↔SHAPE); sameGroupAndLabel
@@ -182,7 +182,7 @@ public class SignTransitionResolver {
 
         var isFirstAppearance = !sameGroupRecompute && members.size() == LINE_MIN_MEMBERS;
         var colors = ColorResolver.resolve(members, rep.group());
-        return actionFactory.createSetLineAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), isFirstAppearance);
+        return actionFactory.createSetMultiPointAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), null, isFirstAppearance);
     }
 
     // Recomputes a line group excluding the current sign (it must already be removed from/no longer
@@ -191,18 +191,18 @@ public class SignTransitionResolver {
     // meaning there were 2 before), or nothing if there was never a marker to begin with (0 remain).
     private static MarkerAction lineLeaveAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, Map<String, MarkerGroup> currentPrefixGroupMap) {
         if (groupIdentityObsolete(rep, currentPrefixGroupMap)) {
-            return actionFactory.createRemoveLineAction(parentMap, rep.group(), rep.label());
+            return actionFactory.createRemoveMultiPointAction(parentMap, rep.group(), rep.label());
         }
 
         var members = LineGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
 
         if (members.size() >= LINE_MIN_MEMBERS) {
             var colors = ColorResolver.resolve(members, rep.group());
-            return actionFactory.createSetLineAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), false);
+            return actionFactory.createSetMultiPointAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), null, false);
         }
 
         if (members.size() == LINE_MIN_MEMBERS - 1) {
-            return actionFactory.createRemoveLineAction(parentMap, rep.group(), rep.label());
+            return actionFactory.createRemoveMultiPointAction(parentMap, rep.group(), rep.label());
         }
 
         return null;
@@ -222,23 +222,23 @@ public class SignTransitionResolver {
 
         var isFirstAppearance = !sameGroupRecompute && members.size() == SHAPE_MIN_MEMBERS;
         var colors = ColorResolver.resolve(members, rep.group());
-        return actionFactory.createSetShapeAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), colors.fillColor(), isFirstAppearance);
+        return actionFactory.createSetMultiPointAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), colors.fillColor(), isFirstAppearance);
     }
 
     private static MarkerAction shapeLeaveAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, Map<String, MarkerGroup> currentPrefixGroupMap) {
         if (groupIdentityObsolete(rep, currentPrefixGroupMap)) {
-            return actionFactory.createRemoveShapeAction(parentMap, rep.group(), rep.label());
+            return actionFactory.createRemoveMultiPointAction(parentMap, rep.group(), rep.label());
         }
 
         var members = ShapeGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
 
         if (members.size() >= SHAPE_MIN_MEMBERS) {
             var colors = ColorResolver.resolve(members, rep.group());
-            return actionFactory.createSetShapeAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), colors.fillColor(), false);
+            return actionFactory.createSetMultiPointAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), colors.fillColor(), false);
         }
 
         if (members.size() == SHAPE_MIN_MEMBERS - 1) {
-            return actionFactory.createRemoveShapeAction(parentMap, rep.group(), rep.label());
+            return actionFactory.createRemoveMultiPointAction(parentMap, rep.group(), rep.label());
         }
 
         return null;
@@ -254,23 +254,23 @@ public class SignTransitionResolver {
 
         var isFirstAppearance = !sameGroupRecompute && members.size() == EXTRUDE_MIN_MEMBERS;
         var colors = ColorResolver.resolve(members, rep.group());
-        return actionFactory.createSetExtrudeAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), colors.fillColor(), isFirstAppearance);
+        return actionFactory.createSetMultiPointAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), colors.fillColor(), isFirstAppearance);
     }
 
     private static MarkerAction extrudeLeaveAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, Map<String, MarkerGroup> currentPrefixGroupMap) {
         if (groupIdentityObsolete(rep, currentPrefixGroupMap)) {
-            return actionFactory.createRemoveExtrudeAction(parentMap, rep.group(), rep.label());
+            return actionFactory.createRemoveMultiPointAction(parentMap, rep.group(), rep.label());
         }
 
         var members = ExtrudeGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
 
         if (members.size() >= EXTRUDE_MIN_MEMBERS) {
             var colors = ColorResolver.resolve(members, rep.group());
-            return actionFactory.createSetExtrudeAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), colors.fillColor(), false);
+            return actionFactory.createSetMultiPointAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), colors.fillColor(), false);
         }
 
         if (members.size() == EXTRUDE_MIN_MEMBERS - 1) {
-            return actionFactory.createRemoveExtrudeAction(parentMap, rep.group(), rep.label());
+            return actionFactory.createRemoveMultiPointAction(parentMap, rep.group(), rep.label());
         }
 
         return null;
