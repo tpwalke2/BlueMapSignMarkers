@@ -137,7 +137,7 @@ As of `main` (`b2c5fa0`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   a no-op, dispatches `Set` with `isFirstAppearance=true` at exactly two members, `isFirstAppearance=false` joining
   a third; POI→NONE dispatches Remove; POI→POI on the same group with label/detail both unchanged is a no-op,
   either changed dispatches `UpdateMarkerAction`, a different group dispatches `GroupTransitionMarkerAction`;
-  LINE→NONE dropping to one remaining member dispatches `RemoveLineMarkerAction`, to zero is a no-op, to ≥2 dispatches
+  LINE→NONE dropping to one remaining member dispatches `RemoveMultiPointMarkerAction`, to zero is a no-op, to ≥2 dispatches
   a refreshed `Set`; LINE→LINE on the same group+label with detail unchanged is a no-op, changed dispatches `Set`
   with `isFirstAppearance=false`, a different group bundles a leave+join `GroupTransitionMarkerAction`; POI→LINE and
   LINE→POI each bundle the appropriate remove/set + add/set pair. Confirms the POI/POI cell keys only on
@@ -145,7 +145,7 @@ As of `main` (`b2c5fa0`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   bundled remove+add (fixed alongside the `allSigns`-snapshot performance change, both same commit series). `SHAPE`
   coverage mirrors `LINE`'s exactly but gated on `SHAPE_MIN_MEMBERS = 3`: NONE↔SHAPE at exactly 3 members
   (`isFirstAppearance` true/false), below-threshold no-ops, SHAPE→NONE dropping to 2 members dispatching
-  `RemoveShapeMarkerAction`, SHAPE↔SHAPE same-group/label recompute (no-op vs. detail-changed vs.
+  `RemoveMultiPointMarkerAction`, SHAPE↔SHAPE same-group/label recompute (no-op vs. detail-changed vs.
   reload-forced), and the full cross-type bundling matrix (POI↔SHAPE, LINE↔SHAPE) both for a live sign change and
   for a config-reload-driven type flip/rename (`groupIdentityObsolete`). `EXTRUDE` coverage mirrors `SHAPE`'s
   exactly (same `EXTRUDE_MIN_MEMBERS = 3` threshold, same no-op/first-appearance/recompute/cross-type-bundling
@@ -244,7 +244,7 @@ As of `main` (`b2c5fa0`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   `RemoveMarkerAction` for the old group then an `AddMarkerAction` for the new one — rather than the older single
   action type carrying two identifiers directly; repeated calls for the same map/group (same or different action
   type) reuse the same `MarkerSetIdentifier` instance via `MarkerSetIdentifierCollection`. `createSetLineAction`/
-  `createRemoveLineAction` each have a dedicated test asserting the built `SetLineMarkerAction`/`RemoveLineMarkerAction`
+  `createRemoveLineAction` each have a dedicated test asserting the built `SetLineMarkerAction`/`RemoveMultiPointMarkerAction`
   fields and `LineMarkerIdentifier`, plus a reuse test confirming line and POI actions for the same map/group share
   one `MarkerSetIdentifier` (ticket 11). `createSetShapeAction`/`createRemoveShapeAction` have the same shape of
   dedicated tests, additionally confirming `fillColor` is threaded from the `MarkerGroup` into the built

@@ -121,6 +121,7 @@ class ActionFactoryTest {
         var action = factory.createRemoveLineAction("world", group, "label");
         var identifier = (MultiPointMarkerIdentifier) action.getMarkerIdentifier();
 
+        assertEquals("line", identifier.kind());
         assertEquals("label", identifier.label());
         assertEquals("world", identifier.parentSet().mapId());
         assertEquals(group, identifier.parentSet().markerGroup());
@@ -179,6 +180,7 @@ class ActionFactoryTest {
         var action = factory.createRemoveShapeAction("world", group, "label");
         var identifier = (MultiPointMarkerIdentifier) action.getMarkerIdentifier();
 
+        assertEquals("shape", identifier.kind());
         assertEquals("label", identifier.label());
         assertEquals("world", identifier.parentSet().mapId());
         assertEquals(group, identifier.parentSet().markerGroup());
@@ -237,6 +239,7 @@ class ActionFactoryTest {
         var action = factory.createRemoveExtrudeAction("world", group, "label");
         var identifier = (MultiPointMarkerIdentifier) action.getMarkerIdentifier();
 
+        assertEquals("extrude", identifier.kind());
         assertEquals("label", identifier.label());
         assertEquals("world", identifier.parentSet().mapId());
         assertEquals(group, identifier.parentSet().markerGroup());

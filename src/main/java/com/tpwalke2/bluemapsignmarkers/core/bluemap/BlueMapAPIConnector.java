@@ -10,10 +10,8 @@ import com.tpwalke2.bluemapsignmarkers.core.bounds.RenderMaskEvaluator;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.AddMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.GroupTransitionMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.MarkerAction;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveExtrudeMarkerAction;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveLineMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMarkerAction;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveShapeMarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMultiPointMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetExtrudeMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetLineMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetShapeMarkerAction;
@@ -211,11 +209,7 @@ public class BlueMapAPIConnector {
             // render bounds - so these apply unconditionally on every real map, no gating needed.
             case RemoveMarkerAction removeAction ->
                     prepareUngated(removeAction.getMarkerIdentifier(), markers -> removeMarker(removeAction, markers));
-            case RemoveLineMarkerAction removeAction ->
-                    prepareUngated(removeAction.getMarkerIdentifier(), markers -> removeMarkerById(removeAction.getMarkerIdentifier().getId(), markers));
-            case RemoveShapeMarkerAction removeAction ->
-                    prepareUngated(removeAction.getMarkerIdentifier(), markers -> removeMarkerById(removeAction.getMarkerIdentifier().getId(), markers));
-            case RemoveExtrudeMarkerAction removeAction ->
+            case RemoveMultiPointMarkerAction removeAction ->
                     prepareUngated(removeAction.getMarkerIdentifier(), markers -> removeMarkerById(removeAction.getMarkerIdentifier().getId(), markers));
             default -> {
                 LOGGER.warn("Unknown marker action: {}", markerAction);
@@ -299,11 +293,9 @@ public class BlueMapAPIConnector {
             case AddMarkerAction ignored -> "Adding";
             case RemoveMarkerAction ignored -> "Removing";
             case UpdateMarkerAction ignored -> "Updating";
-            case RemoveLineMarkerAction ignored -> "Removing";
+            case RemoveMultiPointMarkerAction ignored -> "Removing";
             case SetLineMarkerAction setAction -> setAction.isFirstAppearance() ? "Adding" : "Updating";
-            case RemoveShapeMarkerAction ignored -> "Removing";
             case SetShapeMarkerAction setAction -> setAction.isFirstAppearance() ? "Adding" : "Updating";
-            case RemoveExtrudeMarkerAction ignored -> "Removing";
             case SetExtrudeMarkerAction setAction -> setAction.isFirstAppearance() ? "Adding" : "Updating";
             default -> "Processing";
         };
