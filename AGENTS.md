@@ -77,7 +77,7 @@ Two Mixins (`src/main/resources/bluemapsignmarkers.mixins.json`) catch the event
    table (`SignTransitionResolver.computeTransitionAction`) to get the single `MarkerAction` to dispatch — covering
    plain add/update/remove,
    a prefix change moving a sign between groups, and a `POI`↔`LINE` group `type` flip, all as the same kind of
-   representation diff. `LINE` groups additionally dispatch `SetLineMarkerAction`/`RemoveMultiPointMarkerAction`/
+   representation diff. `LINE` groups additionally dispatch `SetMultiPointMarkerAction`/`RemoveMultiPointMarkerAction`/
    `GroupTransitionMarkerAction` (built via `ActionFactory`) when a sign joins/leaves a line (see
    `LineGroupResolver` below). It also implements `IResetHandler.reset()`, which BlueMap fires on `/bluemap reload`:
    reloads config (`ConfigManager.reload()`, `SignHelper.reloadParser()`, rebuilding its prefix→group lookup and
@@ -177,9 +177,13 @@ region files (or a not-yet-migrated legacy `signs.json`) on live servers must ke
 New `MarkerAction` subtypes go through `ActionFactory` (construction) and need a `case` arm added in both
 `BlueMapAPIConnector.processMarkerAction`'s switch and `logProcessingMessage`'s switch — `MarkerAction` is a plain
 abstract class (not sealed), so a missing case silently falls through to the `default` branch instead of failing to
-compile. Line markers add `SetLineMarkerAction` (create/update a line's rendered points), `RemoveMultiPointMarkerAction`
-(a line/shape/extrude drops back below its minimum member count; also used for shape/extrude removal, distinguished by
-`MultiPointMarkerIdentifier`'s `kind` field), and `GroupTransitionMarkerAction` (a sign's representation changes id
+compile. Line/shape/extrude markers add `SetMultiPointMarkerAction` (create/update a line/shape/extrude's rendered
+points; replaces the former per-kind `SetLineMarkerAction`/`SetShapeMarkerAction`/`SetExtrudeMarkerAction`,
+distinguished the same way by `MultiPointMarkerIdentifier`'s `kind` field, with the per-kind minimum-points threshold
+sourced from `MultiPointGroupThresholds`'s `LINE_MIN_MEMBERS`/`SHAPE_MIN_MEMBERS`/`EXTRUDE_MIN_MEMBERS`),
+`RemoveMultiPointMarkerAction` (a line/shape/extrude drops back below its minimum member count; also used for
+shape/extrude removal, distinguished by `MultiPointMarkerIdentifier`'s `kind` field), and `GroupTransitionMarkerAction`
+(a sign's representation changes id
 scheme between reloads, e.g. a group's `type` flipping `POI`↔`LINE` — dispatches an explicit remove of the old marker
 alongside the new one so nothing is orphaned in BlueMap's web UI); `GroupTransitionMarkerAction` replaced the earlier
 `ChangeGroupMarkerAction`.

@@ -5,6 +5,7 @@ import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupMatchType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifier;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointGroupThresholds;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointMarkerIdentifier;
 import org.junit.jupiter.api.Test;
 
@@ -14,7 +15,11 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+// A SetMultiPointMarkerAction constructed with the LINE minimum (2 points), no fillColor - see
+// SetShapeMarkerActionTest/SetExtrudeMarkerActionTest for the SHAPE/EXTRUDE minimums (3 points, with
+// fillColor).
 class SetLineMarkerActionTest {
+    private static final int MIN_POINTS = MultiPointGroupThresholds.LINE_MIN_MEMBERS;
 
     @Test
     void constructorRejectsAnEmptyPointList() {
@@ -46,18 +51,18 @@ class SetLineMarkerActionTest {
 
     @Test
     void constructorRejectsANullLabel() {
-        assertThrows(NullPointerException.class, () -> new SetLineMarkerAction(
-                identifier(), null, "detail", twoPoints(), 2, "#FFFFFFFF", true));
+        assertThrows(NullPointerException.class, () -> new SetMultiPointMarkerAction(
+                identifier(), null, "detail", twoPoints(), 2, "#FFFFFFFF", null, MIN_POINTS, true));
     }
 
     @Test
     void constructorRejectsANullDetail() {
-        assertThrows(NullPointerException.class, () -> new SetLineMarkerAction(
-                identifier(), "label", null, twoPoints(), 2, "#FFFFFFFF", true));
+        assertThrows(NullPointerException.class, () -> new SetMultiPointMarkerAction(
+                identifier(), "label", null, twoPoints(), 2, "#FFFFFFFF", null, MIN_POINTS, true));
     }
 
-    private static SetLineMarkerAction newAction(List<LinePoint> points) {
-        return new SetLineMarkerAction(identifier(), "label", "detail", points, 2, "#FFFFFFFF", true);
+    private static SetMultiPointMarkerAction newAction(List<LinePoint> points) {
+        return new SetMultiPointMarkerAction(identifier(), "label", "detail", points, 2, "#FFFFFFFF", null, MIN_POINTS, true);
     }
 
     private static List<LinePoint> twoPoints() {
