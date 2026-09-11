@@ -4,7 +4,6 @@ import com.tpwalke2.bluemapsignmarkers.core.markers.LinePoint;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointMarkerIdentifier;
 
 import java.util.List;
-import java.util.Objects;
 
 // Replaces the former SetLineMarkerAction/SetShapeMarkerAction/SetExtrudeMarkerAction - those three were
 // structurally identical (label/detail/points/lineWidth/lineColor/isFirstAppearance), differing only in
@@ -70,25 +69,6 @@ public class SetMultiPointMarkerAction extends MarkerAction {
 
     public boolean isFirstAppearance() {
         return isFirstAppearance;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof SetMultiPointMarkerAction other)) return false;
-        return lineWidth == other.lineWidth
-                && isFirstAppearance == other.isFirstAppearance
-                && Objects.equals(getMarkerIdentifier(), other.getMarkerIdentifier())
-                && Objects.equals(label, other.label)
-                && Objects.equals(detail, other.detail)
-                && Objects.equals(points, other.points)
-                && Objects.equals(lineColor, other.lineColor)
-                && Objects.equals(fillColor, other.fillColor);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(getMarkerIdentifier(), label, detail, points, lineWidth, lineColor, fillColor, isFirstAppearance);
     }
 
     @Override
