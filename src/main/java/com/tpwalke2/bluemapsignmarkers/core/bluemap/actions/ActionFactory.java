@@ -5,6 +5,7 @@ import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifierCollection;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointGroupThresholds;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointMarkerIdentifier;
 
 import java.util.List;
@@ -77,7 +78,7 @@ public class ActionFactory {
                 new AddMarkerAction(newIdentifier, label, detail)));
     }
 
-    public SetLineMarkerAction createSetLineAction(
+    public SetMultiPointMarkerAction createSetLineAction(
             String mapId,
             MarkerGroup markerGroup,
             String label,
@@ -86,13 +87,15 @@ public class ActionFactory {
             String lineColor,
             boolean isFirstAppearance) {
         requireGroupType(markerGroup, MarkerGroupType.LINE, "createSetLineAction");
-        return new SetLineMarkerAction(
+        return new SetMultiPointMarkerAction(
                 new MultiPointMarkerIdentifier(LINE_KIND, label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
                 label,
                 detail,
                 points,
                 markerGroup.lineWidth(),
                 lineColor,
+                null,
+                MultiPointGroupThresholds.LINE_MIN_MEMBERS,
                 isFirstAppearance);
     }
 
@@ -101,7 +104,7 @@ public class ActionFactory {
                 new MultiPointMarkerIdentifier(LINE_KIND, label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)));
     }
 
-    public SetShapeMarkerAction createSetShapeAction(
+    public SetMultiPointMarkerAction createSetShapeAction(
             String mapId,
             MarkerGroup markerGroup,
             String label,
@@ -111,7 +114,7 @@ public class ActionFactory {
             String fillColor,
             boolean isFirstAppearance) {
         requireGroupType(markerGroup, MarkerGroupType.SHAPE, "createSetShapeAction");
-        return new SetShapeMarkerAction(
+        return new SetMultiPointMarkerAction(
                 new MultiPointMarkerIdentifier(SHAPE_KIND, label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
                 label,
                 detail,
@@ -119,6 +122,7 @@ public class ActionFactory {
                 markerGroup.lineWidth(),
                 lineColor,
                 fillColor,
+                MultiPointGroupThresholds.SHAPE_MIN_MEMBERS,
                 isFirstAppearance);
     }
 
@@ -127,7 +131,7 @@ public class ActionFactory {
                 new MultiPointMarkerIdentifier(SHAPE_KIND, label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)));
     }
 
-    public SetExtrudeMarkerAction createSetExtrudeAction(
+    public SetMultiPointMarkerAction createSetExtrudeAction(
             String mapId,
             MarkerGroup markerGroup,
             String label,
@@ -137,7 +141,7 @@ public class ActionFactory {
             String fillColor,
             boolean isFirstAppearance) {
         requireGroupType(markerGroup, MarkerGroupType.EXTRUDE, "createSetExtrudeAction");
-        return new SetExtrudeMarkerAction(
+        return new SetMultiPointMarkerAction(
                 new MultiPointMarkerIdentifier(EXTRUDE_KIND, label, markerSetIdentifierCollection.getIdentifier(mapId, markerGroup)),
                 label,
                 detail,
@@ -145,6 +149,7 @@ public class ActionFactory {
                 markerGroup.lineWidth(),
                 lineColor,
                 fillColor,
+                MultiPointGroupThresholds.EXTRUDE_MIN_MEMBERS,
                 isFirstAppearance);
     }
 

@@ -16,6 +16,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
 
+import static com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointGroupThresholds.EXTRUDE_MIN_MEMBERS;
+import static com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointGroupThresholds.LINE_MIN_MEMBERS;
+import static com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointGroupThresholds.SHAPE_MIN_MEMBERS;
+
 public class SignTransitionResolver {
     private static final Logger LOGGER = LoggerFactory.getLogger(Constants.MOD_ID);
 
@@ -174,9 +178,9 @@ public class SignTransitionResolver {
     // false value is harmless either way).
     private static MarkerAction lineJoinAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, boolean sameGroupRecompute) {
         var members = LineGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
-        if (members.size() < 2) return null;
+        if (members.size() < LINE_MIN_MEMBERS) return null;
 
-        var isFirstAppearance = !sameGroupRecompute && members.size() == 2;
+        var isFirstAppearance = !sameGroupRecompute && members.size() == LINE_MIN_MEMBERS;
         var colors = ColorResolver.resolve(members, rep.group());
         return actionFactory.createSetLineAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), isFirstAppearance);
     }
@@ -192,12 +196,12 @@ public class SignTransitionResolver {
 
         var members = LineGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
 
-        if (members.size() >= 2) {
+        if (members.size() >= LINE_MIN_MEMBERS) {
             var colors = ColorResolver.resolve(members, rep.group());
             return actionFactory.createSetLineAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), false);
         }
 
-        if (members.size() == 1) {
+        if (members.size() == LINE_MIN_MEMBERS - 1) {
             return actionFactory.createRemoveLineAction(parentMap, rep.group(), rep.label());
         }
 
@@ -212,8 +216,6 @@ public class SignTransitionResolver {
     // 3-member render threshold instead of 2 - see docs/adr/0002-shape-duplicates-line-pattern.md. Points
     // stay ordered by createdAtMillis (toPoints/ShapeGroupResolver.members) purely for polygon vertex order;
     // the shape's Y anchor (BlueMapAPIConnector.setShapeMarker) is the tallest member, not the oldest.
-    private static final int SHAPE_MIN_MEMBERS = 3;
-
     private static MarkerAction shapeJoinAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, boolean sameGroupRecompute) {
         var members = ShapeGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
         if (members.size() < SHAPE_MIN_MEMBERS) return null;
@@ -245,7 +247,6 @@ public class SignTransitionResolver {
     // EXTRUDE mirrors SHAPE's join/leave/recompute shape (see shapeJoinAction/shapeLeaveAction above) at the
     // same 3-member render threshold - the floor/ceiling Y values are computed from the ordered points at
     // dispatch time (BlueMapAPIConnector.setExtrudeMarker), not here.
-    private static final int EXTRUDE_MIN_MEMBERS = 3;
 
     private static MarkerAction extrudeJoinAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, boolean sameGroupRecompute) {
         var members = ExtrudeGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());

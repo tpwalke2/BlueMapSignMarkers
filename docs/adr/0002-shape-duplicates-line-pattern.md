@@ -16,3 +16,10 @@ pattern again (`ExtrudeGroupResolver`, `SetExtrudeMarkerAction`/`RemoveExtrudeMa
 `ExtrudeMarkerIdentifier`, a 4-way switch in `SignTransitionResolver`) rather than extracting. The transition
 table's branch-per-type-pair shape held up fine at 4 types; the marginal-reuse-vs-readability tradeoff above still
 favored duplication. Revisit extraction if a fifth multi-point marker kind appears.
+
+**Update:** the `Set`/`Remove` `MarkerAction` subtypes (`SetLineMarkerAction`/`SetShapeMarkerAction`/
+`SetExtrudeMarkerAction` → `SetMultiPointMarkerAction`; `RemoveLineMarkerAction`/`RemoveShapeMarkerAction`/
+`RemoveExtrudeMarkerAction` → `RemoveMultiPointMarkerAction`) were later merged into one class each, kind-tagged via
+`MultiPointMarkerIdentifier`. This doesn't reopen the decision above: those classes were plain data/validation
+holders with no branch-per-type-pair logic, so merging them carried none of the readability risk this ADR weighed.
+`SignTransitionResolver`'s transition table itself is still one arm per type, per this ADR.

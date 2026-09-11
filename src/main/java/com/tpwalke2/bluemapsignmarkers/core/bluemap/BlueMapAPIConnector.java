@@ -12,15 +12,14 @@ import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.GroupTransitionMarke
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.MarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMultiPointMarkerAction;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetExtrudeMarkerAction;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetLineMarkerAction;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetShapeMarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetMultiPointMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.UpdateMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.markers.DispatchedMarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.LinePoint;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifier;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointGroupThresholds;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointMarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.reactive.ReactiveQueue;
 import com.flowpowered.math.vector.Vector2d;
@@ -199,12 +198,8 @@ public class BlueMapAPIConnector {
                     prepareGated(addAction.getMarkerIdentifier(), pointOf(addAction.getMarkerIdentifier()), markers -> addMarker(addAction, markers));
             case UpdateMarkerAction updateAction ->
                     prepareGated(updateAction.getMarkerIdentifier(), pointOf(updateAction.getMarkerIdentifier()), markers -> updateMarker(updateAction, markers));
-            case SetLineMarkerAction setAction ->
-                    prepareGated(setAction.getMarkerIdentifier(), setAction.getPoints(), markers -> setLineMarker(setAction, markers));
-            case SetShapeMarkerAction setAction ->
-                    prepareGated(setAction.getMarkerIdentifier(), setAction.getPoints(), markers -> setShapeMarker(setAction, markers));
-            case SetExtrudeMarkerAction setAction ->
-                    prepareGated(setAction.getMarkerIdentifier(), setAction.getPoints(), markers -> setExtrudeMarker(setAction, markers));
+            case SetMultiPointMarkerAction setAction ->
+                    prepareGated(setAction.getMarkerIdentifier(), setAction.getPoints(), markers -> setMultiPointMarker(setAction, markers));
             // Explicit removes - the sign's representation is genuinely leaving, independent of
             // render bounds - so these apply unconditionally on every real map, no gating needed.
             case RemoveMarkerAction removeAction ->
@@ -294,9 +289,7 @@ public class BlueMapAPIConnector {
             case RemoveMarkerAction ignored -> "Removing";
             case UpdateMarkerAction ignored -> "Updating";
             case RemoveMultiPointMarkerAction ignored -> "Removing";
-            case SetLineMarkerAction setAction -> setAction.isFirstAppearance() ? "Adding" : "Updating";
-            case SetShapeMarkerAction setAction -> setAction.isFirstAppearance() ? "Adding" : "Updating";
-            case SetExtrudeMarkerAction setAction -> setAction.isFirstAppearance() ? "Adding" : "Updating";
+            case SetMultiPointMarkerAction setAction -> setAction.isFirstAppearance() ? "Adding" : "Updating";
             default -> "Processing";
         };
 
@@ -313,9 +306,7 @@ public class BlueMapAPIConnector {
             position = String.format(" at x=%d y=%d z=%d", markerIdentifier.x(), markerIdentifier.y(), markerIdentifier.z());
         } else if (identifier instanceof MultiPointMarkerIdentifier multiPointMarkerIdentifier) {
             position = switch (action) {
-                case SetLineMarkerAction setAction -> String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
-                case SetShapeMarkerAction setAction -> String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
-                case SetExtrudeMarkerAction setAction -> String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
+                case SetMultiPointMarkerAction setAction -> String.format(" label='%s' with %d point(s)", LogUtils.sanitizeForLog(setAction.getLabel()), setAction.getPoints().size());
                 default -> String.format(" label='%s'", LogUtils.sanitizeForLog(multiPointMarkerIdentifier.label()));
             };
         }
@@ -358,12 +349,27 @@ public class BlueMapAPIConnector {
         return new Color(rgba[0], rgba[1], rgba[2], rgba[3] / 255f);
     }
 
-    private static void setLineMarker(SetLineMarkerAction action, Map<String, Marker> markers) {
+    // Dispatches to the right BlueMap marker builder for this SetMultiPointMarkerAction's kind (set by
+    // ActionFactory.createSetLineAction/createSetShapeAction/createSetExtrudeAction on the
+    // MultiPointMarkerIdentifier) - a single action type now covers all three, so this is the one place
+    // that still needs to tell them apart.
+    private static void setMultiPointMarker(SetMultiPointMarkerAction action, Map<String, Marker> markers) {
+        var kind = ((MultiPointMarkerIdentifier) action.getMarkerIdentifier()).kind();
+        switch (kind) {
+            case "line" -> setLineMarker(action, markers);
+            case "shape" -> setShapeMarker(action, markers);
+            case "extrude" -> setExtrudeMarker(action, markers);
+            default -> LOGGER.warn("Unknown multi-point marker kind '{}' for label='{}'",
+                    kind, LogUtils.sanitizeForLog(action.getLabel()));
+        }
+    }
+
+    private static void setLineMarker(SetMultiPointMarkerAction action, Map<String, Marker> markers) {
         LOGGER.debug("Setting line marker...");
-        if (action.getPoints().size() < 2) {
-            // defensive - SignManager should never dispatch below 2; warn so a regression is visible.
-            LOGGER.warn("Refusing to set line marker '{}' with fewer than 2 points ({})",
-                    LogUtils.sanitizeForLog(action.getLabel()), action.getPoints().size());
+        if (action.getPoints().size() < MultiPointGroupThresholds.LINE_MIN_MEMBERS) {
+            // defensive - SignManager should never dispatch below the minimum; warn so a regression is visible.
+            LOGGER.warn("Refusing to set line marker '{}' with fewer than {} points ({})",
+                    LogUtils.sanitizeForLog(action.getLabel()), MultiPointGroupThresholds.LINE_MIN_MEMBERS, action.getPoints().size());
             return;
         }
 
@@ -384,12 +390,12 @@ public class BlueMapAPIConnector {
         markers.put(action.getMarkerIdentifier().getId(), marker);
     }
 
-    private static void setShapeMarker(SetShapeMarkerAction action, Map<String, Marker> markers) {
+    private static void setShapeMarker(SetMultiPointMarkerAction action, Map<String, Marker> markers) {
         LOGGER.debug("Setting shape marker...");
-        if (action.getPoints().size() < 3) {
-            // defensive - SignManager should never dispatch below 3; warn so a regression is visible.
-            LOGGER.warn("Refusing to set shape marker '{}' with fewer than 3 points ({})",
-                    LogUtils.sanitizeForLog(action.getLabel()), action.getPoints().size());
+        if (action.getPoints().size() < MultiPointGroupThresholds.SHAPE_MIN_MEMBERS) {
+            // defensive - SignManager should never dispatch below the minimum; warn so a regression is visible.
+            LOGGER.warn("Refusing to set shape marker '{}' with fewer than {} points ({})",
+                    LogUtils.sanitizeForLog(action.getLabel()), MultiPointGroupThresholds.SHAPE_MIN_MEMBERS, action.getPoints().size());
             return;
         }
 
@@ -436,12 +442,12 @@ public class BlueMapAPIConnector {
         return new ExtrudeHeightRange(minY, maxY);
     }
 
-    private static void setExtrudeMarker(SetExtrudeMarkerAction action, Map<String, Marker> markers) {
+    private static void setExtrudeMarker(SetMultiPointMarkerAction action, Map<String, Marker> markers) {
         LOGGER.debug("Setting extrude marker...");
-        if (action.getPoints().size() < 3) {
-            // defensive - SignManager should never dispatch below 3; warn so a regression is visible.
-            LOGGER.warn("Refusing to set extrude marker '{}' with fewer than 3 points ({})",
-                    LogUtils.sanitizeForLog(action.getLabel()), action.getPoints().size());
+        if (action.getPoints().size() < MultiPointGroupThresholds.EXTRUDE_MIN_MEMBERS) {
+            // defensive - SignManager should never dispatch below the minimum; warn so a regression is visible.
+            LOGGER.warn("Refusing to set extrude marker '{}' with fewer than {} points ({})",
+                    LogUtils.sanitizeForLog(action.getLabel()), MultiPointGroupThresholds.EXTRUDE_MIN_MEMBERS, action.getPoints().size());
             return;
         }
 
