@@ -180,7 +180,7 @@ abstract class (not sealed), so a missing case silently falls through to the `de
 compile. Line/shape/extrude markers add `SetMultiPointMarkerAction` (create/update a line/shape/extrude's rendered
 points; replaces the former per-kind `SetLineMarkerAction`/`SetShapeMarkerAction`/`SetExtrudeMarkerAction`,
 distinguished the same way by `MultiPointMarkerIdentifier`'s `kind` field, with the per-kind minimum-points threshold
-sourced from `SignTransitionResolver`'s `LINE_MIN_MEMBERS`/`SHAPE_MIN_MEMBERS`/`EXTRUDE_MIN_MEMBERS`),
+sourced from `MultiPointGroupThresholds`'s `LINE_MIN_MEMBERS`/`SHAPE_MIN_MEMBERS`/`EXTRUDE_MIN_MEMBERS`),
 `RemoveMultiPointMarkerAction` (a line/shape/extrude drops back below its minimum member count; also used for
 shape/extrude removal, distinguished by `MultiPointMarkerIdentifier`'s `kind` field), and `GroupTransitionMarkerAction`
 (a sign's representation changes id

@@ -8,9 +8,9 @@ import java.util.List;
 // Replaces the former SetLineMarkerAction/SetShapeMarkerAction/SetExtrudeMarkerAction - those three were
 // structurally identical (label/detail/points/lineWidth/lineColor/isFirstAppearance), differing only in
 // an optional fillColor (SHAPE/EXTRUDE, absent for LINE) and their minimum-points threshold, which the
-// caller (ActionFactory) now supplies from SignTransitionResolver's LINE_MIN_MEMBERS/SHAPE_MIN_MEMBERS/
-// EXTRUDE_MIN_MEMBERS - the same single source of truth SignTransitionResolver itself uses to decide
-// when a line/shape/extrude marker should exist at all.
+// caller (ActionFactory) now supplies from MultiPointGroupThresholds' LINE_MIN_MEMBERS/SHAPE_MIN_MEMBERS/
+// EXTRUDE_MIN_MEMBERS - the same single source of truth SignTransitionResolver itself uses (via static
+// import) to decide when a line/shape/extrude marker should exist at all.
 public class SetMultiPointMarkerAction extends MarkerAction {
     private final String label;
     private final String detail;
