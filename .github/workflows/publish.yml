@@ -14,6 +14,17 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0 # needed for versioning
+      # Keep the branch patterns here (main, releases/**) in sync with the `if:` conditions on the
+      # three publish steps below - each encodes the same restriction independently.
+      - name: Verify branch is allowed to publish
+        if: startsWith(github.ref, 'refs/heads/')
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$REF_NAME" != "main" ] && [[ "$REF_NAME" != releases/* ]]; then
+            echo "::error::Publishing is only permitted from main or releases/** branches (got '$REF_NAME')"
+            exit 1
+          fi
       - name: Set up JDK 25
         uses: actions/setup-java@v5
         with:
@@ -34,11 +45,18 @@ jobs:
       - name: summarize test results
         if: always()
         uses: ./.github/actions/summarize-test-results
+      # Branch pattern here must stay in sync with the guard step and the two publish steps below.
       - name: Publish alpha to Modrinth
-        if: startsWith(github.ref, 'refs/heads/')
+        if: github.ref == 'refs/heads/main'
         env:
           MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
         run: ./gradlew modrinth -PbuildNumber=${{ github.run_number }}
+      # Branch pattern here must stay in sync with the guard step and the other two publish steps.
+      - name: Publish beta to Modrinth
+        if: startsWith(github.ref, 'refs/heads/releases/')
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+        run: ./gradlew modrinth -PbuildNumber=${{ github.run_number }} -PisBeta
       - name: Publish release to Modrinth
         if: startsWith(github.ref, 'refs/tags/')
         env:
