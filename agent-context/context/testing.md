@@ -24,12 +24,16 @@ sign-persistence loaders/converters/writer (`VersionedFileSignEntryLoader`, `Ver
 `ActionFactory`/`MarkerSetIdentifierCollection`. `SignManager` itself stays game-coupled (its constructor builds a
 `BlueMapAPIConnector`), but its `reparseFromRawLines`/`safeReparseFromRawLines` reparse-on-reload logic (§3 of
 `core-pipeline.md`) is extracted as a package-visible static specifically so it's directly testable.
-`BlueMapAPIConnector` itself stays game-coupled overall, but three helpers (§6 of `core-pipeline.md`) are
+`BlueMapAPIConnector` itself stays game-coupled overall, but two helpers (§6 of `core-pipeline.md`) are
 package-private specifically so they're directly testable (`BlueMapAPIConnectorTest`) without pulling `bluemap-api`
 (`compileOnly`) onto the test classpath or constructing a live connector (which calls `BlueMapAPI.getInstance()`):
-`resolveExtrudeHeightRange` (a plain `ExtrudeHeightRange` record, no `bluemap-api` types), `pointOf` (wraps a
-`MarkerIdentifier`'s coordinates into a single-point `List<LinePoint>`), and `isInsideRenderBounds(RenderMask, ...)`
-(the pure mask-vs-points predicate behind the render-bounds gate, §8).
+`pointOf` (wraps a `MarkerIdentifier`'s coordinates into a single-point `List<LinePoint>`), and
+`isInsideRenderBounds(RenderMask, ...)` (the pure mask-vs-points predicate behind the render-bounds gate, §8).
+`MarkerMutations` (ticket 04, `.scratch/marker-action-consolidation/issues/04-shrink-bluemapapiconnector-marker-mutations.md`
+— extracted out of `BlueMapAPIConnector`) is the same story one level down: game-coupled overall (its methods take
+live `bluemap-api` marker types), but `resolveExtrudeHeightRange` is package-private specifically so it stays
+directly testable (`MarkerMutationsTest`) — a plain `ExtrudeHeightRange` record, no `bluemap-api` types in its
+signature.
 
 `Version1SignEntryLoader` used to be a partial exception — its legacy-shorthand (`"nether"`/`"end"`/`"overworld"`)
 dimension normalization branch read `net.minecraft.world.level.Level`'s static constants, requiring a running
@@ -38,8 +42,9 @@ e.g. `"minecraft:the_nether"`) specifically so `Version1SignEntryLoaderTest` cou
 branches directly instead of only via an already-namespaced dimension string.
 
 Excluded — anything that must reference live game types (`SignHelper`, the two mixins, `BlueMapSignMarkersMod`
-including its `ServerChunkEvents.CHUNK_LOAD` reconciliation handler, `BlueMapAPIConnector` (except its
-`resolveExtrudeHeightRange` static, see above), `SignProvider` itself,
+including its `ServerChunkEvents.CHUNK_LOAD` reconciliation handler, `BlueMapAPIConnector` (except its `pointOf`/
+`isInsideRenderBounds` statics, see above), `MarkerMutations` (except its `resolveExtrudeHeightRange` static, see
+above), `SignProvider` itself,
 since loading/saving calls the game-coupled `SignManager` singleton) — these are thin glue and can only be
 verified manually: `./gradlew runServer` + placing/editing/breaking signs in-game (and, for chunk-load
 reconciliation specifically, removing a sign block without going through the mod — e.g. deleting its chunk's
@@ -358,13 +363,16 @@ As of `main` (`b2c5fa0`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   (`subtract: "true"`) parses identically to the bare form (the fix in commit `217c17f`).
 - `core/bluemap/BlueMapAPIConnectorTest.java` — the sole test class for otherwise-game-coupled `BlueMapAPIConnector`,
   exercising only its package-private statics (see `core-pipeline.md` §6, since even constructing a live connector
-  calls `BlueMapAPI.getInstance()`): `resolveExtrudeHeightRange` (ticket 196) — members all at the same Y get a
-  minimum 1-block height instead of collapsing to zero, members at different Ys span their actual
-  lowest-to-tallest height; `pointOfWrapsAMarkerIdentifiersCoordinatesIntoASinglePointList` confirms `pointOf`
-  builds the single-point list a POI marker's render-bounds check uses; `isInsideRenderBounds(RenderMask, ...)` has
-  a dedicated block using a real `RenderMaskEvaluator.load` fixture — a POI point inside/outside the mask, a
-  multi-point line with at least one member inside (in bounds) vs. every member outside (out of bounds), and an
+  calls `BlueMapAPI.getInstance()`): `pointOfWrapsAMarkerIdentifiersCoordinatesIntoASinglePointList` confirms
+  `pointOf` builds the single-point list a POI marker's render-bounds check uses; `isInsideRenderBounds(RenderMask,
+  ...)` has a dedicated block using a real `RenderMaskEvaluator.load` fixture — a POI point inside/outside the mask,
+  a multi-point line with at least one member inside (in bounds) vs. every member outside (out of bounds), and an
   unbounded mask (no `render-mask` configured) allowing any point.
+- `core/bluemap/MarkerMutationsTest.java` (ticket 04, new — split out of `BlueMapAPIConnectorTest` when
+  `resolveExtrudeHeightRange` moved into the new `MarkerMutations` class alongside the rest of
+  `BlueMapAPIConnector`'s marker-construction logic) — `resolveExtrudeHeightRange`: members all at the same Y get a
+  minimum 1-block height instead of collapsing to zero, members at different Ys span their actual
+  lowest-to-tallest height.
 
 ## CI integration
 
@@ -384,5 +392,5 @@ workflow jobs also now declare an explicit `permissions: contents: read` (least-
 the repo's default token permissions), and `publish.yml`'s job runs under a `modrinth-publish` GitHub Environment.
 
 ---
-*Last updated: 2026-09-11 | Verified against: feature/tpwalke2/209-actionfactory (5eb0f1d)*
+*Last updated: 2026-09-12 | Verified against: feature/tpwalke2/209-bluemapapiconnector (40f2273)*
 

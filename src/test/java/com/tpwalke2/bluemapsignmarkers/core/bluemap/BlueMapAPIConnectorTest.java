@@ -17,31 +17,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-// resolveExtrudeHeightRange, pointOf, and isInsideRenderBounds(RenderMask, ...) are package-private
-// specifically so they're testable without pulling in bluemap-api (compileOnly, not on the test
-// classpath - see the class's other private/game-coupled methods, which can't be exercised this way
-// since even constructing a BlueMapAPIConnector calls BlueMapAPI.getInstance()).
+// pointOf and isInsideRenderBounds(RenderMask, ...) are package-private specifically so they're testable
+// without pulling in bluemap-api (compileOnly, not on the test classpath - see the class's other
+// private/game-coupled methods, which can't be exercised this way since even constructing a
+// BlueMapAPIConnector calls BlueMapAPI.getInstance()). resolveExtrudeHeightRange moved to
+// MarkerMutationsTest alongside the rest of the marker-construction logic it lives with now.
 class BlueMapAPIConnectorTest {
-
-    @Test
-    void allMembersAtTheSameYGetAMinimumOneBlockHeightInsteadOfCollapsingToZero() {
-        var points = List.of(new LinePoint(0, 64, 0), new LinePoint(10, 64, 0), new LinePoint(10, 64, 10));
-
-        var range = BlueMapAPIConnector.resolveExtrudeHeightRange("Town Hall", points);
-
-        assertEquals(64f, range.minY());
-        assertEquals(65f, range.maxY());
-    }
-
-    @Test
-    void membersAtDifferentYsSpanTheirActualLowestToTallestHeight() {
-        var points = List.of(new LinePoint(0, 60, 0), new LinePoint(10, 70, 0), new LinePoint(10, 65, 10));
-
-        var range = BlueMapAPIConnector.resolveExtrudeHeightRange("Town Hall", points);
-
-        assertEquals(60f, range.minY());
-        assertEquals(70f, range.maxY());
-    }
 
     @Test
     void pointOfWrapsAMarkerIdentifiersCoordinatesIntoASinglePointList() {
