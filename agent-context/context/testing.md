@@ -154,7 +154,8 @@ As of `main` (`b2c5fa0`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   reload-forced), and the full cross-type bundling matrix (POI↔SHAPE, LINE↔SHAPE) both for a live sign change and
   for a config-reload-driven type flip/rename (`groupIdentityObsolete`). `EXTRUDE` coverage mirrors `SHAPE`'s
   exactly (same `EXTRUDE_MIN_MEMBERS = 3` threshold, same no-op/first-appearance/recompute/cross-type-bundling
-  shape), confirming `extrudeJoinAction`/`extrudeLeaveAction` behave identically to their `SHAPE` counterparts. Every
+  shape), confirming the shared `multiPointJoinAction`/`multiPointLeaveAction` (§209 collapse, see `core-pipeline.md`
+  §3) behave identically for `EXTRUDE` as for `SHAPE`. Every
   `LINE`/`SHAPE`/`EXTRUDE` dispatched-`Set` assertion now checks `set.getDetail()` against each member's *own*
   detail text, not the group label — this test-suite-wide update caught the `rep.label()`-passed-as-detail bug
   fixed alongside GitHub issue #198 (see `core-pipeline.md` §3's join/leave paragraph). Player-controlled colours
@@ -392,5 +393,5 @@ workflow jobs also now declare an explicit `permissions: contents: read` (least-
 the repo's default token permissions), and `publish.yml`'s job runs under a `modrinth-publish` GitHub Environment.
 
 ---
-*Last updated: 2026-09-12 | Verified against: feature/tpwalke2/209-bluemapapiconnector (40f2273)*
+*Last updated: 2026-09-12 | Verified against: feature/tpwalke2/209-signtransitionresolver (4d45867)*
 

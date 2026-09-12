@@ -188,26 +188,30 @@ zero effects → `null`, one effect → dispatch it directly, two → bundle int
 `groupIdentityObsolete` (used by the config-reload path, below) is likewise type-agnostic, detecting a config-only
 type flip or rename for any of the four types.
 
-`lineJoinAction(allSigns, parentMap, rep, actionFactory, sameGroupRecompute)` and `lineLeaveAction(allSigns,
-parentMap, rep, actionFactory)` both call `LineGroupResolver.members(allSigns, parentMap, rep.group().prefix(),
-rep.label())` against the caller-supplied snapshot — because `signCache` is a full, live snapshot (never cleared
-for a config reload, see below), a snapshot taken once per dispatch always scans every sign currently known, so a
-`LINE` group recompute is always complete and order-independent regardless of which member triggered it.
-`lineJoinAction`'s `isFirstAppearance` flag (`!sameGroupRecompute && members.size() == 2`) is log-only — see §6 —
-not a distinct dispatch type. `shapeJoinAction`/`shapeLeaveAction` and `extrudeJoinAction`/`extrudeLeaveAction` are
-the direct `SHAPE`/`EXTRUDE` counterparts: they call `ShapeGroupResolver.members(...)`/`ExtrudeGroupResolver.members(...)`,
-both of which just delegate to `LineGroupResolver.members(...)` (identical filtering/ordering — the only real
-difference between `LINE`, `SHAPE`, and `EXTRUDE` group resolution is the caller-side minimum-member count, `2` vs.
-`SHAPE_MIN_MEMBERS = 3` vs. `EXTRUDE_MIN_MEMBERS = 3`), and dispatch via the single `actionFactory.createSetMultiPointAction`/
-`createRemoveMultiPointAction` pair for all three types (§5) — `ActionFactory` derives which kind (and minimum-member
-threshold) to build from `markerGroup.type()` itself, so `SignTransitionResolver` doesn't need per-type factory calls
-here. Every join/leave-recompute call site calls `ColorResolver.resolve(members, rep.group())` (see below) immediately
-before dispatching, and passes the resolved `lineColor`/`fillColor` into `createSetMultiPointAction` as explicit
-parameters (`fillColor` is `null` for `LINE`, which has none) — `ActionFactory` no longer reads
-`markerGroup.lineColor()`/`fillColor()` itself for this factory method, keeping it a dumb builder while
-`SignTransitionResolver` owns colour resolution. These call sites also now pass `rep.detail()` (not `rep.label()`)
-as the dispatched detail text — fixing a bug where a `LINE`/`SHAPE`/`EXTRUDE` marker's rendered detail was always
-just its label repeated, since detail text on these signs was never actually threaded through.
+`multiPointJoinAction(allSigns, parentMap, rep, actionFactory, sameGroupRecompute, resolver, minMembers, kind)` and
+`multiPointLeaveAction(allSigns, parentMap, rep, actionFactory, currentPrefixGroupMap, resolver, minMembers, kind)`
+are the single generic implementation behind all three `LINE`/`SHAPE`/`EXTRUDE` cells above — collapsed from three
+near-identical `line*Action`/`shape*Action`/`extrude*Action` method pairs (GitHub issue #209) once it was clear they
+differed only by which `GroupResolver` (`LineGroupResolver::members`/`ShapeGroupResolver::members`/
+`ExtrudeGroupResolver::members`) they called, the minimum-member threshold (`LINE_MIN_MEMBERS = 2` vs.
+`SHAPE_MIN_MEMBERS = 3` vs. `EXTRUDE_MIN_MEMBERS = 3`), and whether a fill colour applies (`hasFill(kind)` is
+`false` only for `LINE`, which has no fill). Both call the caller-supplied `resolver` against the caller-supplied
+`allSigns` snapshot — because `signCache` is a full, live snapshot (never cleared for a config reload, see below), a
+snapshot taken once per dispatch always scans every sign currently known, so a recompute is always complete and
+order-independent regardless of which member triggered it. `ShapeGroupResolver.members`/`ExtrudeGroupResolver.members`
+just delegate to `LineGroupResolver.members(...)` (identical filtering/ordering — the only real difference between
+`LINE`, `SHAPE`, and `EXTRUDE` group resolution is the caller-side minimum-member count). `isFirstAppearance`
+(`!sameGroupRecompute && members.size() == minMembers`) is log-only — see §6 — not a distinct dispatch type. Both
+dispatch via the single `actionFactory.createSetMultiPointAction`/`createRemoveMultiPointAction` pair for all three
+types (§5) — `ActionFactory` derives which kind (and minimum-member threshold) to build from `markerGroup.type()`
+itself, so `SignTransitionResolver` doesn't need per-type factory calls here. Every join/leave-recompute call site
+calls `ColorResolver.resolve(members, rep.group())` (see below) immediately before dispatching, and passes the
+resolved `lineColor`/`fillColor` into `createSetMultiPointAction` as explicit parameters (`fillColor` is `null` for
+`LINE`, via `hasFill(kind)`) — `ActionFactory` no longer reads `markerGroup.lineColor()`/`fillColor()` itself for
+this factory method, keeping it a dumb builder while `SignTransitionResolver` owns colour resolution. These call
+sites also pass `rep.detail()` (not `rep.label()`) as the dispatched detail text — fixing a bug where a
+`LINE`/`SHAPE`/`EXTRUDE` marker's rendered detail was always just its label repeated, since detail text on these
+signs was never actually threaded through.
 
 ### Conflict resolution: `ColorResolver` (player-controlled marker colours, GitHub issue #198)
 
@@ -742,5 +746,5 @@ gating" section. This section covers the code-level mechanics.
   themselves are otherwise unchanged — the fix is localized to `prepareGated`.
 
 ---
-*Last updated: 2026-09-12 | Verified against: feature/tpwalke2/209-bluemapapiconnector (40f2273)*
+*Last updated: 2026-09-12 | Verified against: feature/tpwalke2/209-signtransitionresolver (4d45867)*
 
