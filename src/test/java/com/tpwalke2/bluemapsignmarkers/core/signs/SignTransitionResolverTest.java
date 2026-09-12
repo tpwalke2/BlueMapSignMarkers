@@ -4,18 +4,15 @@ import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.ActionFactory;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.AddMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.GroupTransitionMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.MarkerAction;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveExtrudeMarkerAction;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveLineMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMarkerAction;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveShapeMarkerAction;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetExtrudeMarkerAction;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetLineMarkerAction;
-import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetShapeMarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.RemoveMultiPointMarkerAction;
+import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.SetMultiPointMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.bluemap.actions.UpdateMarkerAction;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupMatchType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifierCollection;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointMarkerIdentifier;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -134,7 +131,8 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(first, second), second.key(), null, newRep, actionFactory(), false, Map.of(group.prefix(), group));
 
-        var set = assertInstanceOf(SetLineMarkerAction.class, action);
+        var set = assertInstanceOf(SetMultiPointMarkerAction.class, action);
+        assertEquals("line", ((MultiPointMarkerIdentifier) set.getMarkerIdentifier()).kind());
         assertTrue(set.isFirstAppearance());
         assertEquals(2, set.getPoints().size());
         assertEquals("d2", set.getDetail());
@@ -150,7 +148,7 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(first, second, third), third.key(), null, newRep, actionFactory(), false, Map.of(group.prefix(), group));
 
-        var set = assertInstanceOf(SetLineMarkerAction.class, action);
+        var set = assertInstanceOf(SetMultiPointMarkerAction.class, action);
         assertTrue(!set.isFirstAppearance());
         assertEquals("d3", set.getDetail());
         assertEquals(3, set.getPoints().size());
@@ -233,7 +231,8 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(remaining), departing.key(), oldRep, null, actionFactory(), false, Map.of(group.prefix(), group));
 
-        assertInstanceOf(RemoveLineMarkerAction.class, action);
+        var remove = assertInstanceOf(RemoveMultiPointMarkerAction.class, action);
+        assertEquals("line", ((MultiPointMarkerIdentifier) remove.getMarkerIdentifier()).kind());
     }
 
     @Test
@@ -257,7 +256,7 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(remaining1, remaining2), departing.key(), oldRep, null, actionFactory(), false, Map.of(group.prefix(), group));
 
-        var set = assertInstanceOf(SetLineMarkerAction.class, action);
+        var set = assertInstanceOf(SetMultiPointMarkerAction.class, action);
         assertEquals(2, set.getPoints().size());
         assertEquals("d1", set.getDetail());
     }
@@ -286,7 +285,7 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(newEntry, other), newEntry.key(), oldRep, newRep, actionFactory(), false, Map.of(group.prefix(), group));
 
-        var set = assertInstanceOf(SetLineMarkerAction.class, action);
+        var set = assertInstanceOf(SetMultiPointMarkerAction.class, action);
         assertTrue(!set.isFirstAppearance());
     }
 
@@ -300,7 +299,7 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(self, other), self.key(), oldRep, newRep, actionFactory(), true, Map.of(group.prefix(), group));
 
-        var set = assertInstanceOf(SetLineMarkerAction.class, action);
+        var set = assertInstanceOf(SetMultiPointMarkerAction.class, action);
         assertEquals(2, set.getPoints().size());
         assertEquals("detail", set.getDetail());
     }
@@ -320,8 +319,8 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        assertInstanceOf(RemoveLineMarkerAction.class, transition.effects().get(0));
-        var join = assertInstanceOf(SetLineMarkerAction.class, transition.effects().get(1));
+        assertInstanceOf(RemoveMultiPointMarkerAction.class, transition.effects().get(0));
+        var join = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
         assertEquals(2, join.getPoints().size());
     }
 
@@ -339,7 +338,7 @@ class SignTransitionResolverTest {
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
         assertInstanceOf(RemoveMarkerAction.class, transition.effects().get(0));
-        assertInstanceOf(SetLineMarkerAction.class, transition.effects().get(1));
+        assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
     }
 
     @Test
@@ -357,7 +356,7 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        var leave = assertInstanceOf(SetLineMarkerAction.class, transition.effects().get(0));
+        var leave = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(0));
         assertEquals(2, leave.getPoints().size());
         assertInstanceOf(AddMarkerAction.class, transition.effects().get(1));
     }
@@ -386,7 +385,8 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(first, second, third), third.key(), null, newRep, actionFactory(), false, Map.of(group.prefix(), group));
 
-        var set = assertInstanceOf(SetShapeMarkerAction.class, action);
+        var set = assertInstanceOf(SetMultiPointMarkerAction.class, action);
+        assertEquals("shape", ((MultiPointMarkerIdentifier) set.getMarkerIdentifier()).kind());
         assertTrue(set.isFirstAppearance());
         assertEquals(3, set.getPoints().size());
         assertEquals("d3", set.getDetail());
@@ -403,7 +403,7 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(first, second, third, fourth), fourth.key(), null, newRep, actionFactory(), false, Map.of(group.prefix(), group));
 
-        var set = assertInstanceOf(SetShapeMarkerAction.class, action);
+        var set = assertInstanceOf(SetMultiPointMarkerAction.class, action);
         assertTrue(!set.isFirstAppearance());
         assertEquals(4, set.getPoints().size());
     }
@@ -418,7 +418,8 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(remaining1, remaining2), departing.key(), oldRep, null, actionFactory(), false, Map.of(group.prefix(), group));
 
-        assertInstanceOf(RemoveShapeMarkerAction.class, action);
+        var remove = assertInstanceOf(RemoveMultiPointMarkerAction.class, action);
+        assertEquals("shape", ((MultiPointMarkerIdentifier) remove.getMarkerIdentifier()).kind());
     }
 
     @Test
@@ -446,7 +447,7 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(remaining1, remaining2, remaining3), departing.key(), oldRep, null, actionFactory(), false, Map.of(group.prefix(), group));
 
-        var set = assertInstanceOf(SetShapeMarkerAction.class, action);
+        var set = assertInstanceOf(SetMultiPointMarkerAction.class, action);
         assertEquals(3, set.getPoints().size());
         assertEquals("d1", set.getDetail());
     }
@@ -477,7 +478,7 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(newEntry, other1, other2), newEntry.key(), oldRep, newRep, actionFactory(), false, Map.of(group.prefix(), group));
 
-        var set = assertInstanceOf(SetShapeMarkerAction.class, action);
+        var set = assertInstanceOf(SetMultiPointMarkerAction.class, action);
         assertTrue(!set.isFirstAppearance());
     }
 
@@ -492,7 +493,7 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(self, other1, other2), self.key(), oldRep, newRep, actionFactory(), true, Map.of(group.prefix(), group));
 
-        var set = assertInstanceOf(SetShapeMarkerAction.class, action);
+        var set = assertInstanceOf(SetMultiPointMarkerAction.class, action);
         assertEquals(3, set.getPoints().size());
         assertEquals("detail", set.getDetail());
     }
@@ -514,8 +515,8 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        assertInstanceOf(RemoveShapeMarkerAction.class, transition.effects().get(0));
-        var join = assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(1));
+        assertInstanceOf(RemoveMultiPointMarkerAction.class, transition.effects().get(0));
+        var join = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
         assertEquals(3, join.getPoints().size());
     }
 
@@ -536,7 +537,7 @@ class SignTransitionResolverTest {
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
         assertInstanceOf(RemoveMarkerAction.class, transition.effects().get(0));
-        var join = assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(1));
+        var join = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
         assertTrue(join.isFirstAppearance());
     }
 
@@ -556,7 +557,7 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        var leave = assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(0));
+        var leave = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(0));
         assertEquals(3, leave.getPoints().size());
         assertInstanceOf(AddMarkerAction.class, transition.effects().get(1));
     }
@@ -577,8 +578,8 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        assertInstanceOf(RemoveLineMarkerAction.class, transition.effects().get(0));
-        var join = assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(1));
+        assertInstanceOf(RemoveMultiPointMarkerAction.class, transition.effects().get(0));
+        var join = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
         assertTrue(join.isFirstAppearance());
     }
 
@@ -598,8 +599,8 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        assertInstanceOf(RemoveShapeMarkerAction.class, transition.effects().get(0));
-        assertInstanceOf(SetLineMarkerAction.class, transition.effects().get(1));
+        assertInstanceOf(RemoveMultiPointMarkerAction.class, transition.effects().get(0));
+        assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
     }
 
     // --- isReload variants for POI<->SHAPE and LINE<->SHAPE flips, mirroring the existing POI/LINE reload coverage ---
@@ -619,7 +620,7 @@ class SignTransitionResolverTest {
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
         assertInstanceOf(RemoveMarkerAction.class, transition.effects().get(0));
-        var join = assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(1));
+        var join = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
         assertTrue(join.isFirstAppearance());
     }
 
@@ -639,7 +640,7 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        var leave = assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(0));
+        var leave = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(0));
         assertEquals(3, leave.getPoints().size());
         assertInstanceOf(AddMarkerAction.class, transition.effects().get(1));
     }
@@ -660,8 +661,8 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        assertInstanceOf(RemoveLineMarkerAction.class, transition.effects().get(0));
-        var join = assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(1));
+        assertInstanceOf(RemoveMultiPointMarkerAction.class, transition.effects().get(0));
+        var join = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
         assertTrue(join.isFirstAppearance());
     }
 
@@ -681,8 +682,8 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        assertInstanceOf(RemoveShapeMarkerAction.class, transition.effects().get(0));
-        assertInstanceOf(SetLineMarkerAction.class, transition.effects().get(1));
+        assertInstanceOf(RemoveMultiPointMarkerAction.class, transition.effects().get(0));
+        assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
     }
 
     // Regression for agent-context/reviews/review-2026-08-20.md: a reload where a group's *type* flips
@@ -705,7 +706,7 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        assertInstanceOf(RemoveShapeMarkerAction.class, transition.effects().get(0));
+        assertInstanceOf(RemoveMultiPointMarkerAction.class, transition.effects().get(0));
         assertInstanceOf(AddMarkerAction.class, transition.effects().get(1));
     }
 
@@ -728,9 +729,9 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        var leave = assertInstanceOf(RemoveShapeMarkerAction.class, transition.effects().get(0));
+        var leave = assertInstanceOf(RemoveMultiPointMarkerAction.class, transition.effects().get(0));
         assertEquals(oldGroup, leave.getMarkerIdentifier().parentSet().markerGroup());
-        var join = assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(1));
+        var join = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
         assertEquals(newGroup, join.getMarkerIdentifier().parentSet().markerGroup());
         assertEquals(3, join.getPoints().size());
     }
@@ -759,7 +760,8 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(first, second, third), third.key(), null, newRep, actionFactory(), false, Map.of(group.prefix(), group));
 
-        var set = assertInstanceOf(SetExtrudeMarkerAction.class, action);
+        var set = assertInstanceOf(SetMultiPointMarkerAction.class, action);
+        assertEquals("extrude", ((MultiPointMarkerIdentifier) set.getMarkerIdentifier()).kind());
         assertTrue(set.isFirstAppearance());
         assertEquals(3, set.getPoints().size());
         assertEquals("d3", set.getDetail());
@@ -776,7 +778,7 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(first, second, third, fourth), fourth.key(), null, newRep, actionFactory(), false, Map.of(group.prefix(), group));
 
-        var set = assertInstanceOf(SetExtrudeMarkerAction.class, action);
+        var set = assertInstanceOf(SetMultiPointMarkerAction.class, action);
         assertTrue(!set.isFirstAppearance());
         assertEquals(4, set.getPoints().size());
     }
@@ -791,7 +793,8 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(remaining1, remaining2), departing.key(), oldRep, null, actionFactory(), false, Map.of(group.prefix(), group));
 
-        assertInstanceOf(RemoveExtrudeMarkerAction.class, action);
+        var remove = assertInstanceOf(RemoveMultiPointMarkerAction.class, action);
+        assertEquals("extrude", ((MultiPointMarkerIdentifier) remove.getMarkerIdentifier()).kind());
     }
 
     @Test
@@ -819,7 +822,7 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(remaining1, remaining2, remaining3), departing.key(), oldRep, null, actionFactory(), false, Map.of(group.prefix(), group));
 
-        var set = assertInstanceOf(SetExtrudeMarkerAction.class, action);
+        var set = assertInstanceOf(SetMultiPointMarkerAction.class, action);
         assertEquals(3, set.getPoints().size());
         assertEquals("d1", set.getDetail());
     }
@@ -850,7 +853,7 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(newEntry, other1, other2), newEntry.key(), oldRep, newRep, actionFactory(), false, Map.of(group.prefix(), group));
 
-        var set = assertInstanceOf(SetExtrudeMarkerAction.class, action);
+        var set = assertInstanceOf(SetMultiPointMarkerAction.class, action);
         assertTrue(!set.isFirstAppearance());
     }
 
@@ -865,7 +868,7 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(self, other1, other2), self.key(), oldRep, newRep, actionFactory(), true, Map.of(group.prefix(), group));
 
-        var set = assertInstanceOf(SetExtrudeMarkerAction.class, action);
+        var set = assertInstanceOf(SetMultiPointMarkerAction.class, action);
         assertEquals(3, set.getPoints().size());
         assertEquals("detail", set.getDetail());
     }
@@ -887,8 +890,8 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        assertInstanceOf(RemoveExtrudeMarkerAction.class, transition.effects().get(0));
-        var join = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(1));
+        assertInstanceOf(RemoveMultiPointMarkerAction.class, transition.effects().get(0));
+        var join = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
         assertEquals(3, join.getPoints().size());
     }
 
@@ -909,7 +912,7 @@ class SignTransitionResolverTest {
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
         assertInstanceOf(RemoveMarkerAction.class, transition.effects().get(0));
-        var join = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(1));
+        var join = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
         assertTrue(join.isFirstAppearance());
     }
 
@@ -929,7 +932,7 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        var leave = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(0));
+        var leave = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(0));
         assertEquals(3, leave.getPoints().size());
         assertInstanceOf(AddMarkerAction.class, transition.effects().get(1));
     }
@@ -950,8 +953,8 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        assertInstanceOf(RemoveLineMarkerAction.class, transition.effects().get(0));
-        var join = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(1));
+        assertInstanceOf(RemoveMultiPointMarkerAction.class, transition.effects().get(0));
+        var join = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
         assertTrue(join.isFirstAppearance());
     }
 
@@ -971,8 +974,8 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        assertInstanceOf(RemoveExtrudeMarkerAction.class, transition.effects().get(0));
-        assertInstanceOf(SetLineMarkerAction.class, transition.effects().get(1));
+        assertInstanceOf(RemoveMultiPointMarkerAction.class, transition.effects().get(0));
+        assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
     }
 
     @Test
@@ -992,8 +995,8 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        assertInstanceOf(RemoveShapeMarkerAction.class, transition.effects().get(0));
-        var join = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(1));
+        assertInstanceOf(RemoveMultiPointMarkerAction.class, transition.effects().get(0));
+        var join = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
         assertTrue(join.isFirstAppearance());
     }
 
@@ -1014,8 +1017,8 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        assertInstanceOf(RemoveExtrudeMarkerAction.class, transition.effects().get(0));
-        var join = assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(1));
+        assertInstanceOf(RemoveMultiPointMarkerAction.class, transition.effects().get(0));
+        var join = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
         assertTrue(join.isFirstAppearance());
     }
 
@@ -1036,7 +1039,7 @@ class SignTransitionResolverTest {
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
         assertInstanceOf(RemoveMarkerAction.class, transition.effects().get(0));
-        var join = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(1));
+        var join = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
         assertTrue(join.isFirstAppearance());
     }
 
@@ -1056,7 +1059,7 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        var leave = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(0));
+        var leave = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(0));
         assertEquals(3, leave.getPoints().size());
         assertInstanceOf(AddMarkerAction.class, transition.effects().get(1));
     }
@@ -1077,8 +1080,8 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        assertInstanceOf(RemoveLineMarkerAction.class, transition.effects().get(0));
-        var join = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(1));
+        assertInstanceOf(RemoveMultiPointMarkerAction.class, transition.effects().get(0));
+        var join = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
         assertTrue(join.isFirstAppearance());
     }
 
@@ -1098,8 +1101,8 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        assertInstanceOf(RemoveExtrudeMarkerAction.class, transition.effects().get(0));
-        assertInstanceOf(SetLineMarkerAction.class, transition.effects().get(1));
+        assertInstanceOf(RemoveMultiPointMarkerAction.class, transition.effects().get(0));
+        assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
     }
 
     @Test
@@ -1119,8 +1122,8 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        assertInstanceOf(RemoveShapeMarkerAction.class, transition.effects().get(0));
-        var join = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(1));
+        assertInstanceOf(RemoveMultiPointMarkerAction.class, transition.effects().get(0));
+        var join = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
         assertTrue(join.isFirstAppearance());
     }
 
@@ -1141,8 +1144,8 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        assertInstanceOf(RemoveExtrudeMarkerAction.class, transition.effects().get(0));
-        assertInstanceOf(SetShapeMarkerAction.class, transition.effects().get(1));
+        assertInstanceOf(RemoveMultiPointMarkerAction.class, transition.effects().get(0));
+        assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
     }
 
     // Regression mirroring shapeToPoiConfigOnlyTypeFlipOnReloadRemovesShapeInsteadOfRecomputing above, for
@@ -1163,7 +1166,7 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        assertInstanceOf(RemoveExtrudeMarkerAction.class, transition.effects().get(0));
+        assertInstanceOf(RemoveMultiPointMarkerAction.class, transition.effects().get(0));
         assertInstanceOf(AddMarkerAction.class, transition.effects().get(1));
     }
 
@@ -1185,9 +1188,9 @@ class SignTransitionResolverTest {
 
         var transition = assertInstanceOf(GroupTransitionMarkerAction.class, action);
         assertEquals(2, transition.effects().size());
-        var leave = assertInstanceOf(RemoveExtrudeMarkerAction.class, transition.effects().get(0));
+        var leave = assertInstanceOf(RemoveMultiPointMarkerAction.class, transition.effects().get(0));
         assertEquals(oldGroup, leave.getMarkerIdentifier().parentSet().markerGroup());
-        var join = assertInstanceOf(SetExtrudeMarkerAction.class, transition.effects().get(1));
+        var join = assertInstanceOf(SetMultiPointMarkerAction.class, transition.effects().get(1));
         assertEquals(newGroup, join.getMarkerIdentifier().parentSet().markerGroup());
         assertEquals(3, join.getPoints().size());
     }
@@ -1225,7 +1228,7 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(newEntry, other), newEntry.key(), oldRep, newRep, actionFactory(), false, Map.of(group.prefix(), group));
 
-        var set = assertInstanceOf(SetLineMarkerAction.class, action);
+        var set = assertInstanceOf(SetMultiPointMarkerAction.class, action);
         assertEquals("#B02E26FF", set.getLineColor());
     }
 
@@ -1266,7 +1269,7 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(first, second), second.key(), null, newRep, actionFactory(), false, Map.of(group.prefix(), group));
 
-        var set = assertInstanceOf(SetLineMarkerAction.class, action);
+        var set = assertInstanceOf(SetMultiPointMarkerAction.class, action);
         assertEquals("#B02E26FF", set.getLineColor());
     }
 
@@ -1285,7 +1288,7 @@ class SignTransitionResolverTest {
 
         var action = SignTransitionResolver.computeTransitionAction(() -> List.of(dyed, other), self.key(), oldRep, newRep, actionFactory(), false, Map.of(group.prefix(), group));
 
-        assertInstanceOf(SetLineMarkerAction.class, action);
+        assertInstanceOf(SetMultiPointMarkerAction.class, action);
     }
 
     @Test

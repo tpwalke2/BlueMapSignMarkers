@@ -15,7 +15,7 @@ in `build.gradle`.
 Only plain-Java classes with **no Minecraft/Fabric/BlueMap API types in their method signatures** are unit tested.
 Qualifying today: `SignLinesParser`/`ParsingContext`/`SignLinesParseResult`, `SignEntry`, `SignEntryHelper`,
 `SignChunkKey`/`SignChunkIndex`, `MarkerGroup`/`MarkerGroupMatchType`/`MarkerGroupType`, `ConfigManager`/`ConfigProvider`,
-`ReactiveQueue`, `HtmlUtils`, `FileUtils`, `ColorUtils`, `ColorResolver`,
+`ReactiveQueue`, `HtmlUtils`, `FileUtils`, `ColorUtils`, `ColorResolver`, `SafeCall`, `ServerPathResolver`,
 `LineGroupResolver`/`ShapeGroupResolver`/`ExtrudeGroupResolver`,
 `SignTransitionResolver`, `RenderMaskEvaluator` (`core.bounds` — see `core-pipeline.md` §8), the
 sign-persistence loaders/converters/writer (`VersionedFileSignEntryLoader`, `Version1SignEntryLoader`,
@@ -24,10 +24,16 @@ sign-persistence loaders/converters/writer (`VersionedFileSignEntryLoader`, `Ver
 `ActionFactory`/`MarkerSetIdentifierCollection`. `SignManager` itself stays game-coupled (its constructor builds a
 `BlueMapAPIConnector`), but its `reparseFromRawLines`/`safeReparseFromRawLines` reparse-on-reload logic (§3 of
 `core-pipeline.md`) is extracted as a package-visible static specifically so it's directly testable.
-`BlueMapAPIConnector` itself stays game-coupled overall, but its `resolveExtrudeHeightRange` helper (§6 of
-`core-pipeline.md`) is a package-private static returning a plain `ExtrudeHeightRange` record with no
-`bluemap-api` types, specifically so it's directly testable (`BlueMapAPIConnectorTest`) without pulling
-`bluemap-api` (`compileOnly`) onto the test classpath.
+`BlueMapAPIConnector` itself stays game-coupled overall, but two helpers (§6 of `core-pipeline.md`) are
+package-private specifically so they're directly testable (`BlueMapAPIConnectorTest`) without pulling `bluemap-api`
+(`compileOnly`) onto the test classpath or constructing a live connector (which calls `BlueMapAPI.getInstance()`):
+`pointOf` (wraps a `MarkerIdentifier`'s coordinates into a single-point `List<LinePoint>`), and
+`isInsideRenderBounds(RenderMask, ...)` (the pure mask-vs-points predicate behind the render-bounds gate, §8).
+`MarkerMutations` (ticket 04, `.scratch/marker-action-consolidation/issues/04-shrink-bluemapapiconnector-marker-mutations.md`
+— extracted out of `BlueMapAPIConnector`) is the same story one level down: game-coupled overall (its methods take
+live `bluemap-api` marker types), but `resolveExtrudeHeightRange` is package-private specifically so it stays
+directly testable (`MarkerMutationsTest`) — a plain `ExtrudeHeightRange` record, no `bluemap-api` types in its
+signature.
 
 `Version1SignEntryLoader` used to be a partial exception — its legacy-shorthand (`"nether"`/`"end"`/`"overworld"`)
 dimension normalization branch read `net.minecraft.world.level.Level`'s static constants, requiring a running
@@ -36,8 +42,9 @@ e.g. `"minecraft:the_nether"`) specifically so `Version1SignEntryLoaderTest` cou
 branches directly instead of only via an already-namespaced dimension string.
 
 Excluded — anything that must reference live game types (`SignHelper`, the two mixins, `BlueMapSignMarkersMod`
-including its `ServerChunkEvents.CHUNK_LOAD` reconciliation handler, `BlueMapAPIConnector` (except its
-`resolveExtrudeHeightRange` static, see above), `SignProvider` itself,
+including its `ServerChunkEvents.CHUNK_LOAD` reconciliation handler, `BlueMapAPIConnector` (except its `pointOf`/
+`isInsideRenderBounds` statics, see above), `MarkerMutations` (except its `resolveExtrudeHeightRange` static, see
+above), `SignProvider` itself,
 since loading/saving calls the game-coupled `SignManager` singleton) — these are thin glue and can only be
 verified manually: `./gradlew runServer` + placing/editing/breaking signs in-game (and, for chunk-load
 reconciliation specifically, removing a sign block without going through the mod — e.g. deleting its chunk's
@@ -47,7 +54,7 @@ updates), watching the BlueMap web UI update.
 
 ## Current coverage
 
-As of `feature/tpwalke2/198-dye-colors` (`535bb13`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
+As of `main` (`b2c5fa0`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
 - `core/signs/SignLinesParserTest.java` — 12 `@Test` methods covering `SignLinesParser`: label-on-prefix-line vs.
   label-on-following-line, multi-line detail joining/trimming, leading/interstitial blank-line handling, no-match
   and all-blank sign results, `REGEX` match type's whole-line-match requirement (contrasted with `STARTS_WITH`),
@@ -69,6 +76,9 @@ As of `feature/tpwalke2/198-dye-colors` (`535bb13`), `src/test/java/com/tpwalke2
 - `core/signs/persistence/SignRegionKeyTest.java` — region assignment via `floorDiv` (including negative
   coordinates and the exact region-boundary blocks 511/512), and `relativeFilePath` namespace/path splitting
   (including the no-colon `unknown` dimension and a nested-path dimension).
+  `relativeFilePathRejectsADriveRelativeDimensionPath` (`@EnabledOnOs(OS.WINDOWS)`, since `\` is just an ordinary
+  filename character elsewhere) confirms a dimension string containing a Windows drive-relative path segment
+  (`isAbsolute() == false` but still carries a root component) is rejected too, not just a plain absolute path.
 - `core/signs/persistence/SignRegionPartitionerTest.java` — grouping entries by region and dimension, multiple
   entries landing in the same region, empty input.
 - `core/signs/persistence/RegionShardedSignEntryWriterTest.java` — one file per region; stale region files (signs
@@ -87,7 +97,9 @@ As of `feature/tpwalke2/198-dye-colors` (`535bb13`), `src/test/java/com/tpwalke2
   `getLabel`/`getDetail` front/back precedence and combining, plus `getDetail`'s ticket-07 fix
   (`getDetailUsesOnlyFrontWhenSidesMatchDifferentGroups`): when front and back match *different* marker groups,
   only the front's detail is used rather than merging both — see `core-pipeline.md`'s `SignEntryHelper` paragraph.
-  `getDye` (GitHub issue #198) has front-preferred/back-fallback tests mirroring `getPrefix`'s precedence rule.
+  `getLabel` has the matching fix covered too: a blank front label on a group-mismatched sign returns `""` instead
+  of borrowing the back side's label. `getDye` (GitHub issue #198) has front-preferred/back-fallback tests
+  mirroring `getPrefix`'s precedence rule.
 - `core/signs/SignEntryTest.java` — standard `equals`/`hashCode` contract on the hand-written implementation
   (reflexive, symmetric, per-field inequality including the added `createdAtMillis` field, not equal to
   `null`/another type), `withKey` returning a new instance with only the key changed (`createdAtMillis` carried
@@ -103,6 +115,11 @@ As of `feature/tpwalke2/198-dye-colors` (`535bb13`), `src/test/java/com/tpwalke2
   `buildResult()` using the set group's `prefix()` plus the current label, multiple `appendDetail` calls joining
   with `\n`, and that the final `trim()` only strips the outermost whitespace of the joined detail, not per-line
   padding.
+- `common/SafeCallTest.java` — `run` executes the action when it succeeds; swallows a thrown `RuntimeException` or
+  `Error` (via `assertDoesNotThrow`) instead of letting it propagate.
+- `common/ServerPathResolverTest.java` — `resolveMarkerStorageRoot` normalizes the trailing `"."` segment
+  `LevelResource.ROOT`'s raw path carries; `resolveLegacyMarkerFilePath` reproduces the pre-existing unnormalized
+  formula unchanged (see `config-and-persistence.md`).
 - `common/FileUtilsTest.java` — `createBackup` copies the original when no backup exists yet and leaves an existing
   backup untouched; `moveToBackup` moves the original into place, no-ops when the source is missing, and no-ops when
   a backup already exists; `createBackupReturnsFalseWhenTheCopyFails` and
@@ -125,7 +142,7 @@ As of `feature/tpwalke2/198-dye-colors` (`535bb13`), `src/test/java/com/tpwalke2
   a no-op, dispatches `Set` with `isFirstAppearance=true` at exactly two members, `isFirstAppearance=false` joining
   a third; POI→NONE dispatches Remove; POI→POI on the same group with label/detail both unchanged is a no-op,
   either changed dispatches `UpdateMarkerAction`, a different group dispatches `GroupTransitionMarkerAction`;
-  LINE→NONE dropping to one remaining member dispatches `RemoveLineMarkerAction`, to zero is a no-op, to ≥2 dispatches
+  LINE→NONE dropping to one remaining member dispatches `RemoveMultiPointMarkerAction`, to zero is a no-op, to ≥2 dispatches
   a refreshed `Set`; LINE→LINE on the same group+label with detail unchanged is a no-op, changed dispatches `Set`
   with `isFirstAppearance=false`, a different group bundles a leave+join `GroupTransitionMarkerAction`; POI→LINE and
   LINE→POI each bundle the appropriate remove/set + add/set pair. Confirms the POI/POI cell keys only on
@@ -133,11 +150,12 @@ As of `feature/tpwalke2/198-dye-colors` (`535bb13`), `src/test/java/com/tpwalke2
   bundled remove+add (fixed alongside the `allSigns`-snapshot performance change, both same commit series). `SHAPE`
   coverage mirrors `LINE`'s exactly but gated on `SHAPE_MIN_MEMBERS = 3`: NONE↔SHAPE at exactly 3 members
   (`isFirstAppearance` true/false), below-threshold no-ops, SHAPE→NONE dropping to 2 members dispatching
-  `RemoveShapeMarkerAction`, SHAPE↔SHAPE same-group/label recompute (no-op vs. detail-changed vs.
+  `RemoveMultiPointMarkerAction`, SHAPE↔SHAPE same-group/label recompute (no-op vs. detail-changed vs.
   reload-forced), and the full cross-type bundling matrix (POI↔SHAPE, LINE↔SHAPE) both for a live sign change and
   for a config-reload-driven type flip/rename (`groupIdentityObsolete`). `EXTRUDE` coverage mirrors `SHAPE`'s
   exactly (same `EXTRUDE_MIN_MEMBERS = 3` threshold, same no-op/first-appearance/recompute/cross-type-bundling
-  shape), confirming `extrudeJoinAction`/`extrudeLeaveAction` behave identically to their `SHAPE` counterparts. Every
+  shape), confirming the shared `multiPointJoinAction`/`multiPointLeaveAction` (§209 collapse, see `core-pipeline.md`
+  §3) behave identically for `EXTRUDE` as for `SHAPE`. Every
   `LINE`/`SHAPE`/`EXTRUDE` dispatched-`Set` assertion now checks `set.getDetail()` against each member's *own*
   detail text, not the group label — this test-suite-wide update caught the `rep.label()`-passed-as-detail bug
   fixed alongside GitHub issue #198 (see `core-pipeline.md` §3's join/leave paragraph). Player-controlled colours
@@ -148,7 +166,11 @@ As of `feature/tpwalke2/198-dye-colors` (`535bb13`), `src/test/java/com/tpwalke2
   (and unchanged detail) still no-ops; `lineToLineSameGroupAndLabelDyeOnlyChangeIsNoOpWhenAllowPlayerColorsIsOff`
   confirms a dye-only edit on an `allowPlayerColors`-disabled group stays a no-op instead of paying the full
   recompute cost; `lineJoinResolvesColorFromTheEarliestPlacedDyedMember` confirms a fresh join recomputes colour
-  via `ColorResolver` across the full current membership.
+  via `ColorResolver` across the full current membership. Two regression tests
+  (`../reviews/copilot-review-2026-09-07.md`) cover a `null` `Representation.dye()` (corrupted/hand-edited persisted
+  data): `lineToLineDyeChangedFromNullDispatchesRecomputeInsteadOfThrowing` and
+  `lineToLineBothDyesNullIsNoOpInsteadOfThrowing` confirm the no-op guard's dye comparison is null-safe
+  (`Objects.equals`, not a direct `.equals()` call) instead of throwing an NPE.
 - `core/signs/ColorResolverTest.java` — `resolve` (GitHub issue #198): `allowPlayerColors` off returns the group's
   configured `lineColor`/`fillColor` unchanged even when a member is dyed; on with no dyed members (all `"BLACK"`)
   also returns them unchanged; on with a dyed member replaces the hue but keeps the configured alpha byte for both
@@ -200,27 +222,54 @@ As of `feature/tpwalke2/198-dye-colors` (`535bb13`), `src/test/java/com/tpwalke2
   (GitHub issue #198) has `loadConfigDefaultsAllowPlayerColorsToFalseWhenOmitted` and
   `loadConfigPreservesExplicitAllowPlayerColorsOnALineGroup` for a `LINE` group, plus
   `loadConfigWarnsWhenAllowPlayerColorsIsSetOnAPOIGroup` (warning-only, not a load failure, per
-  `warnOnTypeFieldMismatches`).
+  `warnOnTypeFieldMismatches`). `name`'s missing/blank fallback (finding 14) has three tests:
+  `loadConfigFallsBackToThePrefixWhenNameIsMissingRatherThanWipingTheWholeConfig` and
+  `loadConfigFallsBackToThePrefixWhenNameIsBlank` confirm a missing or blank `name` falls back to that group's
+  `prefix` with a warning rather than throwing and reverting the *entire* config to defaults;
+  `loadConfigStillRejectsAnEmptyPrefixEvenWhenNameAlsoFallsBackToAPlaceholder` confirms `resolveName` itself
+  doesn't throw when both `name` and `prefix` are absent (falls back to the `"(unnamed)"` placeholder), and that
+  `validateMarkerGroups`'s empty-prefix rejection still fires afterward.
+  `loadConfigRejectsTheSamePrefixTextAcrossDifferentMatchTypes` confirms `validateMarkerGroups`'s duplicate-prefix
+  check compares prefix text alone, catching a collision even when one group is `STARTS_WITH` and the other
+  `REGEX`. `shutdownAwaitSeconds` (`config-and-persistence.md`) has the same shape of coverage as `sorting`:
+  `loadConfigDefaultsShutdownAwaitSecondsWhenOmitted`, `loadConfigPreservesExplicitShutdownAwaitSeconds`, and
+  malformed-value fallback tests `loadConfigFallsBackToDefaultShutdownAwaitSecondsWhenMalformed`/
+  `...WhenNonPositive`.
 - `config/ConfigManagerTest.java` — `get()` returns the config from the most recent `reload`; falls back to
   `new BMSMConfigV2()` defaults when the configured path fails to load; a second `reload()` replaces (not merges
-  with) what an earlier `reload` cached.
+  with) what an earlier `reload` cached. `concurrentFirstTimeCallersConvergeOnOneConfigInstance` (finding #72,
+  `agent-context/reviews/full-codebase-review_2026-09-07_0900.md`) is an active regression test for `get()`'s
+  double-checked-locking fix: many threads racing the very first (unsynchronized) `get()` call all converge on the
+  same loaded `BMSMConfigV2` instance instead of each redundantly loading and racing over which instance wins
+  (`resetForTesting()`, package-private, lets the test exercise the first-load path repeatedly per test method
+  instead of only once per JVM).
 - `core/bluemap/actions/ActionFactoryTest.java` — each of `createAddPOIAction`/`createRemovePOIAction`/
   `createUpdatePOIAction` builds the right `MarkerIdentifier` and action-specific fields;
-  `createChangeGroupPOIActionBuildsARemoveAndAddEffectPair` (ticket 09, updated for the line-markers rewrite) now
-  asserts `createChangeGroupPOIAction` returns a `GroupTransitionMarkerAction` with exactly two `effects` — a
-  `RemoveMarkerAction` for the old group then an `AddMarkerAction` for the new one — rather than the older single
-  action type carrying two identifiers directly; repeated calls for the same map/group (same or different action
-  type) reuse the same `MarkerSetIdentifier` instance via `MarkerSetIdentifierCollection`. `createSetLineAction`/
-  `createRemoveLineAction` each have a dedicated test asserting the built `SetLineMarkerAction`/`RemoveLineMarkerAction`
-  fields and `LineMarkerIdentifier`, plus a reuse test confirming line and POI actions for the same map/group share
-  one `MarkerSetIdentifier` (ticket 11). `createSetShapeAction`/`createRemoveShapeAction` have the same shape of
-  dedicated tests, additionally confirming `fillColor` is threaded from the `MarkerGroup` into the built
-  `SetShapeMarkerAction`, and that set/remove use independent `ShapeMarkerIdentifier`s. `createSetExtrudeAction`/
-  `createRemoveExtrudeAction` (ticket 196) have the same shape of tests again, confirming `fillColor` threading and
-  independent `ExtrudeMarkerIdentifier`s. `createSetLineAction`/`createSetShapeAction`/`createSetExtrudeAction`
-  (GitHub issue #198) now take an explicit `lineColor`/`fillColor` parameter instead of reading it off
-  `MarkerGroup` — every existing call site in this test class passes `group.lineColor()`/`group.fillColor()`
-  explicitly, so the assertions on the built actions' colour fields are unchanged.
+  `createGroupTransitionPOIActionBuildsARemoveAndAddEffectPair` (ticket 09, renamed from
+  `createChangeGroupPOIActionBuildsARemoveAndAddEffectPair` when `ActionFactory`'s per-kind factory methods were
+  collapsed, #209) asserts `createGroupTransitionPOIAction` returns a `GroupTransitionMarkerAction` with exactly two
+  `effects` — a `RemoveMarkerAction` for the old group then an `AddMarkerAction` for the new one; repeated calls for
+  the same map/group (same or different action type) reuse the same `MarkerSetIdentifier` instance via
+  `MarkerSetIdentifierCollection`. `createSetMultiPointAction`/`createRemoveMultiPointAction` are the single
+  `LINE`/`SHAPE`/`EXTRUDE` factory pair (replacing the former per-type `createSetLineAction`/`createSetShapeAction`/
+  `createSetExtrudeAction`/`createRemoveLineAction`/`createRemoveShapeAction`/`createRemoveExtrudeAction` methods,
+  #209 — `core-pipeline.md` §5): dedicated tests per type assert the built `SetMultiPointMarkerAction`/
+  `RemoveMultiPointMarkerAction` fields and the `MultiPointMarkerIdentifier`'s `kind` (`"line"`/`"shape"`/
+  `"extrude"`), plus reuse tests confirming actions for the same map/group share one `MarkerSetIdentifier` regardless
+  of type. `SHAPE`/`EXTRUDE` cases additionally confirm `fillColor` is threaded from the caller into the built
+  action (`LINE` passes `null`, having none). `createSetMultiPointAction`/`createRemoveMultiPointAction` take
+  explicit `lineColor`/`fillColor` parameters rather than reading them off `MarkerGroup` (GitHub issue #198) — every
+  call site in this test class passes `group.lineColor()`/`group.fillColor()` explicitly.
+  `createSetMultiPointActionRejectsAPOIMarkerGroup`/`createRemoveMultiPointActionRejectsAPOIMarkerGroup` replace the
+  former three per-type `requireGroupType` rejection tests with one pair, since both factory methods now derive
+  `kind`/minimum-members from `markerGroup.type()` via a single private `multiPointKind` switch that throws
+  `IllegalArgumentException` for `POI` (`core-pipeline.md` §5).
+  `createSetMultiPointActionRejectsFewerThanTwoPointsForALineGroup`/`...ThreePointsForAShapeGroup`/
+  `...ThreePointsForAnExtrudeGroup` (copilot-review.2026-09-11.md) pin each type's own minimum-points threshold
+  directly rather than relying on the happy-path tests' fixed point-list sizes — a regression mapping `SHAPE`/
+  `EXTRUDE` to `LINE_MIN_MEMBERS` (2) instead of their own `SHAPE_MIN_MEMBERS`/`EXTRUDE_MIN_MEMBERS` (3) would still
+  pass a same-sized-points-list test (2 points also satisfies `LINE`), so these assert rejection exactly one point
+  below each kind's *own* minimum.
 - `core/markers/MarkerSetIdentifierCollectionTest.java` — `getIdentifier` returns the same instance for a repeated
   `(mapId, markerGroup)` pair (case-insensitive on `mapId`), distinct pairs get distinct identifiers. Also includes
   `concurrentFirstTimeCallersForTheSameComboConvergeOnOneIdentifierInstance`, an active (not `@Disabled`) regression
@@ -229,23 +278,34 @@ As of `feature/tpwalke2/198-dye-colors` (`535bb13`), `src/test/java/com/tpwalke2
   `getIdentifier` became `synchronized` (see `core-pipeline.md` §5).
 - `core/reactive/ReactiveQueueTest.java` — enqueue → processor callback delivery (single and multiple messages,
   each exactly once); `shouldRun` gating (queued while false, resumes once true, a mid-drain false leaves the rest
-  queued); a submission failure for one message reaching the error callback without affecting later messages.
+  queued); a submission failure for one message reaching the error callback without affecting later messages;
+  `exceptionThrownByProcessorCallbackIsSurfacedToTheErrorCallback` and
+  `exceptionThrownByTheErrorCallbackItselfDoesNotStopLaterMessagesFromBeingProcessed` cover the fixed gap where a
+  processor-callback exception used to be swallowed (`core-pipeline.md` §7).
   Concurrency-hardening regression coverage (`../plans/codebase-review-2026-07-11.md`, resolved 2026-07-22):
   `shutdownBlocksUntilAnInFlightTaskFinishesBeforeReturning` (finding #10 — `shutdown()` now blocks on
   `awaitTermination` rather than returning while a task is still mid-flight), `shutdownPermanentlyStopsTheQueueFromProcessingLaterEnqueues`
   and `shutdownRacingMidDrainStopsTheLoopWithoutSpawningAReplacementExecutor` (finding #2 — a shut-down queue never
   self-heals a replacement executor, including when `shutdown()` races a still-draining `processMessages()` loop),
-  and `concurrentEnqueueBurstDeliversEveryMessageExactlyOnceDespiteRedundantDrainLoopFanOut` (documents current
-  "before" behavior: a burst of concurrent enqueues spawns more drain-loop submissions than messages, but every
-  message still lands exactly once — not itself a bug, just characterizing the fan-out). A documented remaining
-  gap: an exception thrown by the processor callback itself never reaches `messageProcessorErrorCallback` (it's
-  captured on an unawaited `Future` and dropped) versus a submission-time failure, which does reach it via a fake
-  executor. `reactiveQueueGivesNoOrderingGuaranteeBetweenIndependentlySubmittedMessages` (ticket 09) confirms and
+  and `concurrentEnqueueBurstDeliversEveryMessageExactlyOnceWithBoundedDrainLoopSubmissions` (renamed from
+  `...DespiteRedundantDrainLoopFanOut` once the `draining` CAS guard bounded the fan-out it used to just
+  characterize — now confirms a burst of concurrent enqueues submits a bounded number of drain-loop tasks while
+  still delivering every message exactly once). `shutdownReturnsTrueWhenNoExecutorWasEverCreated`,
+  `shutdownHonorsAConfiguredTimeoutShorterThanTheDefault`, and
+  `shutdownReturnsFalseWhenATaskIgnoresInterruptionThroughBothAwaitWindows` cover `shutdown()`'s configurable
+  `shutdownAwaitSeconds` and boolean return value (`core-pipeline.md` §7). `isShutdownIsFalseAndHasNotStartedIsFalseBeforeAnyWorkHasBeenScheduled`,
+  `isShutdownIsFalseAndHasNotStartedIsFalseWhenShouldRunIsFalse`, and
+  `isShutdownIsFalseAndHasStartedIsTrueOnceWorkHasBeenScheduled` cover the `isShutdown()`/`hasStarted()` split
+  (finding 63, `.scratch/concurrency-pass-2026-09/issues/04-reactivequeue-isshutdown-semantics.md`) — `isShutdown()`
+  no longer conflates "never started" with "genuinely shut down". `enqueueRejectsMessagesOnceCapacityIsReached` and
+  `consumeOverflowSinceLastCheckReportsAndClearsCapacityRejection` cover the capacity bound and overflow-tracking
+  added for finding 61 (`agent-context/reviews/full-codebase-review_2026-09-07_0900.md`, `core-pipeline.md` §7).
+  `reactiveQueueGivesNoOrderingGuaranteeBetweenIndependentlySubmittedMessages` (ticket 09) confirms and
   reproduces that two independently-`enqueue()`d messages have no relative execution-order guarantee once the
   executor has more than one worker thread (blocks the first message's processing on a real 2-thread pool and
   shows the second can finish first) — see `core-pipeline.md` §7 for why this is left as-is rather than fixed in
-  `ReactiveQueue` itself; its doc comment now points at `GroupTransitionMarkerAction`/`applySingleAction` (renamed
-  from `ChangeGroupMarkerAction`/`processChangeGroupAction`) as the caller relying on bundled-message ordering.
+  `ReactiveQueue` itself; its doc comment points at `GroupTransitionMarkerAction`/`applySingleAction` as the caller
+  relying on bundled-message ordering.
 - `core/signs/persistence/loaders/Version3ConverterTest.java` — basic V2→V3 conversion (both sides matched, POI
   group's prefix assumed for both, output is the frozen `SignEntryV3` shape); `aNonMatchingSideStaysNonMatching` and
   `treatsAMatchedSideAsNonMatchingWhenNoPoiGroupIsConfigured` (GitHub issue #138/review finding #6, parts a and c,
@@ -277,7 +337,9 @@ As of `feature/tpwalke2/198-dye-colors` (`535bb13`), `src/test/java/com/tpwalke2
   the backup failure and still proceeding with the in-memory migration (rather than aborting) if backing up to
   `.v2.bak`/`.v3.bak`/`.v4.bak`/`.v5.bak` fails, per `v2ContentStillMigratesWhenTheBackupFails` (ticket 02); and
   `v5ContentWithANullEntryIsSkippedRatherThanLosingTheWholeFile` confirming a JSON `null` entry in a V5 array is
-  skipped rather than throwing out of `Version6Converter.convertToV6` and discarding every other entry in the file.
+  skipped rather than throwing out of `Version6Converter.convertToV6` and discarding every other entry in the file;
+  `v6ContentWithANullEntryIsSkippedRatherThanLosingTheWholeFile` confirms the same for the current-version branch,
+  which previously deserialized the array as-is with no null-filtering at all (`../reviews/copilot-review-2026-09-07.md`).
 - `core/signs/persistence/loaders/Version1SignEntryLoaderTest.java` — the three recognized legacy shorthand
   strings (`"nether"`/`"end"`/`"overworld"`) *and* the canonical-but-unnamespaced resource paths
   (`"the_nether"`/`"the_end"`, ticket 05) normalizing to their canonical namespaced identifiers, case-insensitively,
@@ -301,9 +363,17 @@ As of `feature/tpwalke2/198-dye-colors` (`535bb13`), `src/test/java/com/tpwalke2
   casting); and `quotedBooleanAndNumericFieldsAreEquivalentToBareLiterals` confirming a quoted literal
   (`subtract: "true"`) parses identically to the bare form (the fix in commit `217c17f`).
 - `core/bluemap/BlueMapAPIConnectorTest.java` — the sole test class for otherwise-game-coupled `BlueMapAPIConnector`,
-  exercising only its package-private `resolveExtrudeHeightRange` static (ticket 196, see `core-pipeline.md` §6):
-  members all at the same Y get a minimum 1-block height instead of collapsing to zero; members at different Ys
-  span their actual lowest-to-tallest height.
+  exercising only its package-private statics (see `core-pipeline.md` §6, since even constructing a live connector
+  calls `BlueMapAPI.getInstance()`): `pointOfWrapsAMarkerIdentifiersCoordinatesIntoASinglePointList` confirms
+  `pointOf` builds the single-point list a POI marker's render-bounds check uses; `isInsideRenderBounds(RenderMask,
+  ...)` has a dedicated block using a real `RenderMaskEvaluator.load` fixture — a POI point inside/outside the mask,
+  a multi-point line with at least one member inside (in bounds) vs. every member outside (out of bounds), and an
+  unbounded mask (no `render-mask` configured) allowing any point.
+- `core/bluemap/MarkerMutationsTest.java` (ticket 04, new — split out of `BlueMapAPIConnectorTest` when
+  `resolveExtrudeHeightRange` moved into the new `MarkerMutations` class alongside the rest of
+  `BlueMapAPIConnector`'s marker-construction logic) — `resolveExtrudeHeightRange`: members all at the same Y get a
+  minimum 1-block height instead of collapsing to zero, members at different Ys span their actual
+  lowest-to-tallest height.
 
 ## CI integration
 
@@ -312,12 +382,16 @@ dispatch) both run `./gradlew test` before anything else — a test failure in `
 publish step entirely.
 
 Both workflows have a `summarize test results` step (`if: always()`, so it runs even when tests fail)
-immediately after the test step: it sums the `tests`/`failures`/`errors`/`skipped` XML attributes out of
-`build/test-results/test/*.xml` using plain shell (`sed`, looping the glob, `shopt -s nullglob`) and writes a
-markdown pass/fail table to `$GITHUB_STEP_SUMMARY`. This was a **deliberate choice over a `checks: write`-based
-JUnit reporter action** — those actions don't get `checks: write` permission on PRs from forks by default in a
-public repo, so the summary step was written to need no extra permissions.
+immediately after the test step, delegating to the shared composite action `.github/actions/summarize-test-results/
+action.yml`: it sums the `tests`/`failures`/`errors`/`skipped` XML attributes out of `build/test-results/test/*.xml`
+using plain shell (`sed`, looping the glob, `shopt -s nullglob`) and writes a markdown pass/fail table to
+`$GITHUB_STEP_SUMMARY` — a report file whose attributes can't be parsed is excluded from the totals and called out
+in the summary (`::warning`) rather than silently skewing the counts or failing the step. This was a **deliberate
+choice over a `checks: write`-based JUnit reporter action** — those actions don't get `checks: write` permission on
+PRs from forks by default in a public repo, so the summary step was written to need no extra permissions. Both
+workflow jobs also now declare an explicit `permissions: contents: read` (least-privilege, rather than relying on
+the repo's default token permissions), and `publish.yml`'s job runs under a `modrinth-publish` GitHub Environment.
 
 ---
-*Last updated: 2026-09-06 | Verified against: feature/tpwalke2/198-dye-colors (535bb13)*
+*Last updated: 2026-09-12 | Verified against: feature/tpwalke2/209-signtransitionresolver (4d45867)*
 

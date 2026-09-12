@@ -8,8 +8,8 @@ public class AddMarkerAction extends MarkerAction {
 
     public AddMarkerAction(MarkerIdentifier markerIdentifier, String label, String detail) {
         super(markerIdentifier);
-        this.label = label;
-        this.detail = detail;
+        this.label = MarkerActionValidation.requireNonNullField(label, "label", "AddMarkerAction");
+        this.detail = MarkerActionValidation.requireNonNullField(detail, "detail", "AddMarkerAction");
     }
 
     @Override

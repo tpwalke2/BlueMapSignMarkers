@@ -9,6 +9,9 @@ import com.tpwalke2.bluemapsignmarkers.core.signs.SignLinesParseResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -56,6 +59,23 @@ class RegionShardedSignEntryLoaderTest {
         assertTrue(loaded.contains(overworldEntry));
         assertTrue(loaded.contains(farOverworldEntry));
         assertTrue(loaded.contains(netherEntry));
+    }
+
+    @Test
+    void loadSignEntriesSkipsATruncatedRegionFileButLoadsOtherRegions(@TempDir Path storageRoot) throws IOException {
+        var goodEntry = signEntry(0, 0, "minecraft:overworld", "Town Hall");
+        RegionShardedSignEntryWriter.write(storageRoot, List.of(goodEntry), GSON);
+
+        // Written directly (not round-tripped through the writer) to simulate a file left truncated by a
+        // crash or disk-full mid-write, rather than one the writer itself produced.
+        var netherRegionDir = storageRoot.resolve("minecraft").resolve("the_nether");
+        Files.createDirectories(netherRegionDir);
+        Files.writeString(netherRegionDir.resolve("r.0.0.json"), "{ this is not valid json", StandardCharsets.UTF_8);
+
+        var loaded = RegionShardedSignEntryLoader.loadSignEntries(storageRoot, NO_GROUPS, GSON);
+
+        assertEquals(1, loaded.size());
+        assertTrue(loaded.contains(goodEntry));
     }
 
     private static SignEntry signEntry(int x, int z, String dimension, String label) {

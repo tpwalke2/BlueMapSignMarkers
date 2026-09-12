@@ -19,6 +19,17 @@ public class SignLinesParser {
     private static final Pattern INVISIBLE_WHITESPACE_AT_EDGES =
             Pattern.compile("^[\\s\\u00A0\\u200B\\u3000]+|[\\s\\u00A0\\u200B\\u3000]+$");
 
+    // Vanilla sign editing fits far fewer characters per line than this - a generous cap, not a
+    // mirror of any exact client-side constant. A REGEX marker group's prefix pattern runs against
+    // raw, player-controlled sign text via line.matches(...); an admin-configured pattern can hit
+    // catastrophic backtracking on a long enough adversarial line (e.g. a sign edited via
+    // commands/NBT to bypass the client's width limit). Capping length here bounds that blowup for
+    // the realistic case (a short, accidentally-pathological prefix pattern) without eliminating it
+    // for a deliberately-adversarial admin-authored pattern (e.g. several unbounded capturing groups
+    // in a row), which is an accepted residual risk - see
+    // docs/adr/0005-redos-mitigation-length-cap-only.md.
+    private static final int MAX_LINE_LENGTH = 100;
+
     private enum ParseStates {
         START,
         HAS_MARKER_TYPE,
@@ -60,7 +71,7 @@ public class SignLinesParser {
         var context = new ParsingContext();
 
         for (String line : lines) {
-            line = trimLine(line);
+            line = trimLine(truncateLine(line));
             if (state == ParseStates.START) {
                 state = processStartState(line, context, markerGroups);
             } else if (state == ParseStates.HAS_MARKER_TYPE) {
@@ -75,6 +86,15 @@ public class SignLinesParser {
 
     private static String trimLine(String line) {
         return INVISIBLE_WHITESPACE_AT_EDGES.matcher(line).replaceAll("");
+    }
+
+    private static String truncateLine(String line) {
+        if (line.length() <= MAX_LINE_LENGTH) {
+            return line;
+        }
+
+        int end = Character.isHighSurrogate(line.charAt(MAX_LINE_LENGTH - 1)) ? MAX_LINE_LENGTH - 1 : MAX_LINE_LENGTH;
+        return line.substring(0, end);
     }
 
     private static ParseStates processStartState(

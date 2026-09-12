@@ -1,12 +1,12 @@
 package com.tpwalke2.bluemapsignmarkers.core.bluemap.actions;
 
-import com.tpwalke2.bluemapsignmarkers.core.markers.LineMarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.LinePoint;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroup;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupMatchType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerIdentifier;
 import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerSetIdentifierCollection;
+import com.tpwalke2.bluemapsignmarkers.core.markers.MultiPointMarkerIdentifier;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -14,6 +14,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ActionFactoryTest {
@@ -68,12 +69,12 @@ class ActionFactoryTest {
     }
 
     @Test
-    void createChangeGroupPOIActionBuildsARemoveAndAddEffectPair() {
+    void createGroupTransitionPOIActionBuildsARemoveAndAddEffectPair() {
         var factory = new ActionFactory(new MarkerSetIdentifierCollection());
         var oldGroup = markerGroup("[event]");
         var newGroup = markerGroup("[poi]");
 
-        var action = factory.createChangeGroupPOIAction(1, 2, 3, "world", "label", "detail", oldGroup, newGroup);
+        var action = factory.createGroupTransitionPOIAction(1, 2, 3, "world", "label", "detail", oldGroup, newGroup);
 
         assertEquals(2, action.effects().size());
         var removeAction = assertInstanceOf(RemoveMarkerAction.class, action.effects().get(0));
@@ -93,14 +94,15 @@ class ActionFactoryTest {
     }
 
     @Test
-    void createSetLineActionBuildsTheLineMarkerIdentifierAndActionFields() {
+    void createSetMultiPointActionBuildsTheLineMarkerIdentifierAndActionFields() {
         var factory = new ActionFactory(new MarkerSetIdentifierCollection());
         var group = lineMarkerGroup("[line]");
         var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6));
 
-        var action = factory.createSetLineAction("world", group, "label", "detail", points, group.lineColor(), true);
-        var identifier = (LineMarkerIdentifier) action.getMarkerIdentifier();
+        var action = factory.createSetMultiPointAction("world", group, "label", "detail", points, group.lineColor(), null, true);
+        var identifier = (MultiPointMarkerIdentifier) action.getMarkerIdentifier();
 
+        assertEquals("line", identifier.kind());
         assertEquals("label", identifier.label());
         assertEquals("world", identifier.parentSet().mapId());
         assertEquals(group, identifier.parentSet().markerGroup());
@@ -113,13 +115,14 @@ class ActionFactoryTest {
     }
 
     @Test
-    void createRemoveLineActionBuildsTheLineMarkerIdentifier() {
+    void createRemoveMultiPointActionBuildsTheLineMarkerIdentifier() {
         var factory = new ActionFactory(new MarkerSetIdentifierCollection());
         var group = lineMarkerGroup("[line]");
 
-        var action = factory.createRemoveLineAction("world", group, "label");
-        var identifier = (LineMarkerIdentifier) action.getMarkerIdentifier();
+        var action = factory.createRemoveMultiPointAction("world", group, "label");
+        var identifier = (MultiPointMarkerIdentifier) action.getMarkerIdentifier();
 
+        assertEquals("line", identifier.kind());
         assertEquals("label", identifier.label());
         assertEquals("world", identifier.parentSet().mapId());
         assertEquals(group, identifier.parentSet().markerGroup());
@@ -150,14 +153,15 @@ class ActionFactoryTest {
     }
 
     @Test
-    void createSetShapeActionBuildsTheShapeMarkerIdentifierAndActionFields() {
+    void createSetMultiPointActionBuildsTheShapeMarkerIdentifierAndActionFields() {
         var factory = new ActionFactory(new MarkerSetIdentifierCollection());
         var group = shapeMarkerGroup("[shape]");
         var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6), new LinePoint(7, 8, 9));
 
-        var action = factory.createSetShapeAction("world", group, "label", "detail", points, group.lineColor(), group.fillColor(), true);
-        var identifier = (com.tpwalke2.bluemapsignmarkers.core.markers.ShapeMarkerIdentifier) action.getMarkerIdentifier();
+        var action = factory.createSetMultiPointAction("world", group, "label", "detail", points, group.lineColor(), group.fillColor(), true);
+        var identifier = (MultiPointMarkerIdentifier) action.getMarkerIdentifier();
 
+        assertEquals("shape", identifier.kind());
         assertEquals("label", identifier.label());
         assertEquals("world", identifier.parentSet().mapId());
         assertEquals(group, identifier.parentSet().markerGroup());
@@ -171,13 +175,14 @@ class ActionFactoryTest {
     }
 
     @Test
-    void createRemoveShapeActionBuildsTheShapeMarkerIdentifier() {
+    void createRemoveMultiPointActionBuildsTheShapeMarkerIdentifier() {
         var factory = new ActionFactory(new MarkerSetIdentifierCollection());
         var group = shapeMarkerGroup("[shape]");
 
-        var action = factory.createRemoveShapeAction("world", group, "label");
-        var identifier = (com.tpwalke2.bluemapsignmarkers.core.markers.ShapeMarkerIdentifier) action.getMarkerIdentifier();
+        var action = factory.createRemoveMultiPointAction("world", group, "label");
+        var identifier = (MultiPointMarkerIdentifier) action.getMarkerIdentifier();
 
+        assertEquals("shape", identifier.kind());
         assertEquals("label", identifier.label());
         assertEquals("world", identifier.parentSet().mapId());
         assertEquals(group, identifier.parentSet().markerGroup());
@@ -188,8 +193,9 @@ class ActionFactoryTest {
         var factory = new ActionFactory(new MarkerSetIdentifierCollection());
         var group = shapeMarkerGroup("[shape]");
 
-        var set = factory.createSetShapeAction("world", group, "label", "detail", List.of(), group.lineColor(), group.fillColor(), true);
-        var removed = factory.createRemoveShapeAction("world", group, "other label");
+        var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6), new LinePoint(7, 8, 9));
+        var set = factory.createSetMultiPointAction("world", group, "label", "detail", points, group.lineColor(), group.fillColor(), true);
+        var removed = factory.createRemoveMultiPointAction("world", group, "other label");
 
         assertSame(set.getMarkerIdentifier().parentSet(), removed.getMarkerIdentifier().parentSet());
     }
@@ -199,21 +205,23 @@ class ActionFactoryTest {
         var factory = new ActionFactory(new MarkerSetIdentifierCollection());
         var group = lineMarkerGroup("[line]");
 
-        var set = factory.createSetLineAction("world", group, "label", "detail", List.of(), group.lineColor(), true);
-        var removed = factory.createRemoveLineAction("world", group, "other label");
+        var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6));
+        var set = factory.createSetMultiPointAction("world", group, "label", "detail", points, group.lineColor(), null, true);
+        var removed = factory.createRemoveMultiPointAction("world", group, "other label");
 
         assertSame(set.getMarkerIdentifier().parentSet(), removed.getMarkerIdentifier().parentSet());
     }
 
     @Test
-    void createSetExtrudeActionBuildsTheExtrudeMarkerIdentifierAndActionFields() {
+    void createSetMultiPointActionBuildsTheExtrudeMarkerIdentifierAndActionFields() {
         var factory = new ActionFactory(new MarkerSetIdentifierCollection());
         var group = extrudeMarkerGroup("[extrude]");
         var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6), new LinePoint(7, 8, 9));
 
-        var action = factory.createSetExtrudeAction("world", group, "label", "detail", points, group.lineColor(), group.fillColor(), true);
-        var identifier = (com.tpwalke2.bluemapsignmarkers.core.markers.ExtrudeMarkerIdentifier) action.getMarkerIdentifier();
+        var action = factory.createSetMultiPointAction("world", group, "label", "detail", points, group.lineColor(), group.fillColor(), true);
+        var identifier = (MultiPointMarkerIdentifier) action.getMarkerIdentifier();
 
+        assertEquals("extrude", identifier.kind());
         assertEquals("label", identifier.label());
         assertEquals("world", identifier.parentSet().mapId());
         assertEquals(group, identifier.parentSet().markerGroup());
@@ -227,13 +235,14 @@ class ActionFactoryTest {
     }
 
     @Test
-    void createRemoveExtrudeActionBuildsTheExtrudeMarkerIdentifier() {
+    void createRemoveMultiPointActionBuildsTheExtrudeMarkerIdentifier() {
         var factory = new ActionFactory(new MarkerSetIdentifierCollection());
         var group = extrudeMarkerGroup("[extrude]");
 
-        var action = factory.createRemoveExtrudeAction("world", group, "label");
-        var identifier = (com.tpwalke2.bluemapsignmarkers.core.markers.ExtrudeMarkerIdentifier) action.getMarkerIdentifier();
+        var action = factory.createRemoveMultiPointAction("world", group, "label");
+        var identifier = (MultiPointMarkerIdentifier) action.getMarkerIdentifier();
 
+        assertEquals("extrude", identifier.kind());
         assertEquals("label", identifier.label());
         assertEquals("world", identifier.parentSet().mapId());
         assertEquals(group, identifier.parentSet().markerGroup());
@@ -244,10 +253,65 @@ class ActionFactoryTest {
         var factory = new ActionFactory(new MarkerSetIdentifierCollection());
         var group = extrudeMarkerGroup("[extrude]");
 
-        var set = factory.createSetExtrudeAction("world", group, "label", "detail", List.of(), group.lineColor(), group.fillColor(), true);
-        var removed = factory.createRemoveExtrudeAction("world", group, "other label");
+        var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6), new LinePoint(7, 8, 9));
+        var set = factory.createSetMultiPointAction("world", group, "label", "detail", points, group.lineColor(), group.fillColor(), true);
+        var removed = factory.createRemoveMultiPointAction("world", group, "other label");
 
         assertSame(set.getMarkerIdentifier().parentSet(), removed.getMarkerIdentifier().parentSet());
+    }
+
+    @Test
+    void createSetMultiPointActionRejectsAPOIMarkerGroup() {
+        var factory = new ActionFactory(new MarkerSetIdentifierCollection());
+        var group = markerGroup("[poi]");
+        var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> factory.createSetMultiPointAction("world", group, "label", "detail", points, group.lineColor(), null, true));
+    }
+
+    @Test
+    void createRemoveMultiPointActionRejectsAPOIMarkerGroup() {
+        var factory = new ActionFactory(new MarkerSetIdentifierCollection());
+        var group = markerGroup("[poi]");
+
+        assertThrows(IllegalArgumentException.class,
+                () -> factory.createRemoveMultiPointAction("world", group, "label"));
+    }
+
+    // multiPointKind derives each type's minimum-points threshold from MultiPointGroupThresholds, keyed on
+    // markerGroup.type() - a regression mapping SHAPE/EXTRUDE to LINE's threshold (2) instead of their own
+    // (3) would still pass a same-sized-points-list test, since 2 points also satisfies LINE. These pin the
+    // per-kind threshold directly: exactly one point below each kind's own minimum must be rejected, not
+    // just below every kind's minimum.
+    @Test
+    void createSetMultiPointActionRejectsFewerThanTwoPointsForALineGroup() {
+        var factory = new ActionFactory(new MarkerSetIdentifierCollection());
+        var group = lineMarkerGroup("[line]");
+        var points = List.of(new LinePoint(1, 2, 3));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> factory.createSetMultiPointAction("world", group, "label", "detail", points, group.lineColor(), null, true));
+    }
+
+    @Test
+    void createSetMultiPointActionRejectsFewerThanThreePointsForAShapeGroup() {
+        var factory = new ActionFactory(new MarkerSetIdentifierCollection());
+        var group = shapeMarkerGroup("[shape]");
+        var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> factory.createSetMultiPointAction("world", group, "label", "detail", points, group.lineColor(), group.fillColor(), true));
+    }
+
+    @Test
+    void createSetMultiPointActionRejectsFewerThanThreePointsForAnExtrudeGroup() {
+        var factory = new ActionFactory(new MarkerSetIdentifierCollection());
+        var group = extrudeMarkerGroup("[extrude]");
+        var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> factory.createSetMultiPointAction("world", group, "label", "detail", points, group.lineColor(), group.fillColor(), true));
     }
 
     private static MarkerGroup markerGroup(String prefix) {

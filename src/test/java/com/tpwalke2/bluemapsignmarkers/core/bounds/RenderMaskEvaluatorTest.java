@@ -99,6 +99,28 @@ class RenderMaskEvaluatorTest {
     }
 
     @Test
+    void unlistableMapsDirectoryIsUnbounded(@TempDir Path mapsDir) throws IOException {
+        writeConfig(mapsDir, "world.conf", "render-mask: [ { min-y: 127 } ]\n");
+        mapsDir.toFile().setReadable(false);
+        try {
+            // Same caveat as unreadableConfigFileIsUnbounded: setReadable(false)'s return value
+            // doesn't guarantee Files.list actually fails on this platform/user (e.g. an owner/admin
+            // process on Windows can still list it), so verify the real outcome and skip otherwise
+            // rather than reading an unearned pass.
+            boolean listingBlocked;
+            try (var files = Files.list(mapsDir)) {
+                listingBlocked = false;
+            } catch (IOException e) {
+                listingBlocked = true;
+            }
+            assumeTrue(listingBlocked, "Could not revoke listing permission on this platform; fail-open behavior unverified");
+            assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 0, -6000, 0));
+        } finally {
+            mapsDir.toFile().setReadable(true);
+        }
+    }
+
+    @Test
     void maskStartingWithSubtractIncludesEverythingElse(@TempDir Path mapsDir) throws IOException {
         writeConfig(mapsDir, "world.conf", """
                 render-mask: [
@@ -362,6 +384,139 @@ class RenderMaskEvaluatorTest {
         assertFalse(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 8, 0, 5));
         // inside the top strip of the "C"
         assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 8, 0, 1));
+    }
+
+    @Test
+    void circleEntryWithZeroRadiusFailsOpen(@TempDir Path mapsDir) throws IOException {
+        writeConfig(mapsDir, "world.conf", """
+                render-mask: [
+                  {
+                    type: circle
+                    center-x: 0
+                    center-z: 0
+                    radius: 0
+                  }
+                ]
+                """);
+
+        assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 0, 0, 0));
+    }
+
+    @Test
+    void circleEntryWithNegativeRadiusFailsOpen(@TempDir Path mapsDir) throws IOException {
+        writeConfig(mapsDir, "world.conf", """
+                render-mask: [
+                  {
+                    type: circle
+                    center-x: 0
+                    center-z: 0
+                    radius: -10
+                  }
+                ]
+                """);
+
+        assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 0, 0, 0));
+    }
+
+    @Test
+    void scientificNotationFieldParsesToItsFullValueNotJustTheMantissa(@TempDir Path mapsDir) throws IOException {
+        writeConfig(mapsDir, "world.conf", """
+                render-mask: [
+                  {
+                    type: circle
+                    center-x: 0
+                    center-z: 0
+                    radius: 1.5e3
+                  }
+                ]
+                """);
+
+        // radius 1500, not 1.5 - a point at x=1000 must be inside, not outside
+        assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 1000, 0, 0));
+    }
+
+    @Test
+    void nonNumericFieldValueFailsOpenForWholeMap(@TempDir Path mapsDir) throws IOException {
+        writeConfig(mapsDir, "world.conf", """
+                render-mask: [
+                  {
+                    type: circle
+                    center-x: 0
+                    center-z: 0
+                    radius: not-a-number
+                  }
+                ]
+                """);
+
+        // "radius" never matches FIELD_PATTERN's numeric alternative, so it's simply absent from
+        // the fields map - requiredDoubleField then throws its own "missing required field",
+        // failing the whole map open rather than throwing an uncaught parse exception.
+        assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 1_000_000, 0, 0));
+    }
+
+    @Test
+    void overflowingIntegerFieldValueFailsOpenForWholeMap(@TempDir Path mapsDir) throws IOException {
+        writeConfig(mapsDir, "world.conf", """
+                render-mask: [
+                  {
+                    min-x: 99999999999999
+                    max-x: 10
+                  }
+                ]
+                """);
+
+        // min-x overflows int; Integer.parseInt throws, caught by parseRenderMask's catch-all and
+        // failing the whole map open instead of propagating an uncaught exception.
+        assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 1_000_000, 0, 0));
+    }
+
+    @Test
+    void polygonMissingShapeArrayFailsOpen(@TempDir Path mapsDir) throws IOException {
+        writeConfig(mapsDir, "world.conf", """
+                render-mask: [
+                  {
+                    type: polygon
+                    min-y: 0
+                  }
+                ]
+                """);
+
+        assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 0, 0, 0));
+    }
+
+    @Test
+    void polygonWithFewerThanThreePointsFailsOpen(@TempDir Path mapsDir) throws IOException {
+        writeConfig(mapsDir, "world.conf", """
+                render-mask: [
+                  {
+                    type: polygon
+                    shape: [
+                      { x: 0, z: 0 }
+                      { x: 10, z: 0 }
+                    ]
+                  }
+                ]
+                """);
+
+        assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 5, 0, 0));
+    }
+
+    @Test
+    void polygonPointMissingCoordinateFailsOpen(@TempDir Path mapsDir) throws IOException {
+        writeConfig(mapsDir, "world.conf", """
+                render-mask: [
+                  {
+                    type: polygon
+                    shape: [
+                      { x: 0, z: 0 }
+                      { x: 10, z: 0 }
+                      { x: 10 }
+                    ]
+                  }
+                ]
+                """);
+
+        assertTrue(RenderMaskEvaluator.isInsideRenderBounds("world", mapsDir, 5, 0, 0));
     }
 
     @Test

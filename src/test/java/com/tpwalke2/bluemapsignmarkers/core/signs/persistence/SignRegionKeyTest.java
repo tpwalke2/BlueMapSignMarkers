@@ -1,10 +1,14 @@
 package com.tpwalke2.bluemapsignmarkers.core.signs.persistence;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 
+import java.nio.file.FileSystems;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class SignRegionKeyTest {
 
@@ -55,5 +59,55 @@ class SignRegionKeyTest {
         var key = new SignRegionKey("somemod:custom/dimension", 0, 0);
 
         assertEquals(Path.of("somemod", "custom", "dimension", "r.0.0.json"), key.relativeFilePath());
+    }
+
+    @Test
+    void relativeFilePathRejectsABlankNamespace() {
+        var key = new SignRegionKey(":custom/dimension", 0, 0);
+
+        assertThrows(IllegalArgumentException.class, key::relativeFilePath);
+    }
+
+    @Test
+    void relativeFilePathRejectsADotNamespace() {
+        var key = new SignRegionKey(".", 0, 0);
+
+        assertThrows(IllegalArgumentException.class, key::relativeFilePath);
+    }
+
+    @Test
+    void relativeFilePathRejectsADotDotNamespace() {
+        var key = new SignRegionKey("..", 0, 0);
+
+        assertThrows(IllegalArgumentException.class, key::relativeFilePath);
+    }
+
+    @Test
+    void relativeFilePathRejectsADimensionPathThatEscapesViaDotDotTraversal() {
+        var key = new SignRegionKey("somemod:../../escape", 0, 0);
+
+        assertThrows(IllegalArgumentException.class, key::relativeFilePath);
+    }
+
+    @Test
+    void relativeFilePathRejectsAnAbsoluteDimensionPath() {
+        // Built from the platform's own root so this holds on both Windows (drive-absolute paths) and
+        // Linux (root-absolute paths) rather than hardcoding one platform's absolute-path syntax.
+        var absolutePath = FileSystems.getDefault().getRootDirectories().iterator().next().resolve("escape").toString();
+        var key = new SignRegionKey("somemod:" + absolutePath, 0, 0);
+
+        assertThrows(IllegalArgumentException.class, key::relativeFilePath);
+    }
+
+    // A raw path segment starting with a single '\' parses as a Windows "drive-relative" path -
+    // isAbsolute() reports false for it, but it still carries a root component that discards
+    // namespaceDir on resolve(). Only reproducible on Windows; '\' is just an ordinary filename
+    // character on other platforms.
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    void relativeFilePathRejectsADriveRelativeDimensionPath() {
+        var key = new SignRegionKey("somemod:\\escape", 0, 0);
+
+        assertThrows(IllegalArgumentException.class, key::relativeFilePath);
     }
 }

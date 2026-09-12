@@ -1,5 +1,6 @@
 package com.tpwalke2.bluemapsignmarkers.mixin;
 
+import com.tpwalke2.bluemapsignmarkers.common.SafeCall;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignEntryKey;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignHelper;
 import com.tpwalke2.bluemapsignmarkers.core.signs.SignManager;
@@ -23,6 +24,7 @@ public class AbstractBlockInject {
                                 CallbackInfo ci) {
         if (!(state.getBlock() instanceof SignBlock)) return;
 
-        SignManager.remove(new SignEntryKey(pos.getX(), pos.getY(), pos.getZ(), SignHelper.getSignParentMap(level)));
+        SafeCall.run("onStateReplaced", () ->
+                SignManager.remove(new SignEntryKey(pos.getX(), pos.getY(), pos.getZ(), SignHelper.getSignParentMap(level))));
     }
 }

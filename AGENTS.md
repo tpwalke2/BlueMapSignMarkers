@@ -77,7 +77,7 @@ Two Mixins (`src/main/resources/bluemapsignmarkers.mixins.json`) catch the event
    table (`SignTransitionResolver.computeTransitionAction`) to get the single `MarkerAction` to dispatch — covering
    plain add/update/remove,
    a prefix change moving a sign between groups, and a `POI`↔`LINE` group `type` flip, all as the same kind of
-   representation diff. `LINE` groups additionally dispatch `SetLineMarkerAction`/`RemoveLineMarkerAction`/
+   representation diff. `LINE` groups additionally dispatch `SetMultiPointMarkerAction`/`RemoveMultiPointMarkerAction`/
    `GroupTransitionMarkerAction` (built via `ActionFactory`) when a sign joins/leaves a line (see
    `LineGroupResolver` below). It also implements `IResetHandler.reset()`, which BlueMap fires on `/bluemap reload`:
    reloads config (`ConfigManager.reload()`, `SignHelper.reloadParser()`, rebuilding its prefix→group lookup and
@@ -90,12 +90,15 @@ Two Mixins (`src/main/resources/bluemapsignmarkers.mixins.json`) catch the event
    `SignManager` can't be unit tested directly (its constructor builds a `BlueMapAPIConnector`, which touches live
    `BlueMapAPI` static state), but the transition table has no Minecraft/Fabric/BlueMap types in its signature, so
    extracting it makes it directly testable (`SignTransitionResolverTest`).
-3. **`BlueMapAPIConnector`** owns the `ReactiveQueue<MarkerAction>` and all actual BlueMap API calls. Because the
-   BlueMap API is only available while BlueMap itself is enabled, actions are queued and only drained
-   (`markerActionQueue.process()`) while `BlueMapAPI.getInstance().isPresent()`; `BlueMapAPI.onEnable`/`onDisable`
-   start/stop draining and clear/rebuild the marker-set cache. `MarkerSet`s are looked up/created per
-   `MarkerSetIdentifier` (map id + marker group), cached in `markerSetsCache` as `MappedMarkerSet` (pairing the
-   `MarkerSet` with the real `BlueMapMap.getId()` it came from — needed for the per-map render-bounds gating below).
+3. **`BlueMapAPIConnector`** owns the `ReactiveQueue<MarkerAction>`, BlueMap listener lifecycle, action-dispatch
+   orchestration, render-bounds gating, and the `MarkerSet`/render-mask caches. Because the BlueMap API is only
+   available while BlueMap itself is enabled, actions are queued and only drained (`markerActionQueue.process()`)
+   while `BlueMapAPI.getInstance().isPresent()`; `BlueMapAPI.onEnable`/`onDisable` start/stop draining and
+   clear/rebuild the marker-set cache. `MarkerSet`s are looked up/created per `MarkerSetIdentifier` (map id + marker
+   group), cached in `markerSetsCache` as `MappedMarkerSet` (pairing the `MarkerSet` with the real
+   `BlueMapMap.getId()` it came from — needed for the per-map render-bounds gating below). The actual BlueMap marker
+   builder calls (add/update/remove/set, per marker type) live in a separate `MarkerMutations` class (see "Testable
+   vs. game-coupled code" below) that `BlueMapAPIConnector` dispatches into.
 
 `ReactiveQueue<T>` (`core/reactive`) is a small generic building block: an unbounded queue plus a "should I run right
 now" predicate, draining onto a fixed thread pool sized to `availableProcessors()`. It isn't BlueMap-specific — reuse
@@ -127,11 +130,14 @@ restart alone does not trigger the upgrade sweep (only a genuine BlueMap disable
 
 `MarkerGroup` (record: prefix, matchType, type, name, icon, offsetX/Y, defaultHidden, minDistance/maxDistance,
 lineWidth, lineColor, fillColor, sorting, toggleable, depthTest, cssClasses) is the unit of configuration described
-in `README.md`. `type` (`MarkerGroupType`: `POI`, `LINE`, or `SHAPE`) picks which kind of marker the group's signs produce;
-`lineWidth`/`lineColor` apply to `LINE`/`SHAPE` groups (setting them on a `POI` group is a warning, not an error).
+in `README.md`. `type` (`MarkerGroupType`: `POI`, `LINE`, `SHAPE`, or `EXTRUDE`) picks which kind of marker the
+group's signs produce; `lineWidth`/`lineColor` apply to `LINE`/`SHAPE`/`EXTRUDE` groups (setting them on a `POI`
+group is a warning, not an error), and `fillColor` additionally applies to `SHAPE`/`EXTRUDE` (a volume gets a
+floor/ceiling anchored to its members' Y range, per `MarkerMutations.resolveExtrudeHeightRange`).
 `sorting`/`toggleable` are thin BlueMap `MarkerSet` passthroughs (menu order, hideability) that apply to every group
-type; `depthTest` (terrain occlusion) is `LINE`/`SHAPE`-only and `cssClasses` (custom.css hooks) is `POI`-only, each
-resolved in `ConfigProvider` and wired into the corresponding BlueMap builder call in `BlueMapAPIConnector`.
+type; `depthTest` (terrain occlusion) is `LINE`/`SHAPE`/`EXTRUDE`-only and `cssClasses` (custom.css hooks) is
+`POI`-only, each resolved in `ConfigProvider` and wired into the corresponding BlueMap builder call in
+`MarkerMutations`.
 `ConfigManager` lazily loads a singleton `BMSMConfigV2`
 via `ConfigProvider` from `config/bluemapsignmarkers/BMSM-Core.json`, creating sane defaults (a single `[poi]` group)
 if the file is missing or fails to load. `SignLinesParser` matches sign text against groups using either
@@ -148,15 +154,24 @@ sign text after the prefix) — that shared (group, label) is a line's membershi
 
 Sign state is stored per-world, region-sharded (one file per dimension + 32x32-chunk region — see "Entry point"
 above), with each region file wrapped in a `VersionedSignFile` envelope (`{version, data}`) so the format can evolve
-without breaking old saves. `SignProvider.loadSigns` checks whether the storage root already has region files
-(`RegionShardedSignEntryLoader.hasSignData`); if so, it loads every region file the same version-aware way as
-before sharding — the versioned-file loader (`VersionedFileSignEntryLoader`, handling V2→V3 migration via
-`Version3Converter`, V3→V4 migration via `Version4Converter` (adds `createdAtMillis`, needed to order points within
-a line marker; backfilled for pre-V4 entries), and current V4 files directly), falling back to
-`Version1SignEntryLoader` for pre-versioning files. If no region files exist yet, `LegacySignFileMigrator` reads a
-pre-sharding single `signs.json` (if present) through that same version chain, writes it out region-sharded, and
-backs up the legacy file (renamed, not deleted)
-only once every expected region file is confirmed on disk. When adding a new persisted field, bump
+without breaking old saves. `SignProvider.loadSigns` decides between the two loading paths by whether the
+pre-sharding legacy `signs.json` is still present at its legacy path, not merely by whether region files exist yet
+(`RegionShardedSignEntryLoader.hasSignData`) — a crash partway through a first migration can leave some region
+files written and others missing, and the legacy file is the actual source of truth until it's renamed to its
+`.migrated` backup, so its continued presence (regardless of what's already on disk region-sharded) means
+`LegacySignFileMigrator` must re-run and re-derive every region file from it. Once the legacy file is gone (already
+backed up), `loadSigns` loads every region file the same version-aware way as before sharding — the versioned-file
+loader (`VersionedFileSignEntryLoader`, handling V2→V3 migration via `Version3Converter`, V3→V4 migration via
+`Version4Converter` (adds `createdAtMillis`, needed to order points within a line marker; backfilled for pre-V4
+entries), V4→V5 migration via `Version5Converter` (adds raw front/back sign lines, backfilled `null` for pre-V5
+entries — needed to reparse a sign against a reloaded config instead of trusting a stale cached parse), and V5→V6
+migration via `Version6Converter` (adds front/back dye, backfilled to `SignEntryHelper.UNDYED_DYE` for pre-V6
+entries), and current V6 files directly), falling back to `Version1SignEntryLoader` for pre-versioning files. When
+`LegacySignFileMigrator` runs, it writes the entries out region-sharded (`RegionShardedSignEntryWriter`, via
+temp-file + atomic move so a crash mid-write never leaves a truncated region file) and backs up the legacy file
+(renamed, not deleted) only once every expected region file round-trip parses back to valid data — not just exists
+on disk, since a truncated file existing but failing to parse must still block finalizing the migration (see
+`docs/adr/0004-atomic-write-content-verify-persistence.md`). When adding a new persisted field, bump
 `SignFileVersions` and add a loader/converter rather than changing an existing version's shape in place — old
 region files (or a not-yet-migrated legacy `signs.json`) on live servers must keep loading.
 
@@ -165,9 +180,14 @@ region files (or a not-yet-migrated legacy `signs.json`) on live servers must ke
 New `MarkerAction` subtypes go through `ActionFactory` (construction) and need a `case` arm added in both
 `BlueMapAPIConnector.processMarkerAction`'s switch and `logProcessingMessage`'s switch — `MarkerAction` is a plain
 abstract class (not sealed), so a missing case silently falls through to the `default` branch instead of failing to
-compile. Line markers add `SetLineMarkerAction` (create/update a line's rendered points), `RemoveLineMarkerAction`
-(a line drops back below 2 members), and `GroupTransitionMarkerAction` (a sign's representation changes id scheme
-between reloads, e.g. a group's `type` flipping `POI`↔`LINE` — dispatches an explicit remove of the old marker
+compile. Line/shape/extrude markers add `SetMultiPointMarkerAction` (create/update a line/shape/extrude's rendered
+points; replaces the former per-kind `SetLineMarkerAction`/`SetShapeMarkerAction`/`SetExtrudeMarkerAction`,
+distinguished the same way by `MultiPointMarkerIdentifier`'s `kind` field, with the per-kind minimum-points threshold
+sourced from `MultiPointGroupThresholds`'s `LINE_MIN_MEMBERS`/`SHAPE_MIN_MEMBERS`/`EXTRUDE_MIN_MEMBERS`),
+`RemoveMultiPointMarkerAction` (a line/shape/extrude drops back below its minimum member count; also used for
+shape/extrude removal, distinguished by `MultiPointMarkerIdentifier`'s `kind` field), and `GroupTransitionMarkerAction`
+(a sign's representation changes id
+scheme between reloads, e.g. a group's `type` flipping `POI`↔`LINE` — dispatches an explicit remove of the old marker
 alongside the new one so nothing is orphaned in BlueMap's web UI); `GroupTransitionMarkerAction` replaced the earlier
 `ChangeGroupMarkerAction`.
 
@@ -178,13 +198,16 @@ signature (like `SignLinesParser`/`ParsingContext`, `SignEntry`/`SignEntryHelper
 `MarkerGroup`/`MarkerGroupMatchType`, `ConfigManager`/`ConfigProvider`, `ReactiveQueue`, `HtmlUtils`, `FileUtils`,
 the persistence loaders/converters (including `Version1SignEntryLoader`, `Version4Converter`),
 `ActionFactory`/`MarkerSetIdentifierCollection`, `LineGroupResolver`, `SignTransitionResolver`, `ColorUtils`,
-`DispatchedMarkerIdentifier`/`LineMarkerIdentifier`/`LinePoint`, `RenderMaskEvaluator`) — these can be unit tested
+`DispatchedMarkerIdentifier`/`MultiPointMarkerIdentifier`/`LinePoint`, `RenderMaskEvaluator`) — these can be unit tested
 directly (see
 `src/test/java/.../core/signs/SignLinesParserTest.java` for the pattern).
-Code that must reference game types (`SignHelper`, the mixins, `BlueMapSignMarkersMod`, `BlueMapAPIConnector`)
-should stay thin glue around the testable core, since it can only be verified manually via `runServer`.
+Code that must reference game types (`SignHelper`, the mixins, `BlueMapSignMarkersMod`, `BlueMapAPIConnector`,
+`MarkerMutations`) should stay thin glue around the testable core, since it can only be verified manually via
+`runServer`. `MarkerMutations` (the marker-construction logic extracted out of `BlueMapAPIConnector`, see above) is
+mostly game-coupled too, but its `resolveExtrudeHeightRange` static takes/returns no `bluemap-api` types, so it's
+directly testable the same way `BlueMapAPIConnector`'s own `pointOf`/`isInsideRenderBounds` statics are.
 
-`BlueMapAPIConnector` escapes sign text (`HtmlUtils.toHtmlDetail`, in `common`) before it reaches BlueMap's POI
+`MarkerMutations` escapes sign text (`HtmlUtils.toHtmlDetail`, in `common`) before it reaches BlueMap's POI
 marker `detail` field — BlueMap renders `detail` as raw HTML (unlike `label`, which BlueMap escapes itself), and
 sign text is player-controlled, so this closes a live XSS vector. See `agent-context/plans/html-detail-escaping-plan.md` for the
 design. Persisted sign data stays raw/unescaped; escaping happens only at this BlueMap API call site.

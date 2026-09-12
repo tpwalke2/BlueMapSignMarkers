@@ -1,28 +1,28 @@
 package com.tpwalke2.bluemapsignmarkers.config.persistence;
 
 import com.google.gson.JsonElement;
-import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupMatchType;
-import com.tpwalke2.bluemapsignmarkers.core.markers.MarkerGroupType;
 
 import java.util.List;
 
+// Fields prone to a type mismatch in hand-edited JSON (matchType, type, offsetX/offsetY, defaultHidden,
+// minDistance/maxDistance, lineWidth, sorting) are read as raw JsonElement rather than their real Java type,
+// so a malformed value fails to resolve just that one field (ConfigProvider degrades it to a safe default
+// with a warning) instead of throwing out of GSON.fromJson and wiping the entire config back to one default
+// [poi] group.
 public record LoadingMarkerGroupV2(
         String prefix,
-        MarkerGroupMatchType matchType,
-        MarkerGroupType type,
+        JsonElement matchType,
+        JsonElement type,
         String name,
         String icon,
-        Integer offsetX,
-        Integer offsetY,
-        Boolean defaultHidden,
-        Double minDistance,
-        Double maxDistance,
-        Integer lineWidth,
+        JsonElement offsetX,
+        JsonElement offsetY,
+        JsonElement defaultHidden,
+        JsonElement minDistance,
+        JsonElement maxDistance,
+        JsonElement lineWidth,
         String lineColor,
         String fillColor,
-        // JsonElement (rather than Integer) so a non-integer JSON value doesn't fail the whole config's Gson
-        // parse - resolveSorting in ConfigProvider validates it manually and falls back to the default on a
-        // malformed value, the same "never crash on a bad field" treatment lineWidth/lineColor get downstream.
         JsonElement sorting,
         Boolean toggleable,
         Boolean depthTest,

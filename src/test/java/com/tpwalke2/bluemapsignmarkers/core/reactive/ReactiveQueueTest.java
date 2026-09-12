@@ -61,15 +61,34 @@ class ReactiveQueueTest {
         assertEquals(expected, Set.copyOf(received));
     }
 
+    // Regression test for finding 63 (.scratch/concurrency-pass-2026-09/issues/04-reactivequeue-isshutdown-semantics.md):
+    // isShutdown() used to also return true for a queue that had simply never started (executor == null),
+    // conflating that state with a genuine shutdown - hasStarted() now answers "never started" directly, so
+    // isShutdown() no longer needs to (and doesn't) report true for it.
     @Test
-    void isShutdownIsTrueBeforeAnyWorkHasBeenScheduled() {
+    void isShutdownIsFalseAndHasStartedIsFalseBeforeAnyWorkHasBeenScheduled() {
         var queue = new ReactiveQueue<String>(() -> true, message -> { }, error -> { });
 
-        assertTrue(queue.isShutdown());
+        assertFalse(queue.isShutdown(), "a queue that never processed anything is not shut down");
+        assertFalse(queue.hasStarted(), "a queue that never processed anything has not started");
+    }
+
+    // The other conflated state from finding 63: shouldRun() being false stops process() from ever creating
+    // an executor, same as a queue that's simply never been enqueued to - neither is a genuine shutdown.
+    @Test
+    void isShutdownIsFalseAndHasStartedIsFalseWhenShouldRunIsFalse() {
+        var invocations = new AtomicInteger();
+        var queue = new ReactiveQueue<String>(() -> false, message -> invocations.incrementAndGet(), error -> { });
+
+        queue.enqueue("hello");
+
+        assertEquals(0, invocations.get());
+        assertFalse(queue.isShutdown(), "shouldRun() being false is not a shutdown");
+        assertFalse(queue.hasStarted(), "process() returning early via shouldRun() never created an executor");
     }
 
     @Test
-    void isShutdownIsFalseOnceWorkHasBeenScheduled() throws Exception {
+    void isShutdownIsFalseAndHasStartedIsTrueOnceWorkHasBeenScheduled() throws Exception {
         var delivered = new CountDownLatch(1);
         var queue = new ReactiveQueue<String>(() -> true, message -> delivered.countDown(), error -> { });
 
@@ -77,6 +96,7 @@ class ReactiveQueueTest {
         assertTrue(delivered.await(5, TimeUnit.SECONDS));
 
         assertFalse(queue.isShutdown());
+        assertTrue(queue.hasStarted(), "a queue that has processed a message has started");
     }
 
     @Test
@@ -101,6 +121,7 @@ class ReactiveQueueTest {
         var taskStarted = new CountDownLatch(1);
         var releaseTask = new CountDownLatch(1);
         var taskFinished = new AtomicBoolean(false);
+        var shutdownConfirmedClean = new AtomicBoolean(false);
         var delegate = Executors.newFixedThreadPool(2);
         var queue = new ReactiveQueue<String>(
                 () -> true,
@@ -115,7 +136,7 @@ class ReactiveQueueTest {
             queue.enqueue("hello");
             assertTrue(taskStarted.await(5, TimeUnit.SECONDS), "processor task never started");
 
-            var shutdownThread = new Thread(queue::shutdown);
+            var shutdownThread = new Thread(() -> shutdownConfirmedClean.set(queue.shutdown()));
             shutdownThread.start();
             // Wait for shutdown() to have actually called executor.shutdown() (rather than guessing with
             // a fixed sleep) before asserting the task hasn't finished yet, so a slow/contended runner
@@ -128,6 +149,93 @@ class ReactiveQueueTest {
 
             assertFalse(shutdownThread.isAlive(), "shutdown() should have returned by now");
             assertTrue(taskFinished.get(), "shutdown() should not return until the in-flight task finished");
+            assertTrue(shutdownConfirmedClean.get(),
+                    "shutdown() should report a clean stop once the in-flight task actually finished");
+        } finally {
+            delegate.shutdownNow();
+        }
+    }
+
+    @Test
+    void shutdownReturnsTrueWhenNoExecutorWasEverCreated() {
+        var queue = new ReactiveQueue<String>(() -> true, message -> { }, error -> { });
+
+        assertTrue(queue.shutdown(),
+                "shutdown() should report a clean stop when there was never any work to await");
+    }
+
+    // Regression test for the configurable-timeout half of findings 26/27
+    // (.scratch/concurrency-pass-2026-09/issues/02-reactivequeue-shutdown-guarantee-and-timeout.md): the
+    // await window used to be a hardcoded 5s constant. shutdown() now honors an explicitly configured
+    // (short) timeout instead of always waiting the 5s default.
+    @Test
+    void shutdownHonorsAConfiguredTimeoutShorterThanTheDefault() throws Exception {
+        var shutdownAwaitSeconds = 1L;
+        var taskStarted = new CountDownLatch(1);
+        var releaseTask = new CountDownLatch(1);
+        var delegate = Executors.newFixedThreadPool(1);
+        var queue = new ReactiveQueue<String>(
+                () -> true,
+                message -> {
+                    taskStarted.countDown();
+                    awaitUninterruptibly(releaseTask);
+                },
+                error -> { },
+                shutdownAwaitSeconds,
+                delegate);
+        try {
+            queue.enqueue("hello");
+            assertTrue(taskStarted.await(5, TimeUnit.SECONDS), "processor task never started");
+
+            var start = System.nanoTime();
+            releaseTask.countDown();
+            assertTrue(queue.shutdown(), "shutdown() should report a clean stop once the task released");
+            var elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+
+            assertTrue(elapsedMillis < TimeUnit.SECONDS.toMillis(4),
+                    "shutdown() took " + elapsedMillis + "ms; a 1s configured timeout should return well "
+                            + "under the 5s default, once the task is free to finish");
+        } finally {
+            delegate.shutdownNow();
+        }
+    }
+
+    // Finding 64's "non-interruptible straggler" scenario: a task that ignores Thread.interrupt() entirely
+    // (blocked on non-interruptible I/O, or CPU-bound with no poll point) can still be running after both
+    // awaitTermination calls time out. shutdown() can't force it to stop, but must report that it couldn't
+    // confirm a clean stop rather than returning as if the guarantee held.
+    @Test
+    void shutdownReturnsFalseWhenATaskIgnoresInterruptionThroughBothAwaitWindows() throws Exception {
+        var shutdownAwaitSeconds = 1L;
+        var taskStarted = new CountDownLatch(1);
+        var delegate = Executors.newFixedThreadPool(1);
+        var queue = new ReactiveQueue<String>(
+                () -> true,
+                message -> {
+                    taskStarted.countDown();
+                    var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+                    // Deliberately never checks Thread.interrupted() - simulates a straggler that
+                    // shutdownNow()'s interrupt can't actually stop.
+                    while (System.nanoTime() < deadline) {
+                        Thread.onSpinWait();
+                    }
+                },
+                error -> { },
+                shutdownAwaitSeconds,
+                delegate);
+        try {
+            queue.enqueue("hello");
+            assertTrue(taskStarted.await(5, TimeUnit.SECONDS), "processor task never started");
+
+            var start = System.nanoTime();
+            var confirmedClean = queue.shutdown();
+            var elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+
+            assertFalse(confirmedClean,
+                    "shutdown() should report it could not confirm a clean stop against a non-interruptible straggler");
+            assertTrue(elapsedMillis >= TimeUnit.SECONDS.toMillis(2 * shutdownAwaitSeconds),
+                    "shutdown() should have waited out both await windows (2x the configured timeout) before "
+                            + "giving up, took " + elapsedMillis + "ms");
         } finally {
             delegate.shutdownNow();
         }
@@ -190,7 +298,8 @@ class ReactiveQueueTest {
 
         // shouldRun() is checked before any executor is touched, so nothing was ever scheduled.
         assertEquals(0, invocations.get());
-        assertTrue(queue.isShutdown());
+        // Not a shutdown - just never started (finding 63, see isShutdownIsFalseAndHasStartedIsFalseWhenShouldRunIsFalse).
+        assertFalse(queue.isShutdown());
     }
 
     @Test
@@ -265,14 +374,14 @@ class ReactiveQueueTest {
         assertEquals(List.of("second"), received, "the failure on the first message should not stop later messages");
     }
 
-    // Documents current behavior: messageProcessorCallback is invoked inside a task handed to
-    // ExecutorService.submit(), so an exception it throws is captured on that task's Future and never
-    // surfaces to the try/catch in processMessages() (nothing ever calls Future.get()). The error callback
-    // is only reachable via a submission-time failure (see the test above), not a processing exception.
-    // Known gap for the concurrency-hardening pass.
+    // Fixed for finding 8 (High) / ticket 01 (.scratch/concurrency-pass-2026-09/issues/01-reactivequeue-swallowed-exceptions.md):
+    // messageProcessorCallback is invoked inside a task handed to ExecutorService.submit(); that task now
+    // wraps the callback invocation in its own try/catch and routes any exception to
+    // messageProcessorErrorCallback, rather than letting it vanish on the task's unobserved Future.
     @Test
-    void exceptionThrownByProcessorCallbackIsNotSurfacedToTheErrorCallback() throws Exception {
-        var errors = new ArrayList<Throwable>();
+    void exceptionThrownByProcessorCallbackIsSurfacedToTheErrorCallback() throws Exception {
+        var errors = new ConcurrentLinkedQueue<Throwable>();
+        var errorDelivered = new CountDownLatch(1);
         var secondMessageDelivered = new CountDownLatch(1);
         var queue = new ReactiveQueue<String>(
                 () -> true,
@@ -282,21 +391,53 @@ class ReactiveQueueTest {
                     }
                     secondMessageDelivered.countDown();
                 },
-                errors::add);
+                error -> {
+                    errors.add(error);
+                    errorDelivered.countDown();
+                });
 
         queue.enqueue("first");
         queue.enqueue("second");
 
         assertTrue(secondMessageDelivered.await(5, TimeUnit.SECONDS), "later message should still be processed");
-        assertTrue(errors.isEmpty(), "current implementation swallows processor exceptions rather than reporting them");
+        assertTrue(errorDelivered.await(5, TimeUnit.SECONDS), "processor exception was never reported to the error callback");
+        assertEquals(1, errors.size());
+        assertEquals("boom", errors.peek().getMessage());
     }
 
-    // Characterizes the current "before" behavior ahead of the concurrency-hardening pass: enqueue()
-    // unconditionally submits a fresh drain loop on every call rather than checking whether one is already
-    // running, so a burst of concurrent enqueues spawns more drain-loop submissions than there are messages.
-    // Despite that redundancy, every message is still delivered exactly once.
+    // Finding 64's "error-callback-throws" scenario: once a processor exception reaches
+    // messageProcessorErrorCallback, an exception thrown by the error callback itself must not kill the
+    // worker thread mid-drain (leaving later messages unprocessed) or propagate back to enqueue()'s caller.
     @Test
-    void concurrentEnqueueBurstDeliversEveryMessageExactlyOnceDespiteRedundantDrainLoopFanOut() throws Exception {
+    void exceptionThrownByTheErrorCallbackItselfDoesNotStopLaterMessagesFromBeingProcessed() throws Exception {
+        var secondMessageDelivered = new CountDownLatch(1);
+        var queue = new ReactiveQueue<String>(
+                () -> true,
+                message -> {
+                    if (message.equals("first")) {
+                        throw new RuntimeException("boom");
+                    }
+                    secondMessageDelivered.countDown();
+                },
+                error -> {
+                    throw new RuntimeException("error callback also broken");
+                });
+
+        queue.enqueue("first");
+        queue.enqueue("second");
+
+        assertTrue(secondMessageDelivered.await(5, TimeUnit.SECONDS),
+                "a broken error callback should not stop later messages from being processed");
+    }
+
+    // Regression test for finding 62 (.scratch/concurrency-pass-2026-09/issues/03-reactivequeue-backpressure-and-redundant-drain.md):
+    // process() used to unconditionally submit a fresh drain loop on every enqueue() rather than checking
+    // whether one was already active, so a burst of concurrent enqueues could spawn as many redundant
+    // drain-loop tasks as messages (on top of the one submission per message actually needed). The
+    // in-flight-drain-loop guard now caps drain-loop submissions regardless of burst size, while still
+    // delivering every message exactly once.
+    @Test
+    void concurrentEnqueueBurstDeliversEveryMessageExactlyOnceWithBoundedDrainLoopSubmissions() throws Exception {
         final int messageCount = 20;
         var submissionCount = new AtomicInteger();
         var delegate = Executors.newFixedThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors()));
@@ -331,12 +472,82 @@ class ReactiveQueueTest {
             assertEquals(
                     IntStream.range(0, messageCount).boxed().collect(Collectors.toSet()),
                     Set.copyOf(received));
+            // One submission per message (the inner per-message task) plus a small, bounded number of
+            // drain-loop submissions (never one per enqueue() call) - nowhere near 2x messageCount, which
+            // is what unconditional per-enqueue drain-loop submission would produce.
             assertTrue(
-                    submissionCount.get() > messageCount,
-                    "expected more executor submissions than messages (redundant drain-loop fan-out), got "
-                            + submissionCount.get());
+                    submissionCount.get() < messageCount * 2,
+                    "expected drain-loop submissions to be bounded rather than scaling with the burst size, got "
+                            + submissionCount.get() + " submissions for " + messageCount + " messages");
         } finally {
             starters.shutdownNow();
+            delegate.shutdownNow();
+        }
+    }
+
+    // Regression test for finding 61 (.scratch/concurrency-pass-2026-09/issues/03-reactivequeue-backpressure-and-redundant-drain.md):
+    // enqueue() now rejects (logs + drops) rather than growing the backing queue without bound once the
+    // configured capacity is reached.
+    @Test
+    void enqueueRejectsMessagesOnceCapacityIsReached() throws Exception {
+        var releaseProcessing = new CountDownLatch(1);
+        var firstMessageStarted = new CountDownLatch(1);
+        var received = new ConcurrentLinkedQueue<Integer>();
+        var delegate = Executors.newFixedThreadPool(1);
+        var capacity = 2;
+        var queue = new ReactiveQueue<Integer>(
+                () -> true,
+                message -> {
+                    firstMessageStarted.countDown();
+                    awaitUninterruptibly(releaseProcessing);
+                    received.add(message);
+                },
+                error -> { },
+                delegate,
+                capacity);
+        try {
+            // Stays counted against capacity for as long as it's in flight - its slot isn't released
+            // until the callback above actually returns (see copilotreview.2026-09-09.md's "capacity
+            // does not bound backlog while processing is enabled" finding) - so it, not just what's
+            // still sitting in the internal queue, counts toward the limit below.
+            queue.enqueue(0);
+            assertTrue(firstMessageStarted.await(5, TimeUnit.SECONDS), "first message never started processing");
+
+            queue.enqueue(1);
+            // Capacity (2) is now exhausted: message 0 still in flight (blocked on releaseProcessing) plus
+            // message 1 queued behind it.
+            queue.enqueue(2);
+
+            releaseProcessing.countDown();
+
+            assertTrue(awaitTrue(() -> received.size() >= 2, 5000),
+                    "the messages that fit within capacity should still all be processed");
+            assertEquals(List.of(0, 1), List.copyOf(received),
+                    "message 2 should have been rejected once capacity was reached, never processed");
+        } finally {
+            delegate.shutdownNow();
+        }
+    }
+
+    // Regression test for the "capacity rejection permanently loses marker state updates" finding
+    // (agent-context/reviews/copilotreview.2026-09-09.md): a caller with its own replay mechanism needs a
+    // way to learn that enqueue() dropped a message, so consumeOverflowSinceLastCheck() must actually flip
+    // true on overflow and reset to false once consumed rather than staying stuck either way.
+    @Test
+    void consumeOverflowSinceLastCheckReportsAndClearsCapacityRejection() {
+        var delegate = Executors.newSingleThreadExecutor();
+        try {
+            var queue = new ReactiveQueue<Integer>(
+                    () -> false, message -> { }, error -> { }, delegate, 1);
+
+            assertFalse(queue.consumeOverflowSinceLastCheck(), "no overflow should be reported before any rejection");
+
+            queue.enqueue(0);
+            queue.enqueue(1); // rejected: capacity is 1 and shouldRun() is always false, so nothing ever drains
+
+            assertTrue(queue.consumeOverflowSinceLastCheck(), "a rejected enqueue should be reported as overflow");
+            assertFalse(queue.consumeOverflowSinceLastCheck(), "overflow should be cleared once consumed");
+        } finally {
             delegate.shutdownNow();
         }
     }

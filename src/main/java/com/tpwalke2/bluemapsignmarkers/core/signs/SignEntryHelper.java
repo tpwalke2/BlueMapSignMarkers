@@ -38,6 +38,16 @@ public class SignEntryHelper {
             return signEntry.frontText().label();
         }
 
+        var frontPrefix = signEntry.frontText().prefix();
+        var backPrefix = signEntry.backText().prefix();
+
+        // Front and back matched different marker groups: the marker belongs to the front's group
+        // (see getPrefix), so a blank front label must not fall back to the back's label - that
+        // label belongs to a group the marker doesn't represent.
+        if (frontPrefix != null && backPrefix != null && !frontPrefix.equals(backPrefix)) {
+            return "";
+        }
+
         return signEntry.backText().label().isBlank() ? "" : signEntry.backText().label();
     }
 

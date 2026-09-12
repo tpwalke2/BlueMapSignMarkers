@@ -13,10 +13,19 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MarkerSetIdentifierCollectionTest {
+
+    @Test
+    void getIdentifierReturnsNullForANullMapIdInsteadOfThrowing() {
+        var collection = new MarkerSetIdentifierCollection();
+        var group = markerGroup("[poi]");
+
+        assertNull(collection.getIdentifier(null, group));
+    }
 
     @Test
     void getIdentifierReturnsTheSameInstanceForARepeatedCombo() {
