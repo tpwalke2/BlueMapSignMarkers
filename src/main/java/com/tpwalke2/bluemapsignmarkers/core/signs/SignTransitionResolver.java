@@ -220,7 +220,7 @@ public class SignTransitionResolver {
         return null;
     }
 
-    // Points stay ordered by createdAtMillis (the *GroupResolver.members contract) purely for polygon/line
+    // Points stay ordered by createdAtMillis (the GroupResolver.members contract) purely for polygon/line
     // vertex order; a SHAPE/EXTRUDE's Y anchor (BlueMapAPIConnector.setShapeMarker/setExtrudeMarker) is the
     // tallest member, not the oldest.
     private static List<LinePoint> toPoints(List<SignEntry> members) {

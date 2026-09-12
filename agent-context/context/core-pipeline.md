@@ -151,7 +151,9 @@ re-querying the cache once per sign.
 
 `computeTransitionAction`'s logic (mirrors the table in the spec, generalized to a 4x4 grid of `POI`/`LINE`/`SHAPE`/
 `EXTRUDE` alongside `NONE` — see `docs/adr/0002-shape-duplicates-line-pattern.md` for why each new multi-point type
-duplicates the same pattern rather than generalizing it):
+gets its own row/column and `MIN_MEMBERS` constant here rather than folding into `LINE`'s; the join/leave
+*implementation* behind those cells is a single shared parameterized resolver, not duplicated per type — see
+`multiPointJoinAction`/`multiPointLeaveAction` below):
 
 | Old ＼ New | NONE | POI | LINE | SHAPE | EXTRUDE |
 |---|---|---|---|---|---|
