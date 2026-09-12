@@ -155,9 +155,9 @@ duplicates the same pattern rather than generalizing it):
 
 | Old ＼ New | NONE | POI | LINE | SHAPE | EXTRUDE |
 |---|---|---|---|---|---|
-| **NONE** | no-op (`null`) | dispatch `createAddPOIAction` | `lineJoinAction` (recompute group *including* this sign; dispatch `SetLineMarkerAction` if ≥2 members, else no-op) | `shapeJoinAction` (same shape, gated on `SHAPE_MIN_MEMBERS = 3` instead of 2) | `extrudeJoinAction` (same shape again, gated on `EXTRUDE_MIN_MEMBERS = 3`) |
+| **NONE** | no-op (`null`) | dispatch `createAddPOIAction` | `lineJoinAction` (recompute group *including* this sign; dispatch `SetMultiPointMarkerAction` if ≥2 members, else no-op) | `shapeJoinAction` (same shape, gated on `SHAPE_MIN_MEMBERS = 3` instead of 2) | `extrudeJoinAction` (same shape again, gated on `EXTRUDE_MIN_MEMBERS = 3`) |
 | **POI** | dispatch `createRemovePOIAction` | same group (prefix unchanged): label/detail both unchanged is a no-op, either changed dispatches `createUpdatePOIAction`. Different group (prefix changed): leave-effect + join-effect, bundled | leave-effect (Remove POI) + join-effect (`lineJoinAction`) | leave-effect (Remove POI) + join-effect (`shapeJoinAction`) | leave-effect (Remove POI) + join-effect (`extrudeJoinAction`) |
-| **LINE** | `lineLeaveAction` (recompute group *excluding* this sign; `SetLineMarkerAction` if ≥2 remain, `RemoveMultiPointMarkerAction` if exactly 1 remains, no-op if 0) | leave-effect (as above) + join-effect (Add POI) | same group+label: `lineJoinAction` with `sameGroupRecompute=true` (refreshes detail/points — always dispatches `Set` since ≥2 members necessarily already existed); different group/label: leave-effect + join-effect | leave-effect (`lineLeaveAction`) + join-effect (`shapeJoinAction`) | leave-effect (`lineLeaveAction`) + join-effect (`extrudeJoinAction`) |
+| **LINE** | `lineLeaveAction` (recompute group *excluding* this sign; `SetMultiPointMarkerAction` if ≥2 remain, `RemoveMultiPointMarkerAction` if exactly 1 remains, no-op if 0) | leave-effect (as above) + join-effect (Add POI) | same group+label: `lineJoinAction` with `sameGroupRecompute=true` (refreshes detail/points — always dispatches `Set` since ≥2 members necessarily already existed); different group/label: leave-effect + join-effect | leave-effect (`lineLeaveAction`) + join-effect (`shapeJoinAction`) | leave-effect (`lineLeaveAction`) + join-effect (`extrudeJoinAction`) |
 | **SHAPE** | `shapeLeaveAction` (mirrors `lineLeaveAction`, but `RemoveMultiPointMarkerAction` once membership drops below 3) | leave-effect (`shapeLeaveAction`) + join-effect (Add POI) | leave-effect (`shapeLeaveAction`) + join-effect (`lineJoinAction`) | same group+label: `shapeJoinAction` with `sameGroupRecompute=true` (mirrors `LINE`/`LINE`); different group/label: leave-effect + join-effect | leave-effect (`shapeLeaveAction`) + join-effect (`extrudeJoinAction`) |
 | **EXTRUDE** | `extrudeLeaveAction` (mirrors `shapeLeaveAction`, `RemoveMultiPointMarkerAction` once membership drops below 3) | leave-effect (`extrudeLeaveAction`) + join-effect (Add POI) | leave-effect (`extrudeLeaveAction`) + join-effect (`lineJoinAction`) | leave-effect (`extrudeLeaveAction`) + join-effect (`shapeJoinAction`) | same group+label: `extrudeJoinAction` with `sameGroupRecompute=true` (mirrors `SHAPE`/`SHAPE`); different group/label: leave-effect + join-effect |
 
@@ -198,12 +198,13 @@ not a distinct dispatch type. `shapeJoinAction`/`shapeLeaveAction` and `extrudeJ
 the direct `SHAPE`/`EXTRUDE` counterparts: they call `ShapeGroupResolver.members(...)`/`ExtrudeGroupResolver.members(...)`,
 both of which just delegate to `LineGroupResolver.members(...)` (identical filtering/ordering — the only real
 difference between `LINE`, `SHAPE`, and `EXTRUDE` group resolution is the caller-side minimum-member count, `2` vs.
-`SHAPE_MIN_MEMBERS = 3` vs. `EXTRUDE_MIN_MEMBERS = 3`), and dispatch via `actionFactory.createSetShapeAction`/
-`createRemoveShapeAction` or `createSetExtrudeAction`/`createRemoveExtrudeAction` instead of the line equivalents.
-Every join/leave-recompute call site calls `ColorResolver.resolve(members, rep.group())` (see below) immediately
-before dispatching, and passes the resolved `lineColor`/`fillColor` into `createSetLineAction`/
-`createSetShapeAction`/`createSetExtrudeAction` as explicit parameters — `ActionFactory` no longer reads
-`markerGroup.lineColor()`/`fillColor()` itself for these three factory methods, keeping it a dumb builder while
+`SHAPE_MIN_MEMBERS = 3` vs. `EXTRUDE_MIN_MEMBERS = 3`), and dispatch via the single `actionFactory.createSetMultiPointAction`/
+`createRemoveMultiPointAction` pair for all three types (§5) — `ActionFactory` derives which kind (and minimum-member
+threshold) to build from `markerGroup.type()` itself, so `SignTransitionResolver` doesn't need per-type factory calls
+here. Every join/leave-recompute call site calls `ColorResolver.resolve(members, rep.group())` (see below) immediately
+before dispatching, and passes the resolved `lineColor`/`fillColor` into `createSetMultiPointAction` as explicit
+parameters (`fillColor` is `null` for `LINE`, which has none) — `ActionFactory` no longer reads
+`markerGroup.lineColor()`/`fillColor()` itself for this factory method, keeping it a dumb builder while
 `SignTransitionResolver` owns colour resolution. These call sites also now pass `rep.detail()` (not `rep.label()`)
 as the dispatched detail text — fixing a bug where a `LINE`/`SHAPE`/`EXTRUDE` marker's rendered detail was always
 just its label repeated, since detail text on these signs was never actually threaded through.
@@ -341,7 +342,7 @@ surgery) — the removal mixin (§1.3) only fires for an in-game block change on
   feature targets — so skipping reconciliation there would defeat the main use case. No performance reason to
   skip it either: `keysInChunk` is one hashmap `get` returning empty for the overwhelming majority of chunk loads.
 
-## 5. Marker identity — `DispatchedMarkerIdentifier` / `MarkerIdentifier` / `LineMarkerIdentifier` / `MarkerSetIdentifier` / `MarkerSetIdentifierCollection`
+## 5. Marker identity — `DispatchedMarkerIdentifier` / `MarkerIdentifier` / `MultiPointMarkerIdentifier` / `MarkerSetIdentifier` / `MarkerSetIdentifierCollection`
 
 Two id schemes now exist side by side (position-keyed and content-keyed), unified behind one interface:
 
@@ -352,33 +353,39 @@ Two id schemes now exist side by side (position-keyed and content-keyed), unifie
   literal key used inside a BlueMap `MarkerSet`'s marker map for POI markers. **No dimension component** —
   uniqueness across dimensions is guaranteed only because each dimension maps to a separate
   `MarkerSetIdentifier`/`MarkerSet`, not because the id string itself is unique.
-- `LineMarkerIdentifier(label, parentSet)` (record) also implements it — its `getId()` is `"line:" + label`,
-  **content-keyed**, not position-keyed: a line's points move as members join/leave, but its id stays stable as
-  long as the (group, label) key doesn't change. This is exactly the id-scheme difference that motivated
-  `SignManager.reloadConfig()`'s rewrite (§3) — a naive replay only ever adds under a marker's *current* id, so an
-  id scheme changing between reloads (e.g. a group's `type` flipping `POI`↔`LINE`↔`SHAPE`↔`EXTRUDE`) needs an explicit
-  dispatch removing the *old* id, not just adding the new one.
-- `ShapeMarkerIdentifier(label, parentSet)` (record) is the `SHAPE`-type counterpart, structurally identical to
-  `LineMarkerIdentifier` — same two fields, same interface — with `getId()` returning `"shape:" + label` instead.
-  `ExtrudeMarkerIdentifier(label, parentSet)` (record) is the `EXTRUDE`-type counterpart, same shape again, with
-  `getId()` returning `"extrude:" + label`.
+- `MultiPointMarkerIdentifier(kind, label, parentSet)` (record) also implements it — its `getId()` is `kind + ":" +
+  label`, **content-keyed**, not position-keyed: a line/shape/extrude's points move as members join/leave, but its
+  id stays stable as long as the (group, label) key doesn't change. `kind` is one of the string literals `"line"`/
+  `"shape"`/`"extrude"` (`ActionFactory`'s `LINE_KIND`/`SHAPE_KIND`/`EXTRUDE_KIND` constants), so `getId()` returns
+  `"line:" + label`/`"shape:" + label`/`"extrude:" + label` respectively. This one record replaces what used to be
+  three near-identical records (`LineMarkerIdentifier`/`ShapeMarkerIdentifier`/`ExtrudeMarkerIdentifier`), which
+  differed only by that hardcoded id-prefix. The content-keyed vs. position-keyed distinction is exactly what
+  motivated `SignManager.reloadConfig()`'s rewrite (§3) — a naive replay only ever adds under a marker's *current*
+  id, so an id scheme changing between reloads (e.g. a group's `type` flipping `POI`↔`LINE`↔`SHAPE`↔`EXTRUDE`) needs
+  an explicit dispatch removing the *old* id, not just adding the new one.
 - `MarkerSetIdentifier(mapId, markerGroup)` — one BlueMap marker-set per (map, marker-group) pair, unchanged by the
   line-markers work.
-- `ActionFactory.createChangeGroupPOIAction(x, y, z, mapId, label, detail, oldMarkerGroup, newMarkerGroup)` now
-  builds a `GroupTransitionMarkerAction` wrapping `List.of(new RemoveMarkerAction(oldIdentifier), new
-  AddMarkerAction(newIdentifier, label, detail))` — two full `MarkerAction`s, not the older single action carrying
-  two identifiers. `createSetLineAction(mapId, markerGroup, label, detail, points, lineColor, isFirstAppearance)`
-  and `createRemoveLineAction(mapId, markerGroup, label)` are the `LINE`-side counterparts, following the same
-  `MarkerSetIdentifierCollection.getIdentifier` pattern as every other factory method; `createSetLineAction` builds
-  a `LineMarkerIdentifier(label, ...)` and carries `markerGroup.lineWidth()` plus the caller-supplied `lineColor`
-  through — the caller (`SignTransitionResolver`, via `ColorResolver`, GitHub issue #198) passes the *resolved*
-  colour explicitly rather than `ActionFactory` reading `markerGroup.lineColor()` itself, since a group with
-  `allowPlayerColors` set may render a dye-derived colour instead of the configured one.
-  `createSetShapeAction(mapId, markerGroup, label, detail, points, lineColor, fillColor, isFirstAppearance)`/
-  `createRemoveShapeAction(mapId, markerGroup, label)` mirror those two exactly but build a `ShapeMarkerIdentifier`
-  and take both resolved colours as explicit parameters. `createSetExtrudeAction`/`createRemoveExtrudeAction` are
-  structurally identical to the `SHAPE` pair (same parameters) but build an `ExtrudeMarkerIdentifier` and the
-  resulting `SetExtrudeMarkerAction`/`RemoveMultiPointMarkerAction`.
+- `ActionFactory.createGroupTransitionPOIAction(x, y, z, mapId, label, detail, oldMarkerGroup, newMarkerGroup)`
+  (renamed from `createChangeGroupPOIAction`) builds a `GroupTransitionMarkerAction` wrapping `List.of(new
+  RemoveMarkerAction(oldIdentifier), new AddMarkerAction(newIdentifier, label, detail))` — two full `MarkerAction`s,
+  not a single action carrying two identifiers. A private `markerIdentifier(x, y, z, mapId, markerGroup)` helper
+  wraps the repeated `new MarkerIdentifier(x, y, z, markerSetIdentifierCollection.getIdentifier(mapId,
+  markerGroup))` construction shared by `createAddPOIAction`/`createRemovePOIAction`/`createUpdatePOIAction`/
+  `createGroupTransitionPOIAction`.
+  `createSetMultiPointAction(mapId, markerGroup, label, detail, points, lineColor, fillColor, isFirstAppearance)`
+  and `createRemoveMultiPointAction(mapId, markerGroup, label)` are the single `LINE`/`SHAPE`/`EXTRUDE` factory pair
+  — replacing the former per-type `createSetLineAction`/`createSetShapeAction`/`createSetExtrudeAction` and
+  `createRemoveLineAction`/`createRemoveShapeAction`/`createRemoveExtrudeAction` methods. Both derive a private
+  `MultiPointKind(String name, int minMembers)` from `markerGroup.type()` via a private `multiPointKind` switch
+  (`LINE`/`SHAPE`/`EXTRUDE` map to their kind string + `MultiPointGroupThresholds` constant; `POI` throws
+  `IllegalArgumentException`, replacing the former per-method `requireGroupType` checks — safe because every call
+  site in `SignTransitionResolver` already dispatches by `rep.group().type()` before reaching either method, §3) and
+  build the `MultiPointMarkerIdentifier(kind.name(), label, ...)` accordingly. `createSetMultiPointAction` carries
+  `markerGroup.lineWidth()` plus the caller-supplied `lineColor`/`fillColor` through — the caller
+  (`SignTransitionResolver`, via `ColorResolver`, GitHub issue #198) passes the *resolved* colour(s) explicitly
+  rather than `ActionFactory` reading `markerGroup.lineColor()`/`fillColor()` itself, since a group with
+  `allowPlayerColors` set may render a dye-derived colour instead of the configured one; `LINE` callers pass `null`
+  for `fillColor`, which it has none of.
 - `MarkerSetIdentifierCollection` is a per-`SignManager`-instance cache that guarantees the *same*
   `MarkerSetIdentifier` object is returned for a given `(mapId, markerGroup)` pair (indexed both by map and by
   marker group, intersected) — `ActionFactory` always goes through this rather than constructing
@@ -496,20 +503,24 @@ Two id schemes now exist side by side (position-keyed and content-keyed), unifie
   pair (or POI↔LINE swap) can never be observed half-applied by another thread; otherwise it calls
   `applySingleAction` directly on the one action. `applySingleAction` logs (`logProcessingMessage`) then dispatches
   on the concrete `MarkerAction` subtype via a `switch` pattern-match: `AddMarkerAction`/`RemoveMarkerAction`/
-  `UpdateMarkerAction`/`SetLineMarkerAction`/`RemoveMultiPointMarkerAction` each have a `case` arm — **`MarkerAction` is a
+  `UpdateMarkerAction`/`SetMultiPointMarkerAction`/`RemoveMultiPointMarkerAction` each have a `case` arm — **`MarkerAction` is a
   plain abstract class, not `sealed`**, so adding a new subtype without adding a `case` here (and in
   `logProcessingMessage`'s switch) silently falls through to `default` instead of failing to compile — see
   `AGENTS.md`'s "Adding a new marker/BlueMap action" section. All cases resolve their marker sets via a shared
-  `applyToMarkerSets(markerIdentifier, consumer)` helper (parameter type `DispatchedMarkerIdentifier`, needs only
-  `.parentSet()` — looks up via `getMarkerSets`, no-ops with a debug log if none found, otherwise hands the
-  consumer a `Stream<Map<String, Marker>>`); `RemoveMultiPointMarkerAction` (one class covering line/shape/extrude
+  `prepareGated`/`prepareUngated` helper (parameter type `DispatchedMarkerIdentifier`, needs only `.parentSet()` —
+  looks up via `getMarkerSets`, returns a no-op `Runnable` with a debug log if none found, otherwise hands the
+  effect a `Map<String, Marker>` per target map). `RemoveMultiPointMarkerAction` (one class covering line/shape/extrude
   removal, distinguished by `MultiPointMarkerIdentifier`'s `kind` field — see "Adding a new marker/BlueMap action" in
-  `AGENTS.md`) routes through an id-based `removeMarkerById(String id, Stream<...>)` helper extracted out of the old
-  `removeMarker` body. `SetShapeMarkerAction`/`SetExtrudeMarkerAction` have their own `case` arms alongside
-  `SetLineMarkerAction` and `RemoveMultiPointMarkerAction` (both in `processMarkerAction`'s switch and in
-  `logProcessingMessage`).
-- `setLineMarker(SetLineMarkerAction, Stream<Map<String, Marker>>)` builds/replaces a BlueMap `LineMarker`: bails
-  (defensively — `SignManager` should never dispatch below 2 points) if `action.getPoints().size() < 2`, otherwise
+  `AGENTS.md`) routes through an id-based `removeMarkerById(String id, Map<String, Marker>)` helper extracted out of the old
+  `removeMarker` body. `SetMultiPointMarkerAction` has one `case` arm covering all three kinds — its own
+  `setMultiPointMarker(SetMultiPointMarkerAction, Map<String, Marker>)` reads `MultiPointMarkerIdentifier.kind()` off
+  the action's identifier and `switch`es (`"line"`/`"shape"`/`"extrude"`, `default` logs a warning) to
+  `setLineMarker`/`setShapeMarker`/`setExtrudeMarker` — this is the one place in `BlueMapAPIConnector` that still
+  needs to tell the three kinds apart, since `ActionFactory` (§5) now dispatches all of them through the single
+  `SetMultiPointMarkerAction`/`RemoveMultiPointMarkerAction` types.
+- `setLineMarker(SetMultiPointMarkerAction, Map<String, Marker>)` builds/replaces a BlueMap `LineMarker`: bails
+  (defensively — `SignManager` should never dispatch below `LINE_MIN_MEMBERS` points, logging a warning if it does)
+  if `action.getPoints().size() < MultiPointGroupThresholds.LINE_MIN_MEMBERS`, otherwise
   builds a `de.bluecolored.bluemap.api.math.Line` from the action's `LinePoint`s (via `Vector3d`), parses
   `action.getLineColor()` through `ColorUtils.parseHex` (`common`, plain Java) into `de.bluecolored.bluemap.api.math.Color`,
   and `put`s a `LineMarker.builder().label(...).detail(HtmlUtils.toHtmlDetail(...)).line(line).lineWidth(...).lineColor(...)
@@ -518,16 +529,17 @@ Two id schemes now exist side by side (position-keyed and content-keyed), unifie
   only conversion point from the persisted hex string to a real color object, mirroring how `HtmlUtils` is the only
   conversion point for HTML-escaped `detail` — both convert at the BlueMap-API call site, keeping the rest of the
   pipeline in plain-Java, unescaped/unconverted form.
-- `setShapeMarker(SetShapeMarkerAction, Stream<Map<String, Marker>>)` is the `SHAPE` counterpart: bails
-  (defensively, mirroring `setLineMarker`) if `action.getPoints().size() < 3`, builds a 2D `Shape` footprint from
+- `setShapeMarker(SetMultiPointMarkerAction, Map<String, Marker>)` is the `SHAPE` counterpart: bails
+  (defensively, mirroring `setLineMarker`) if `action.getPoints().size() < MultiPointGroupThresholds.SHAPE_MIN_MEMBERS`,
+  builds a 2D `Shape` footprint from
   the points' `x`/`z` only, and takes the marker's rendered height from the **tallest member**:
   `points.stream().mapToInt(LinePoint::y).max()`. Parses both `lineColor` and `fillColor` through `ColorUtils.parseHex`
   (fill defaults to a translucent red, `#FF000033`, unlike `lineColor`'s opaque default — see
   `config-and-persistence.md`), then `put`s a `ShapeMarker.builder().label(...).detail(...).shape(shape,
   height).lineWidth(...).lineColor(...).fillColor(...).depthTestEnabled(markerGroup.depthTest()).build()` into each
   marker set's map, keyed by `action.getMarkerIdentifier().getId()` (the content-keyed `"shape:" + label` id, §5).
-- `setExtrudeMarker(SetExtrudeMarkerAction, Map<String, Marker>)` is the `EXTRUDE` counterpart: bails (defensively,
-  mirroring `setShapeMarker`) if `action.getPoints().size() < 3`, builds the same 2D `Shape` footprint from the
+- `setExtrudeMarker(SetMultiPointMarkerAction, Map<String, Marker>)` is the `EXTRUDE` counterpart: bails (defensively,
+  mirroring `setShapeMarker`) if `action.getPoints().size() < MultiPointGroupThresholds.EXTRUDE_MIN_MEMBERS`, builds the same 2D `Shape` footprint from the
   points' `x`/`z` as `setShapeMarker`, but instead of a single tallest-member height calls package-private
   `resolveExtrudeHeightRange(label, points)` for the volume's floor/ceiling: `minY`/`maxY` are the lowest/tallest
   member's Y independently (not both from the tallest member), so the extrusion spans the full height range its
@@ -705,7 +717,7 @@ gating" section. This section covers the code-level mechanics.
   the pre-existing `markerSetsCache` only stored bare `MarkerSet`s.
 - **Gated vs. unconditional dispatch**: `prepareSingleAction` routes `AddMarkerAction`/`UpdateMarkerAction`
   (single point, wrapped via a `pointOf(MarkerIdentifier)` helper into a one-element point list) and
-  `SetLineMarkerAction`/`SetShapeMarkerAction` (their own multi-point `getPoints()`) through
+  `SetMultiPointMarkerAction` (its own multi-point `getPoints()`, covering `LINE`/`SHAPE`/`EXTRUDE` alike) through
   `prepareGated(identifier, points, effect)`. For each target `MappedMarkerSet`, `isInsideRenderBounds`
   is `points.stream().anyMatch(p -> mask.contains(...))` — **any one point in bounds passes the whole marker**
   (all-or-nothing for `LINE`/`SHAPE`, no per-point clipping). On a pass, `effect.accept(markers)` runs as normal;
@@ -726,5 +738,5 @@ gating" section. This section covers the code-level mechanics.
   themselves are otherwise unchanged — the fix is localized to `prepareGated`.
 
 ---
-*Last updated: 2026-09-09 | Verified against: main (b2c5fa0)*
+*Last updated: 2026-09-11 | Verified against: feature/tpwalke2/209-actionfactory (5eb0f1d)*
 

@@ -239,21 +239,25 @@ As of `main` (`b2c5fa0`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   instead of only once per JVM).
 - `core/bluemap/actions/ActionFactoryTest.java` — each of `createAddPOIAction`/`createRemovePOIAction`/
   `createUpdatePOIAction` builds the right `MarkerIdentifier` and action-specific fields;
-  `createChangeGroupPOIActionBuildsARemoveAndAddEffectPair` (ticket 09, updated for the line-markers rewrite) now
-  asserts `createChangeGroupPOIAction` returns a `GroupTransitionMarkerAction` with exactly two `effects` — a
-  `RemoveMarkerAction` for the old group then an `AddMarkerAction` for the new one — rather than the older single
-  action type carrying two identifiers directly; repeated calls for the same map/group (same or different action
-  type) reuse the same `MarkerSetIdentifier` instance via `MarkerSetIdentifierCollection`. `createSetLineAction`/
-  `createRemoveLineAction` each have a dedicated test asserting the built `SetLineMarkerAction`/`RemoveMultiPointMarkerAction`
-  fields and `LineMarkerIdentifier`, plus a reuse test confirming line and POI actions for the same map/group share
-  one `MarkerSetIdentifier` (ticket 11). `createSetShapeAction`/`createRemoveShapeAction` have the same shape of
-  dedicated tests, additionally confirming `fillColor` is threaded from the `MarkerGroup` into the built
-  `SetShapeMarkerAction`, and that set/remove use independent `ShapeMarkerIdentifier`s. `createSetExtrudeAction`/
-  `createRemoveExtrudeAction` (ticket 196) have the same shape of tests again, confirming `fillColor` threading and
-  independent `ExtrudeMarkerIdentifier`s. `createSetLineAction`/`createSetShapeAction`/`createSetExtrudeAction`
-  (GitHub issue #198) now take an explicit `lineColor`/`fillColor` parameter instead of reading it off
-  `MarkerGroup` — every existing call site in this test class passes `group.lineColor()`/`group.fillColor()`
-  explicitly, so the assertions on the built actions' colour fields are unchanged.
+  `createGroupTransitionPOIActionBuildsARemoveAndAddEffectPair` (ticket 09, renamed from
+  `createChangeGroupPOIActionBuildsARemoveAndAddEffectPair` when `ActionFactory`'s per-kind factory methods were
+  collapsed, #209) asserts `createGroupTransitionPOIAction` returns a `GroupTransitionMarkerAction` with exactly two
+  `effects` — a `RemoveMarkerAction` for the old group then an `AddMarkerAction` for the new one; repeated calls for
+  the same map/group (same or different action type) reuse the same `MarkerSetIdentifier` instance via
+  `MarkerSetIdentifierCollection`. `createSetMultiPointAction`/`createRemoveMultiPointAction` are the single
+  `LINE`/`SHAPE`/`EXTRUDE` factory pair (replacing the former per-type `createSetLineAction`/`createSetShapeAction`/
+  `createSetExtrudeAction`/`createRemoveLineAction`/`createRemoveShapeAction`/`createRemoveExtrudeAction` methods,
+  #209 — `core-pipeline.md` §5): dedicated tests per type assert the built `SetMultiPointMarkerAction`/
+  `RemoveMultiPointMarkerAction` fields and the `MultiPointMarkerIdentifier`'s `kind` (`"line"`/`"shape"`/
+  `"extrude"`), plus reuse tests confirming actions for the same map/group share one `MarkerSetIdentifier` regardless
+  of type. `SHAPE`/`EXTRUDE` cases additionally confirm `fillColor` is threaded from the caller into the built
+  action (`LINE` passes `null`, having none). `createSetMultiPointAction`/`createRemoveMultiPointAction` take
+  explicit `lineColor`/`fillColor` parameters rather than reading them off `MarkerGroup` (GitHub issue #198) — every
+  call site in this test class passes `group.lineColor()`/`group.fillColor()` explicitly.
+  `createSetMultiPointActionRejectsAPOIMarkerGroup`/`createRemoveMultiPointActionRejectsAPOIMarkerGroup` replace the
+  former three per-type `requireGroupType` rejection tests with one pair, since both factory methods now derive
+  `kind`/minimum-members from `markerGroup.type()` via a single private `multiPointKind` switch that throws
+  `IllegalArgumentException` for `POI` (`core-pipeline.md` §5).
 - `core/markers/MarkerSetIdentifierCollectionTest.java` — `getIdentifier` returns the same instance for a repeated
   `(mapId, markerGroup)` pair (case-insensitive on `mapId`), distinct pairs get distinct identifiers. Also includes
   `concurrentFirstTimeCallersForTheSameComboConvergeOnOneIdentifierInstance`, an active (not `@Disabled`) regression
@@ -288,8 +292,8 @@ As of `main` (`b2c5fa0`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   reproduces that two independently-`enqueue()`d messages have no relative execution-order guarantee once the
   executor has more than one worker thread (blocks the first message's processing on a real 2-thread pool and
   shows the second can finish first) — see `core-pipeline.md` §7 for why this is left as-is rather than fixed in
-  `ReactiveQueue` itself; its doc comment now points at `GroupTransitionMarkerAction`/`applySingleAction` (renamed
-  from `ChangeGroupMarkerAction`/`processChangeGroupAction`) as the caller relying on bundled-message ordering.
+  `ReactiveQueue` itself; its doc comment points at `GroupTransitionMarkerAction`/`applySingleAction` as the caller
+  relying on bundled-message ordering.
 - `core/signs/persistence/loaders/Version3ConverterTest.java` — basic V2→V3 conversion (both sides matched, POI
   group's prefix assumed for both, output is the frozen `SignEntryV3` shape); `aNonMatchingSideStaysNonMatching` and
   `treatsAMatchedSideAsNonMatchingWhenNoPoiGroupIsConfigured` (GitHub issue #138/review finding #6, parts a and c,
@@ -374,5 +378,5 @@ workflow jobs also now declare an explicit `permissions: contents: read` (least-
 the repo's default token permissions), and `publish.yml`'s job runs under a `modrinth-publish` GitHub Environment.
 
 ---
-*Last updated: 2026-09-09 | Verified against: main (b2c5fa0)*
+*Last updated: 2026-09-11 | Verified against: feature/tpwalke2/209-actionfactory (5eb0f1d)*
 
