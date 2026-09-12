@@ -32,8 +32,10 @@ values there, not in `build.gradle`. `mod_version` follows `<minecraft_version>-
 
 CI (`.github/workflows/build.yml`) runs the unit tests and then `./gradlew build` on push/PR to `main` and
 `releases/**`; either failing fails the job. `.github/workflows/publish.yml` is manually dispatched, also runs the
-unit tests first (a failure blocks publishing), then runs `./gradlew modrinth` to publish to Modrinth (alpha from
-branch dispatch, release from a `v*` tag dispatch with `-PisRelease`).
+unit tests first (a failure blocks publishing), then runs `./gradlew modrinth` to publish to Modrinth: `main` branch
+dispatch → alpha, `releases/**` branch dispatch → beta (`-PisBeta`), `v*` tag dispatch → release (`-PisRelease`,
+exempt from the branch restriction below). A guard step run before the unit tests fails the job outright if a
+branch dispatch targets anything other than `main` or `releases/**`.
 
 Both workflows also have a `summarize test results` step right after `run unit tests` (`if: always()`, so it still
 runs when tests fail). It sums the `tests`/`failures`/`errors`/`skipped` attributes out of Gradle's JUnit XML reports

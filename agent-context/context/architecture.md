@@ -74,10 +74,12 @@ dev source for `runServer`/`runClient`.
   XML results to `$GITHUB_STEP_SUMMARY` via the shared composite action `.github/actions/summarize-test-results/`
   (plain shell `sed`, no third-party reporter action — see `testing.md` for why) → `./gradlew build` → upload
   `build/libs/` as an artifact
-- `.github/workflows/publish.yml` — manual `workflow_dispatch` only: runs tests first (failure blocks publish), then
-  `./gradlew modrinth -PbuildNumber=<run_number>` (alpha, from a branch dispatch) or the same with `-PisRelease`
+- `.github/workflows/publish.yml` — manual `workflow_dispatch` only: a guard step (before tests) fails the job if a
+  branch dispatch targets anything other than `main` or `releases/**` (tag dispatches are exempt); tests then run
+  (failure blocks publish); then `./gradlew modrinth -PbuildNumber=<run_number>` (alpha, from a `main` branch
+  dispatch), the same with `-PisBeta` (beta, from a `releases/**` branch dispatch), or the same with `-PisRelease`
   (release, from a `v*` tag dispatch)
 
 ---
-*Last updated: 2026-09-11 | Verified against: feature/tpwalke2/209-actionfactory (5eb0f1d)*
+*Last updated: 2026-09-12 | Verified against: main (3cba636, plus uncommitted publish.yml/build.gradle beta-publish changes)*
 
