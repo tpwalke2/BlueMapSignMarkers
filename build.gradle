@@ -95,6 +95,9 @@ modrinth {
 		version = version = "${project.mod_version}.${project.findProperty('buildNumber')}"
 		versionType = "release"
 		changelog.set("Releasenotes and Changelog:\\nhttps://github.com/tpwalke2/BlueMapSignMarkers/releases/tag/v${project.mod_version}")
+	} else if (project.hasProperty('isBeta')) {
+		version = "${project.mod_version}.${project.findProperty('buildNumber')}-beta"
+		versionType = "beta"
 	} else {
 		version = "${project.mod_version}.${project.findProperty('buildNumber')}-alpha"
 		versionType = "alpha"
