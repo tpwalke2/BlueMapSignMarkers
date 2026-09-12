@@ -90,12 +90,15 @@ Two Mixins (`src/main/resources/bluemapsignmarkers.mixins.json`) catch the event
    `SignManager` can't be unit tested directly (its constructor builds a `BlueMapAPIConnector`, which touches live
    `BlueMapAPI` static state), but the transition table has no Minecraft/Fabric/BlueMap types in its signature, so
    extracting it makes it directly testable (`SignTransitionResolverTest`).
-3. **`BlueMapAPIConnector`** owns the `ReactiveQueue<MarkerAction>` and all actual BlueMap API calls. Because the
-   BlueMap API is only available while BlueMap itself is enabled, actions are queued and only drained
-   (`markerActionQueue.process()`) while `BlueMapAPI.getInstance().isPresent()`; `BlueMapAPI.onEnable`/`onDisable`
-   start/stop draining and clear/rebuild the marker-set cache. `MarkerSet`s are looked up/created per
-   `MarkerSetIdentifier` (map id + marker group), cached in `markerSetsCache` as `MappedMarkerSet` (pairing the
-   `MarkerSet` with the real `BlueMapMap.getId()` it came from — needed for the per-map render-bounds gating below).
+3. **`BlueMapAPIConnector`** owns the `ReactiveQueue<MarkerAction>`, BlueMap listener lifecycle, action-dispatch
+   orchestration, render-bounds gating, and the `MarkerSet`/render-mask caches. Because the BlueMap API is only
+   available while BlueMap itself is enabled, actions are queued and only drained (`markerActionQueue.process()`)
+   while `BlueMapAPI.getInstance().isPresent()`; `BlueMapAPI.onEnable`/`onDisable` start/stop draining and
+   clear/rebuild the marker-set cache. `MarkerSet`s are looked up/created per `MarkerSetIdentifier` (map id + marker
+   group), cached in `markerSetsCache` as `MappedMarkerSet` (pairing the `MarkerSet` with the real
+   `BlueMapMap.getId()` it came from — needed for the per-map render-bounds gating below). The actual BlueMap marker
+   builder calls (add/update/remove/set, per marker type) live in a separate `MarkerMutations` class (see "Testable
+   vs. game-coupled code" below) that `BlueMapAPIConnector` dispatches into.
 
 `ReactiveQueue<T>` (`core/reactive`) is a small generic building block: an unbounded queue plus a "should I run right
 now" predicate, draining onto a fixed thread pool sized to `availableProcessors()`. It isn't BlueMap-specific — reuse
@@ -130,11 +133,11 @@ lineWidth, lineColor, fillColor, sorting, toggleable, depthTest, cssClasses) is 
 in `README.md`. `type` (`MarkerGroupType`: `POI`, `LINE`, `SHAPE`, or `EXTRUDE`) picks which kind of marker the
 group's signs produce; `lineWidth`/`lineColor` apply to `LINE`/`SHAPE`/`EXTRUDE` groups (setting them on a `POI`
 group is a warning, not an error), and `fillColor` additionally applies to `SHAPE`/`EXTRUDE` (a volume gets a
-floor/ceiling anchored to its members' Y range, per `BlueMapAPIConnector.resolveExtrudeHeightRange`).
+floor/ceiling anchored to its members' Y range, per `MarkerMutations.resolveExtrudeHeightRange`).
 `sorting`/`toggleable` are thin BlueMap `MarkerSet` passthroughs (menu order, hideability) that apply to every group
 type; `depthTest` (terrain occlusion) is `LINE`/`SHAPE`/`EXTRUDE`-only and `cssClasses` (custom.css hooks) is
 `POI`-only, each resolved in `ConfigProvider` and wired into the corresponding BlueMap builder call in
-`BlueMapAPIConnector`.
+`MarkerMutations`.
 `ConfigManager` lazily loads a singleton `BMSMConfigV2`
 via `ConfigProvider` from `config/bluemapsignmarkers/BMSM-Core.json`, creating sane defaults (a single `[poi]` group)
 if the file is missing or fails to load. `SignLinesParser` matches sign text against groups using either
@@ -198,10 +201,13 @@ the persistence loaders/converters (including `Version1SignEntryLoader`, `Versio
 `DispatchedMarkerIdentifier`/`MultiPointMarkerIdentifier`/`LinePoint`, `RenderMaskEvaluator`) — these can be unit tested
 directly (see
 `src/test/java/.../core/signs/SignLinesParserTest.java` for the pattern).
-Code that must reference game types (`SignHelper`, the mixins, `BlueMapSignMarkersMod`, `BlueMapAPIConnector`)
-should stay thin glue around the testable core, since it can only be verified manually via `runServer`.
+Code that must reference game types (`SignHelper`, the mixins, `BlueMapSignMarkersMod`, `BlueMapAPIConnector`,
+`MarkerMutations`) should stay thin glue around the testable core, since it can only be verified manually via
+`runServer`. `MarkerMutations` (the marker-construction logic extracted out of `BlueMapAPIConnector`, see above) is
+mostly game-coupled too, but its `resolveExtrudeHeightRange` static takes/returns no `bluemap-api` types, so it's
+directly testable the same way `BlueMapAPIConnector`'s own `pointOf`/`isInsideRenderBounds` statics are.
 
-`BlueMapAPIConnector` escapes sign text (`HtmlUtils.toHtmlDetail`, in `common`) before it reaches BlueMap's POI
+`MarkerMutations` escapes sign text (`HtmlUtils.toHtmlDetail`, in `common`) before it reaches BlueMap's POI
 marker `detail` field — BlueMap renders `detail` as raw HTML (unlike `label`, which BlueMap escapes itself), and
 sign text is player-controlled, so this closes a live XSS vector. See `agent-context/plans/html-detail-escaping-plan.md` for the
 design. Persisted sign data stays raw/unescaped; escaping happens only at this BlueMap API call site.

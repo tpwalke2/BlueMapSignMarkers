@@ -490,14 +490,14 @@ Two id schemes now exist side by side (position-keyed and content-keyed), unifie
 - `logProcessingMessage` sanitizes sign-derived detail text via `LogUtils.sanitizeForLog` (`common`, ticket 06)
   before logging it at INFO — strips ANSI CSI escape sequences and normalizes `\r\n`/`\n`/`\r` to literal `\n`
   and `\r`, closing a log-injection/log-noise vector where only `\n` was previously escaped.
-- `processMarkerAction` is `synchronized` (finding #5, resolved 2026-07-22): `addMarker`/`updateMarker`/
-  `removeMarker`/`setLineMarker` mutate a `MarkerSet`'s marker `Map` (thread-safety of which is BlueMap's concern,
-  not this mod's), and `ReactiveQueue`'s executor is sized to `availableProcessors()`, so without this lock two
-  actions dispatched close together (e.g. many signs loading at server startup) could race on the same underlying
-  map. Because `ReactiveQueue.shutdown()` only stops *new* submissions (already-submitted tasks still run — see
-  §7), several such tasks can end up queued behind this monitor for a while after a shutdown is requested;
-  `processMarkerAction` re-checks `BlueMapAPI.getInstance().isEmpty()` itself on entry so one of those queued tasks
-  can't mutate a `MarkerSet` after BlueMap has actually disabled in the meantime. If the dispatched action is a
+- `processMarkerAction` is `synchronized` (finding #5, resolved 2026-07-22): the `MarkerMutations` effects it invokes
+  mutate a `MarkerSet`'s marker `Map` (thread-safety of which is BlueMap's concern, not this mod's), and
+  `ReactiveQueue`'s executor is sized to `availableProcessors()`, so without this lock two actions dispatched close
+  together (e.g. many signs loading at server startup) could race on the same underlying map. Because
+  `ReactiveQueue.shutdown()` only stops *new* submissions (already-submitted tasks still run — see §7), several such
+  tasks can end up queued behind this monitor for a while after a shutdown is requested; `processMarkerAction`
+  re-checks `BlueMapAPI.getInstance().isEmpty()` itself on entry so one of those queued tasks can't mutate a
+  `MarkerSet` after BlueMap has actually disabled in the meantime. If the dispatched action is a
   `GroupTransitionMarkerAction`, it iterates `transitionAction.effects()` (a `List<MarkerAction>`, 0-2 entries —
   see §3/§5) calling `applySingleAction` on each **inside** the same synchronized call, so a bundled leave+join
   pair (or POI↔LINE swap) can never be observed half-applied by another thread; otherwise it calls
@@ -509,71 +509,75 @@ Two id schemes now exist side by side (position-keyed and content-keyed), unifie
   `AGENTS.md`'s "Adding a new marker/BlueMap action" section. All cases resolve their marker sets via a shared
   `prepareGated`/`prepareUngated` helper (parameter type `DispatchedMarkerIdentifier`, needs only `.parentSet()` —
   looks up via `getMarkerSets`, returns a no-op `Runnable` with a debug log if none found, otherwise hands the
-  effect a `Map<String, Marker>` per target map). `RemoveMultiPointMarkerAction` (one class covering line/shape/extrude
-  removal, distinguished by `MultiPointMarkerIdentifier`'s `kind` field — see "Adding a new marker/BlueMap action" in
-  `AGENTS.md`) routes through an id-based `removeMarkerById(String id, Map<String, Marker>)` helper extracted out of the old
-  `removeMarker` body. `SetMultiPointMarkerAction` has one `case` arm covering all three kinds — its own
-  `setMultiPointMarker(SetMultiPointMarkerAction, Map<String, Marker>)` reads `MultiPointMarkerIdentifier.kind()` off
-  the action's identifier and `switch`es (`"line"`/`"shape"`/`"extrude"`, `default` logs a warning) to
-  `setLineMarker`/`setShapeMarker`/`setExtrudeMarker` — this is the one place in `BlueMapAPIConnector` that still
-  needs to tell the three kinds apart, since `ActionFactory` (§5) now dispatches all of them through the single
-  `SetMultiPointMarkerAction`/`RemoveMultiPointMarkerAction` types.
-- `setLineMarker(SetMultiPointMarkerAction, Map<String, Marker>)` builds/replaces a BlueMap `LineMarker`: bails
-  (defensively — `SignManager` should never dispatch below `LINE_MIN_MEMBERS` points, logging a warning if it does)
-  if `action.getPoints().size() < MultiPointGroupThresholds.LINE_MIN_MEMBERS`, otherwise
-  builds a `de.bluecolored.bluemap.api.math.Line` from the action's `LinePoint`s (via `Vector3d`), parses
-  `action.getLineColor()` through `ColorUtils.parseHex` (`common`, plain Java) into `de.bluecolored.bluemap.api.math.Color`,
-  and `put`s a `LineMarker.builder().label(...).detail(HtmlUtils.toHtmlDetail(...)).line(line).lineWidth(...).lineColor(...)
-  .depthTestEnabled(markerGroup.depthTest()).build()` into each marker set's map, keyed by
-  `action.getMarkerIdentifier().getId()` (the content-keyed `"line:" + label` id, §5). `ColorUtils.parseHex` is the
-  only conversion point from the persisted hex string to a real color object, mirroring how `HtmlUtils` is the only
-  conversion point for HTML-escaped `detail` — both convert at the BlueMap-API call site, keeping the rest of the
-  pipeline in plain-Java, unescaped/unconverted form.
-- `setShapeMarker(SetMultiPointMarkerAction, Map<String, Marker>)` is the `SHAPE` counterpart: bails
-  (defensively, mirroring `setLineMarker`) if `action.getPoints().size() < MultiPointGroupThresholds.SHAPE_MIN_MEMBERS`,
-  builds a 2D `Shape` footprint from
-  the points' `x`/`z` only, and takes the marker's rendered height from the **tallest member**:
-  `points.stream().mapToInt(LinePoint::y).max()`. Parses both `lineColor` and `fillColor` through `ColorUtils.parseHex`
-  (fill defaults to a translucent red, `#FF000033`, unlike `lineColor`'s opaque default — see
-  `config-and-persistence.md`), then `put`s a `ShapeMarker.builder().label(...).detail(...).shape(shape,
-  height).lineWidth(...).lineColor(...).fillColor(...).depthTestEnabled(markerGroup.depthTest()).build()` into each
-  marker set's map, keyed by `action.getMarkerIdentifier().getId()` (the content-keyed `"shape:" + label` id, §5).
-- `setExtrudeMarker(SetMultiPointMarkerAction, Map<String, Marker>)` is the `EXTRUDE` counterpart: bails (defensively,
-  mirroring `setShapeMarker`) if `action.getPoints().size() < MultiPointGroupThresholds.EXTRUDE_MIN_MEMBERS`, builds the same 2D `Shape` footprint from the
-  points' `x`/`z` as `setShapeMarker`, but instead of a single tallest-member height calls package-private
-  `resolveExtrudeHeightRange(label, points)` for the volume's floor/ceiling: `minY`/`maxY` are the lowest/tallest
-  member's Y independently (not both from the tallest member), so the extrusion spans the full height range its
-  members were placed at regardless of placement order; if every member is at the same Y (`maxY <= minY`, e.g. one
-  flat floor), it logs at debug and bumps `maxY` to `minY + 1` rather than building a zero-height (invisible)
-  volume. `resolveExtrudeHeightRange` returns a private `ExtrudeHeightRange(float minY, float maxY)` record — a
-  plain value holder with no `bluemap-api` types, so it stays directly unit-testable
-  (`BlueMapAPIConnectorTest`, `testing.md`) even though `BlueMapAPIConnector` itself is otherwise game-coupled and
-  excluded from coverage. Parses both `lineColor` and `fillColor` through `ColorUtils.parseHex` the same way
-  `setShapeMarker` does, then `put`s an `ExtrudeMarker.builder().label(...).detail(...).shape(shape, minY,
-  maxY).lineWidth(...).lineColor(...).fillColor(...).depthTestEnabled(markerGroup.depthTest()).build()` into each
-  marker set's map, keyed by `action.getMarkerIdentifier().getId()` (the content-keyed `"extrude:" + label` id, §5).
-- Two more small helpers are package-private (not `private`) specifically for direct unit testing, alongside
-  `resolveExtrudeHeightRange` above: `pointOf(MarkerIdentifier)` (builds the single-point `List<LinePoint>` used by
-  the render-bounds gate, §8, for a position-keyed POI marker) and `isInsideRenderBounds(RenderMaskEvaluator.RenderMask,
+  effect a `Map<String, Marker>` per target map) — but each `case` arm's actual mutation is now a method reference
+  into `MarkerMutations` (below), not code inlined in `BlueMapAPIConnector` itself (ticket 04,
+  `.scratch/marker-action-consolidation/issues/04-shrink-bluemapapiconnector-marker-mutations.md`).
+- **`MarkerMutations`** (new class in `core.bluemap`, package-private, all-`static`) holds every state-free
+  marker-construction method `BlueMapAPIConnector` used to implement inline — no reference to the connector's
+  queue/cache/lifecycle fields, so this logic can be read (and tested where possible) independent of dispatch/
+  gating/cache concerns. `BlueMapAPIConnector.prepareSingleAction` calls into it via lambdas
+  (`markers -> MarkerMutations.addMarker(addAction, markers)`, etc.) for every `MarkerAction` case.
+  `addMarker`/`updateMarker`/`removeMarker`/`removeMarkerById`/`setMultiPointMarker`/`toBlueMapColor`/
+  `resolveExtrudeHeightRange` all live here now; `pointOf` and `isInsideRenderBounds` (render-bounds gating, §8)
+  stayed on `BlueMapAPIConnector` since they're part of the gating logic, not marker construction, and were
+  explicitly out of scope for ticket 04.
+- `MarkerMutations.setMultiPointMarker(SetMultiPointMarkerAction, Map<String, Marker>)` replaces the former separate
+  `setLineMarker`/`setShapeMarker`/`setExtrudeMarker` methods (ticket 04) with one entry point covering all three
+  kinds: it reads `MultiPointMarkerIdentifier.kind()` off the action's identifier, resolves that kind's minimum
+  member count via a private `minMembersFor(kind)` switch (`MultiPointGroupThresholds.LINE_MIN_MEMBERS`/
+  `SHAPE_MIN_MEMBERS`/`EXTRUDE_MIN_MEMBERS`, warning-and-return if unknown or below threshold — the same defensive
+  guard the three separate methods used to have individually), then parses `action.getLineColor()` once via
+  `toBlueMapColor(ColorUtils.parseHex(...))` before branching into a `switch (kind)` **statement** (not an
+  expression) with one arm per kind:
+  - `"line"` builds a `de.bluecolored.bluemap.api.math.Line` from the action's `LinePoint`s (via `Vector3d`), then
+    `put`s a `LineMarker.builder().label(...).detail(HtmlUtils.toHtmlDetail(...)).line(line).lineWidth(...)
+    .lineColor(...).depthTestEnabled(markerGroup.depthTest()).build()`, keyed by
+    `action.getMarkerIdentifier().getId()` (the content-keyed `"line:" + label` id, §5).
+  - `"shape"` builds a 2D `Shape` footprint from the points' `x`/`z` only, taking the marker's rendered height from
+    the **tallest member** (`points.stream().mapToInt(LinePoint::y).max()`), additionally parses `fillColor`
+    (defaults to a translucent red, `#FF000033`, unlike `lineColor`'s opaque default — see
+    `config-and-persistence.md`), and `put`s a `ShapeMarker.builder()...build()` keyed by the content-keyed
+    `"shape:" + label` id.
+  - `"extrude"` builds the same 2D `Shape` footprint as `"shape"`, but instead of a single tallest-member height
+    calls `resolveExtrudeHeightRange(label, points)` for the volume's floor/ceiling — `minY`/`maxY` are the
+    lowest/tallest member's Y independently (not both from the tallest member), so the extrusion spans the full
+    height range its members were placed at regardless of placement order; if every member is at the same Y
+    (`maxY <= minY`, e.g. one flat floor), it logs at debug and bumps `maxY` to `minY + 1` rather than building a
+    zero-height (invisible) volume. Also parses `fillColor` the same way `"shape"` does, and `put`s an
+    `ExtrudeMarker.builder()...build()` keyed by the content-keyed `"extrude:" + label` id.
+
+  Each arm builds, sets `minDistance`/`maxDistance`, and `put`s its own concretely-typed marker
+  (`LineMarker`/`ShapeMarker`/`ExtrudeMarker`) independently, rather than converging all three into one shared
+  variable typed as their common supertype (`ObjectMarker`) after the switch — `bluemap-api` is `compileOnly` and
+  absent from the test runtime classpath, and a switch **expression** assigning `LineMarker`/`ShapeMarker`/
+  `ExtrudeMarker` branches into one `ObjectMarker`-typed variable forces the JVM verifier to resolve `ObjectMarker`
+  the moment `MarkerMutations` is first loaded — which broke `MarkerMutationsTest`'s coverage of the *unrelated*
+  `resolveExtrudeHeightRange` method purely by being in the same class. The switch **statement** form avoids that
+  merge entirely. `resolveExtrudeHeightRange` returns a private `ExtrudeHeightRange(float minY, float maxY)` record —
+  a plain value holder with no `bluemap-api` types, so it stays directly unit-testable (`MarkerMutationsTest`,
+  `testing.md`) even though the rest of `MarkerMutations` is game-coupled.
+- Two more small helpers stayed on `BlueMapAPIConnector` itself, package-private (not `private`) specifically for
+  direct unit testing: `pointOf(MarkerIdentifier)` (builds the single-point `List<LinePoint>` used by the
+  render-bounds gate, §8, for a position-keyed POI marker) and `isInsideRenderBounds(RenderMaskEvaluator.RenderMask,
   List<LinePoint>)` (the pure mask-vs-points predicate, split out of the `mapId`-taking overload that does the cache
   lookup) — both covered in `BlueMapAPIConnectorTest` without needing a live connector instance or `bluemap-api`
   (`compileOnly`) on the test classpath.
-- `addMarker` only actually builds a marker `if (markerGroup.type() == MarkerGroupType.POI)` — this is a real,
-  live branch now that `MarkerGroupType.LINE`/`SHAPE`/`EXTRUDE` exist (no longer future-proofing for values that
-  didn't exist): a `LINE`-, `SHAPE`-, or `EXTRUDE`-typed group's signs never reach `addMarker` at all, since
-  `SignManager`'s transition table (§3) routes those representations to their own `Set`/`Remove` actions instead of
-  `AddMarkerAction`. It also
-  conditionally calls `markerBuilder.styleClasses(markerGroup.cssClasses().toArray(new String[0]))` when
-  `cssClasses` is non-empty — the only marker-builder call gated on the field being present rather than always
-  called with a possibly-default value, since BlueMap's `styleClasses` has no meaningful "unset" default to fall
-  back to.
-- **HTML escaping (fixed)**: `addMarker`/`updateMarker` wrap `detail` with `HtmlUtils.toHtmlDetail(...)` (`common`
-  package) before it reaches `POIMarker.builder().detail(...)` / `poiMarker.setDetail(...)` — BlueMap renders
-  `detail` as raw HTML (unlike `label`, which BlueMap's own `Marker.setLabel()` escapes), and sign text is
-  player-controlled, so this closed a live XSS vector (`../plans/html-detail-escaping-plan.md`). `toHtmlDetail` escapes
-  first, then converts `\n` to `<br>` so multi-line detail renders line breaks correctly — escaping before the `<br>`
-  substitution matters, otherwise the inserted tags would themselves get escaped. `SignEntry`/persisted `signs.json`
-  data stays raw/unescaped; escaping happens only at this BlueMap-API call site.
+- `MarkerMutations.addMarker` only actually builds a marker `if (markerGroup.type() == MarkerGroupType.POI)` — this
+  is a real, live branch now that `MarkerGroupType.LINE`/`SHAPE`/`EXTRUDE` exist (no longer future-proofing for
+  values that didn't exist): a `LINE`-, `SHAPE`-, or `EXTRUDE`-typed group's signs never reach `addMarker` at all,
+  since `SignManager`'s transition table (§3) routes those representations to their own `Set`/`Remove` actions
+  instead of `AddMarkerAction`. It also conditionally calls
+  `markerBuilder.styleClasses(markerGroup.cssClasses().toArray(new String[0]))` when `cssClasses` is non-empty —
+  the only marker-builder call gated on the field being present rather than always called with a possibly-default
+  value, since BlueMap's `styleClasses` has no meaningful "unset" default to fall back to.
+- **HTML escaping (fixed)**: `MarkerMutations.addMarker`/`updateMarker` wrap `detail` with
+  `HtmlUtils.toHtmlDetail(...)` (`common` package) before it reaches `POIMarker.builder().detail(...)` /
+  `poiMarker.setDetail(...)` — BlueMap renders `detail` as raw HTML (unlike `label`, which BlueMap's own
+  `Marker.setLabel()` escapes), and sign text is player-controlled, so this closed a live XSS vector
+  (`../plans/html-detail-escaping-plan.md`). `toHtmlDetail` escapes first, then converts `\n` to `<br>` so
+  multi-line detail renders line breaks correctly — escaping before the `<br>` substitution matters, otherwise the
+  inserted tags would themselves get escaped. `SignEntry`/persisted `signs.json` data stays raw/unescaped; escaping
+  happens only at this BlueMap-API call site.
 
 ## 7. `ReactiveQueue<T>` — generic buffer-while-unavailable primitive
 
@@ -738,5 +742,5 @@ gating" section. This section covers the code-level mechanics.
   themselves are otherwise unchanged — the fix is localized to `prepareGated`.
 
 ---
-*Last updated: 2026-09-11 | Verified against: feature/tpwalke2/209-actionfactory (5eb0f1d)*
+*Last updated: 2026-09-12 | Verified against: feature/tpwalke2/209-bluemapapiconnector (40f2273)*
 
