@@ -279,6 +279,41 @@ class ActionFactoryTest {
                 () -> factory.createRemoveMultiPointAction("world", group, "label"));
     }
 
+    // multiPointKind derives each type's minimum-points threshold from MultiPointGroupThresholds, keyed on
+    // markerGroup.type() - a regression mapping SHAPE/EXTRUDE to LINE's threshold (2) instead of their own
+    // (3) would still pass a same-sized-points-list test, since 2 points also satisfies LINE. These pin the
+    // per-kind threshold directly: exactly one point below each kind's own minimum must be rejected, not
+    // just below every kind's minimum.
+    @Test
+    void createSetMultiPointActionRejectsFewerThanTwoPointsForALineGroup() {
+        var factory = new ActionFactory(new MarkerSetIdentifierCollection());
+        var group = lineMarkerGroup("[line]");
+        var points = List.of(new LinePoint(1, 2, 3));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> factory.createSetMultiPointAction("world", group, "label", "detail", points, group.lineColor(), null, true));
+    }
+
+    @Test
+    void createSetMultiPointActionRejectsFewerThanThreePointsForAShapeGroup() {
+        var factory = new ActionFactory(new MarkerSetIdentifierCollection());
+        var group = shapeMarkerGroup("[shape]");
+        var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> factory.createSetMultiPointAction("world", group, "label", "detail", points, group.lineColor(), group.fillColor(), true));
+    }
+
+    @Test
+    void createSetMultiPointActionRejectsFewerThanThreePointsForAnExtrudeGroup() {
+        var factory = new ActionFactory(new MarkerSetIdentifierCollection());
+        var group = extrudeMarkerGroup("[extrude]");
+        var points = List.of(new LinePoint(1, 2, 3), new LinePoint(4, 5, 6));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> factory.createSetMultiPointAction("world", group, "label", "detail", points, group.lineColor(), group.fillColor(), true));
+    }
+
     private static MarkerGroup markerGroup(String prefix) {
         return new MarkerGroup(
                 prefix, MarkerGroupMatchType.STARTS_WITH, MarkerGroupType.POI, prefix, "icon.png", 0, 0, false, 0, 0,

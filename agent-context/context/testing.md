@@ -258,6 +258,12 @@ As of `main` (`b2c5fa0`), `src/test/java/com/tpwalke2/bluemapsignmarkers/`:
   former three per-type `requireGroupType` rejection tests with one pair, since both factory methods now derive
   `kind`/minimum-members from `markerGroup.type()` via a single private `multiPointKind` switch that throws
   `IllegalArgumentException` for `POI` (`core-pipeline.md` §5).
+  `createSetMultiPointActionRejectsFewerThanTwoPointsForALineGroup`/`...ThreePointsForAShapeGroup`/
+  `...ThreePointsForAnExtrudeGroup` (copilot-review.2026-09-11.md) pin each type's own minimum-points threshold
+  directly rather than relying on the happy-path tests' fixed point-list sizes — a regression mapping `SHAPE`/
+  `EXTRUDE` to `LINE_MIN_MEMBERS` (2) instead of their own `SHAPE_MIN_MEMBERS`/`EXTRUDE_MIN_MEMBERS` (3) would still
+  pass a same-sized-points-list test (2 points also satisfies `LINE`), so these assert rejection exactly one point
+  below each kind's *own* minimum.
 - `core/markers/MarkerSetIdentifierCollectionTest.java` — `getIdentifier` returns the same instance for a repeated
   `(mapId, markerGroup)` pair (case-insensitive on `mapId`), distinct pairs get distinct identifiers. Also includes
   `concurrentFirstTimeCallersForTheSameComboConvergeOnOneIdentifierInstance`, an active (not `@Disabled`) regression
