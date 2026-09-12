@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -138,9 +139,9 @@ public class SignTransitionResolver {
     private static MarkerAction leaveEffect(Supplier<List<SignEntry>> allSignsSupplier, SignEntryKey key, Representation rep, ActionFactory actionFactory, Map<String, MarkerGroup> currentPrefixGroupMap) {
         return switch (rep.group().type()) {
             case POI -> actionFactory.createRemovePOIAction(key.x(), key.y(), key.z(), key.parentMap(), rep.group());
-            case LINE -> lineLeaveAction(allSignsSupplier, key.parentMap(), rep, actionFactory, currentPrefixGroupMap);
-            case SHAPE -> shapeLeaveAction(allSignsSupplier, key.parentMap(), rep, actionFactory, currentPrefixGroupMap);
-            case EXTRUDE -> extrudeLeaveAction(allSignsSupplier, key.parentMap(), rep, actionFactory, currentPrefixGroupMap);
+            case LINE -> multiPointLeaveAction(allSignsSupplier, key.parentMap(), rep, actionFactory, currentPrefixGroupMap, LineGroupResolver::members, LINE_MIN_MEMBERS, MarkerGroupType.LINE);
+            case SHAPE -> multiPointLeaveAction(allSignsSupplier, key.parentMap(), rep, actionFactory, currentPrefixGroupMap, ShapeGroupResolver::members, SHAPE_MIN_MEMBERS, MarkerGroupType.SHAPE);
+            case EXTRUDE -> multiPointLeaveAction(allSignsSupplier, key.parentMap(), rep, actionFactory, currentPrefixGroupMap, ExtrudeGroupResolver::members, EXTRUDE_MIN_MEMBERS, MarkerGroupType.EXTRUDE);
         };
     }
 
@@ -164,115 +165,65 @@ public class SignTransitionResolver {
     private static MarkerAction joinEffect(Supplier<List<SignEntry>> allSignsSupplier, SignEntryKey key, Representation rep, ActionFactory actionFactory, boolean sameGroupRecompute) {
         return switch (rep.group().type()) {
             case POI -> actionFactory.createAddPOIAction(key.x(), key.y(), key.z(), key.parentMap(), rep.label(), rep.detail(), rep.group());
-            case LINE -> lineJoinAction(allSignsSupplier, key.parentMap(), rep, actionFactory, sameGroupRecompute);
-            case SHAPE -> shapeJoinAction(allSignsSupplier, key.parentMap(), rep, actionFactory, sameGroupRecompute);
-            case EXTRUDE -> extrudeJoinAction(allSignsSupplier, key.parentMap(), rep, actionFactory, sameGroupRecompute);
+            case LINE -> multiPointJoinAction(allSignsSupplier, key.parentMap(), rep, actionFactory, sameGroupRecompute, LineGroupResolver::members, LINE_MIN_MEMBERS, MarkerGroupType.LINE);
+            case SHAPE -> multiPointJoinAction(allSignsSupplier, key.parentMap(), rep, actionFactory, sameGroupRecompute, ShapeGroupResolver::members, SHAPE_MIN_MEMBERS, MarkerGroupType.SHAPE);
+            case EXTRUDE -> multiPointJoinAction(allSignsSupplier, key.parentMap(), rep, actionFactory, sameGroupRecompute, ExtrudeGroupResolver::members, EXTRUDE_MIN_MEMBERS, MarkerGroupType.EXTRUDE);
         };
     }
 
-    // Recomputes a line group including the current sign (it must already be in signCache under this
-    // group/label by the time this is called). Dispatches Set once ≥2 members exist; below that the line
-    // is still incomplete and nothing is dispatched. sameGroupRecompute forces isFirstAppearance=false,
-    // since it's used both for same-group/label recomputes (only reachable at ≥2 members if a marker
-    // already existed) and for reload-forced recreates (isFirstAppearance is log-only there, so the
-    // false value is harmless either way).
-    private static MarkerAction lineJoinAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, boolean sameGroupRecompute) {
-        var members = LineGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
-        if (members.size() < LINE_MIN_MEMBERS) return null;
-
-        var isFirstAppearance = !sameGroupRecompute && members.size() == LINE_MIN_MEMBERS;
-        var colors = ColorResolver.resolve(members, rep.group());
-        return actionFactory.createSetMultiPointAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), null, isFirstAppearance);
+    @FunctionalInterface
+    private interface GroupResolver {
+        List<SignEntry> members(Collection<SignEntry> allSigns, String parentMap, String prefix, String label);
     }
 
-    // Recomputes a line group excluding the current sign (it must already be removed from/no longer
-    // present in signCache under this group/label by the time this is called). Dispatches Set if ≥2
-    // members remain, Remove if it drops below 2 and a marker existed before (i.e. exactly 1 remains -
-    // meaning there were 2 before), or nothing if there was never a marker to begin with (0 remain).
-    private static MarkerAction lineLeaveAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, Map<String, MarkerGroup> currentPrefixGroupMap) {
+    // Only LINE has no fill (a stroke-only marker); SHAPE/EXTRUDE both anchor a floor/ceiling from their
+    // members' Y range and so need ColorResolver's fillColor alongside its lineColor.
+    private static boolean hasFill(MarkerGroupType kind) {
+        return kind != MarkerGroupType.LINE;
+    }
+
+    // Recomputes a LINE/SHAPE/EXTRUDE group including the current sign (it must already be in signCache
+    // under this group/label by the time this is called). Dispatches Set once the kind's member threshold
+    // is met; below that the marker is still incomplete and nothing is dispatched. sameGroupRecompute
+    // forces isFirstAppearance=false, since it's used both for same-group/label recomputes (only reachable
+    // at/above threshold if a marker already existed) and for reload-forced recreates (isFirstAppearance is
+    // log-only there, so the false value is harmless either way).
+    private static MarkerAction multiPointJoinAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, boolean sameGroupRecompute, GroupResolver resolver, int minMembers, MarkerGroupType kind) {
+        var members = resolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
+        if (members.size() < minMembers) return null;
+
+        var isFirstAppearance = !sameGroupRecompute && members.size() == minMembers;
+        var colors = ColorResolver.resolve(members, rep.group());
+        return actionFactory.createSetMultiPointAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), hasFill(kind) ? colors.fillColor() : null, isFirstAppearance);
+    }
+
+    // Recomputes a LINE/SHAPE/EXTRUDE group excluding the current sign (it must already be removed
+    // from/no longer present in signCache under this group/label by the time this is called). Dispatches
+    // Set if the kind's member threshold is still met, Remove if it drops one below that (i.e. a marker
+    // existed before), or nothing if there was never a marker to begin with.
+    private static MarkerAction multiPointLeaveAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, Map<String, MarkerGroup> currentPrefixGroupMap, GroupResolver resolver, int minMembers, MarkerGroupType kind) {
         if (groupIdentityObsolete(rep, currentPrefixGroupMap)) {
             return actionFactory.createRemoveMultiPointAction(parentMap, rep.group(), rep.label());
         }
 
-        var members = LineGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
+        var members = resolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
 
-        if (members.size() >= LINE_MIN_MEMBERS) {
+        if (members.size() >= minMembers) {
             var colors = ColorResolver.resolve(members, rep.group());
-            return actionFactory.createSetMultiPointAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), null, false);
+            return actionFactory.createSetMultiPointAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), hasFill(kind) ? colors.fillColor() : null, false);
         }
 
-        if (members.size() == LINE_MIN_MEMBERS - 1) {
+        if (members.size() == minMembers - 1) {
             return actionFactory.createRemoveMultiPointAction(parentMap, rep.group(), rep.label());
         }
 
         return null;
     }
 
+    // Points stay ordered by createdAtMillis (the *GroupResolver.members contract) purely for polygon/line
+    // vertex order; a SHAPE/EXTRUDE's Y anchor (BlueMapAPIConnector.setShapeMarker/setExtrudeMarker) is the
+    // tallest member, not the oldest.
     private static List<LinePoint> toPoints(List<SignEntry> members) {
         return members.stream().map(e -> new LinePoint(e.key().x(), e.key().y(), e.key().z())).toList();
-    }
-
-    // SHAPE mirrors LINE's join/leave/recompute shape (see lineJoinAction/lineLeaveAction above), but at a
-    // 3-member render threshold instead of 2 - see docs/adr/0002-shape-duplicates-line-pattern.md. Points
-    // stay ordered by createdAtMillis (toPoints/ShapeGroupResolver.members) purely for polygon vertex order;
-    // the shape's Y anchor (BlueMapAPIConnector.setShapeMarker) is the tallest member, not the oldest.
-    private static MarkerAction shapeJoinAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, boolean sameGroupRecompute) {
-        var members = ShapeGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
-        if (members.size() < SHAPE_MIN_MEMBERS) return null;
-
-        var isFirstAppearance = !sameGroupRecompute && members.size() == SHAPE_MIN_MEMBERS;
-        var colors = ColorResolver.resolve(members, rep.group());
-        return actionFactory.createSetMultiPointAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), colors.fillColor(), isFirstAppearance);
-    }
-
-    private static MarkerAction shapeLeaveAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, Map<String, MarkerGroup> currentPrefixGroupMap) {
-        if (groupIdentityObsolete(rep, currentPrefixGroupMap)) {
-            return actionFactory.createRemoveMultiPointAction(parentMap, rep.group(), rep.label());
-        }
-
-        var members = ShapeGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
-
-        if (members.size() >= SHAPE_MIN_MEMBERS) {
-            var colors = ColorResolver.resolve(members, rep.group());
-            return actionFactory.createSetMultiPointAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), colors.fillColor(), false);
-        }
-
-        if (members.size() == SHAPE_MIN_MEMBERS - 1) {
-            return actionFactory.createRemoveMultiPointAction(parentMap, rep.group(), rep.label());
-        }
-
-        return null;
-    }
-
-    // EXTRUDE mirrors SHAPE's join/leave/recompute shape (see shapeJoinAction/shapeLeaveAction above) at the
-    // same 3-member render threshold - the floor/ceiling Y values are computed from the ordered points at
-    // dispatch time (BlueMapAPIConnector.setExtrudeMarker), not here.
-
-    private static MarkerAction extrudeJoinAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, boolean sameGroupRecompute) {
-        var members = ExtrudeGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
-        if (members.size() < EXTRUDE_MIN_MEMBERS) return null;
-
-        var isFirstAppearance = !sameGroupRecompute && members.size() == EXTRUDE_MIN_MEMBERS;
-        var colors = ColorResolver.resolve(members, rep.group());
-        return actionFactory.createSetMultiPointAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), colors.fillColor(), isFirstAppearance);
-    }
-
-    private static MarkerAction extrudeLeaveAction(Supplier<List<SignEntry>> allSignsSupplier, String parentMap, Representation rep, ActionFactory actionFactory, Map<String, MarkerGroup> currentPrefixGroupMap) {
-        if (groupIdentityObsolete(rep, currentPrefixGroupMap)) {
-            return actionFactory.createRemoveMultiPointAction(parentMap, rep.group(), rep.label());
-        }
-
-        var members = ExtrudeGroupResolver.members(allSignsSupplier.get(), parentMap, rep.group().prefix(), rep.label());
-
-        if (members.size() >= EXTRUDE_MIN_MEMBERS) {
-            var colors = ColorResolver.resolve(members, rep.group());
-            return actionFactory.createSetMultiPointAction(parentMap, rep.group(), rep.label(), rep.detail(), toPoints(members), colors.lineColor(), colors.fillColor(), false);
-        }
-
-        if (members.size() == EXTRUDE_MIN_MEMBERS - 1) {
-            return actionFactory.createRemoveMultiPointAction(parentMap, rep.group(), rep.label());
-        }
-
-        return null;
     }
 }
