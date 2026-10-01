@@ -18,7 +18,7 @@ builds/adds) an entry:
    `WorldMap.UNKNOWN` (the no-dimension-known sentinel), even though both currently hold `"unknown"`, since
    `PlayerIds.UNKNOWN` is compared/persisted as a real `playerId` and must keep that exact value regardless of
    what `WorldMap.UNKNOWN` does.
-3. **Mixins** (`src/main/resources/bluemapsignmarkers.mixins.json`, server-only, `JAVA_21` compat level):
+3. **Mixins** (`src/main/resources/bluemapsignmarkers.mixins.json`, server-only, `JAVA_25` compat level):
    - `SignBlockEntityInject` injects `SignBlockEntity.updateSignText` at `HEAD` (sets a `@Unique` guard flag,
      `bluemapsignmarkers$inUpdateSignText`) and at `TAIL` (clears the flag) → a player edited a sign →
      `SignManager.addOrUpdate(SignHelper.createSignEntry(this, player.getStringUUID()))`. The same mixin also

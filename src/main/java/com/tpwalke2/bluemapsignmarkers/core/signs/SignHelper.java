@@ -7,6 +7,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.SignBlockEntity;
 import net.minecraft.world.level.block.entity.SignText;
+import net.minecraft.world.level.block.entity.SignTextSlot;
 
 public class SignHelper {
     private SignHelper() {
@@ -26,8 +27,10 @@ public class SignHelper {
             SignBlockEntity signBlockEntity,
             String playerId) {
         var pos = signBlockEntity.getBlockPos();
-        var frontRawLines = getRawLines(signBlockEntity.getFrontText());
-        var backRawLines = getRawLines(signBlockEntity.getBackText());
+        var frontText = signBlockEntity.getText(SignTextSlot.FRONT);
+        var backText = signBlockEntity.getText(SignTextSlot.BACK);
+        var frontRawLines = getRawLines(frontText);
+        var backRawLines = getRawLines(backText);
 
         return new SignEntry(
                 new SignEntryKey(
@@ -41,8 +44,8 @@ public class SignHelper {
                 System.currentTimeMillis(),
                 frontRawLines,
                 backRawLines,
-                signBlockEntity.getFrontText().getColor().name(),
-                signBlockEntity.getBackText().getColor().name());
+                frontText.getColor().name(),
+                backText.getColor().name());
     }
 
     public static String getSignParentMap(Level world) {
@@ -52,7 +55,7 @@ public class SignHelper {
     }
 
     private static String[] getRawLines(SignText signText) {
-        return Arrays.stream(signText.getMessages(false))
+        return signText.getMessages(false).stream()
                 .map(Component::getString)
                 .toArray(String[]::new);
     }
