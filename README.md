@@ -8,7 +8,7 @@ Fabric plugin for BlueMap that displays markers based on in-game signs
 Place in your `mods` folder along with BlueMap.
 
 Requires Minecraft 26.3, Java 25, Fabric Loader 0.19.5 or newer, Fabric API for 26.3
-(built against 0.161.0+26.3), and BlueMap 5.28 or newer.
+(built against 0.161.0+26.3), and BlueMap 5.24 or newer.
 
 Server-side only.
 

@@ -9,7 +9,7 @@
 | Build | Gradle 9.6.1 wrapper + Fabric Loom `1.17.21` |
 | Target Minecraft | version pinned in `gradle.properties` (`minecraft_version`), currently `26.3` |
 | Fabric loader/API | `loader_version` / `fabric_api_version` in `gradle.properties` |
-| External integration | BlueMap API `blue_map_api_version` (`compileOnly` — provided by BlueMap itself at runtime), targeting BlueMap `blue_map_version` |
+| External integration | BlueMap API `blue_map_api_version` (`compileOnly` — provided by BlueMap itself at runtime); `blue_map_version` declares the minimum supported BlueMap version in mod metadata |
 | JSON | Gson, `Strictness.LENIENT` |
 | Logging | SLF4J, all loggers named via `Constants.MOD_ID` |
 | Testing | JUnit 5 (Jupiter), via `junit-bom:5.11.4` |
