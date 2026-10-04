@@ -160,7 +160,8 @@ to end users.
 `V6` is the player-marker-colors addition (GitHub issue #198,
 `../plans/player-marker-colors/spec.md`): `SignEntry` gained `String frontDye`/`backDye` — the sign side's raw
 `DyeColor` enum name (e.g. `"RED"`), captured by `SignHelper.createSignEntry` off
-`SignBlockEntity.getFrontText()`/`getBackText()`'s `SignText.getColor()` at the same point raw lines are read. Both
+`SignText.getColor()` on the text returned by `SignBlockEntity.getText(SignTextSlot.FRONT)` /
+`getText(SignTextSlot.BACK)` at the same point raw lines are read. Both
 fields are **never** `null` (unlike `frontRawLines`/`backRawLines`): `"BLACK"` (`SignEntryHelper.UNDYED_DYE`) means
 "no player colour chosen," doubling as both an actually-undyed vanilla sign's real default and the
 `Version6Converter` migration backfill value for pre-`V6` entries — this lets `ColorResolver` (`core-pipeline.md`

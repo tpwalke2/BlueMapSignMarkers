@@ -17,6 +17,7 @@ import net.minecraft.server.network.FilteredText;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.entity.SignBlockEntity;
 import net.minecraft.world.level.block.entity.SignText;
+import net.minecraft.world.level.block.entity.SignTextSlot;
 
 @Mixin(SignBlockEntity.class)
 public class SignBlockEntityInject {
@@ -31,7 +32,7 @@ public class SignBlockEntityInject {
     @Inject(method = "updateSignText", at = @At("HEAD"))
     void onBeginUpdateSignText(
             Player player,
-            boolean frontText,
+            SignTextSlot slot,
             List<FilteredText> lines,
             CallbackInfo cir) {
         bluemapsignmarkers$inUpdateSignText = true;
@@ -40,7 +41,7 @@ public class SignBlockEntityInject {
     @Inject(method = "updateSignText", at = @At("TAIL"))
     void onTryChangeText(
             Player player,
-            boolean frontText,
+            SignTextSlot slot,
             List<FilteredText> lines,
             CallbackInfo cir) {
         bluemapsignmarkers$inUpdateSignText = false;
@@ -59,7 +60,7 @@ public class SignBlockEntityInject {
     @Inject(method = "updateText", at = @At("RETURN"))
     void onUpdateText(
             UnaryOperator<SignText> function,
-            boolean isFrontText,
+            SignTextSlot slot,
             CallbackInfoReturnable<Boolean> cir) {
         if (!cir.getReturnValueZ()) return;
         if (bluemapsignmarkers$inUpdateSignText) return;

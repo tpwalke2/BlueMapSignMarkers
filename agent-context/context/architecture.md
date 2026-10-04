@@ -6,10 +6,10 @@
 |-------|-----------|
 | Language | Java 25 (`sourceCompatibility`/`targetCompatibility` = `VERSION_25` in `build.gradle`) |
 | Mod platform | Fabric, `DedicatedServerModInitializer` (server-only, no client logic) |
-| Build | Gradle wrapper + Fabric Loom `1.17-SNAPSHOT` |
-| Target Minecraft | version pinned in `gradle.properties` (`minecraft_version`), currently `26.2` |
+| Build | Gradle 9.6.1 wrapper + Fabric Loom `1.17.21` |
+| Target Minecraft | version pinned in `gradle.properties` (`minecraft_version`), currently `26.3` |
 | Fabric loader/API | `loader_version` / `fabric_api_version` in `gradle.properties` |
-| External integration | BlueMap API `blue_map_api_version` (`compileOnly` — provided by BlueMap itself at runtime), targeting BlueMap `blue_map_version` |
+| External integration | BlueMap API `blue_map_api_version` (`compileOnly` — provided by BlueMap itself at runtime); `blue_map_version` declares the minimum supported BlueMap version in mod metadata |
 | JSON | Gson, `Strictness.LENIENT` |
 | Logging | SLF4J, all loggers named via `Constants.MOD_ID` |
 | Testing | JUnit 5 (Jupiter), via `junit-bom:5.11.4` |
@@ -17,7 +17,7 @@
 | CI | GitHub Actions |
 
 All version numbers live in `gradle.properties` — never hardcode a version in `build.gradle` or source.
-`mod_version` follows `<minecraft_version>-<mod_semver>` (e.g. `26.2-0.19.0`).
+`mod_version` follows `<minecraft_version>-<mod_semver>` (e.g. `26.3-1.0.0`).
 
 Fabric API is pulled in per-module, not as the blanket artifact: `build.gradle` declares
 `implementation fabricApi.module("fabric-lifecycle-events-v1", ...)` (the only module this mod's code actually
